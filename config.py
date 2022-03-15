@@ -10,8 +10,4 @@ BATPHONE_CHANNELS = list(
     map(lambda x: int(x.strip()),
         CONF.get('discord', 'channels').split(',')))
 
-OUR_EMAIL = CONF.get('gmail', 'email')
-TO_EMAIL = CONF.get('gmail', 'alert_email')
-GMAIL_CREDENTIALS = CONF.get('gmail', 'credentials')
-
-ALERT_WEBHOOK = ""
+ALERT_WEBHOOK = CONF.get('squadcast', 'url')

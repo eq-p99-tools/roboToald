@@ -1,18 +1,9 @@
 import discord
-import requests
 
 import config
-# import gmail
+import squadcast
 
 DISCORD_CLIENT = discord.Client()
-
-
-def send_alert(title, message):
-    requests.post(config.ALERT_WEBHOOK, json={
-        "message": title,
-        "description": message,
-        "status": "trigger",
-    })
 
 
 @DISCORD_CLIENT.event
@@ -23,12 +14,11 @@ async def on_ready():
 @DISCORD_CLIENT.event
 async def on_message(message):
     if message.channel.id in config.BATPHONE_CHANNELS and message.mention_everyone:
-        print(f"Sending alert: {message.content}")
-        send_alert("BATPHONE", message.content)
+        print(f"Sending alert: {message.clean_content}")
+        squadcast.send_alert("BATPHONE", message.clean_content)
     elif "!test" in message.content and DISCORD_CLIENT.user.id in message.raw_mentions:
-        print(f"Logging test alert: {message.content}")
-        # gmail.send_message("TEST ALERT", message.content)
-        send_alert("TEST ALERT", message.content)
+        print(f"Logging test alert: {message.clean_content}")
+        # squadcast.send_alert("TEST ALERT", message.clean_content)
 
 
 if __name__ == '__main__':
