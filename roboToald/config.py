@@ -9,8 +9,3 @@ DISCORD_TOKEN = CONF.get('discord', 'token')
 TEST_GUILDS = list(
     map(lambda x: int(x.strip()),
         CONF.get('discord', 'test_guilds').split(',')))
-BATPHONE_CHANNELS = list(
-    map(lambda x: int(x.strip()),
-        CONF.get('discord', 'channels').split(',')))
-
-ALERT_WEBHOOK = CONF.get('squadcast', 'url')

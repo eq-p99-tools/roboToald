@@ -2,7 +2,6 @@ import re
 
 from disnake.ext import commands
 
-from roboToald.alert_services import squadcast
 from roboToald import config
 from roboToald.db import models
 from roboToald import utils
@@ -37,14 +36,3 @@ async def on_message(message):
     # Search for matches to registered alerts
     if message.channel.id in models.get_registered_channels():
         find_match(channel=message.channel.id, message=message.clean_content)
-
-    # old stuff
-    if message.channel.id in config.BATPHONE_CHANNELS and message.mention_everyone:
-        print(f"Sending alert: {message.clean_content}")
-        squadcast.send_alert("BATPHONE", message.clean_content)
-    elif "!test" in message.content and DISCORD_CLIENT.user.id in message.raw_mentions:
-        print(f"Logging test alert: {message.clean_content}")
-        # squadcast.send_alert("TEST ALERT", message.clean_content)
-    elif message.channel.id == 923703748197494794 and message.mention_everyone:  # fungi
-        print(f"Sending Fungi Alert: {message.clean_content}")
-        squadcast.send_alert("FUNGI", message.clean_content)

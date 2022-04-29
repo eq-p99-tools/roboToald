@@ -1,6 +1,3 @@
-[squadcast]
-url = https://api.squadcast.com/v2/incidents/api/<id>
-
 [discord]
 token = <discord_token>
-channels = 12345, 67890
+test_guilds = 12345, 67890
