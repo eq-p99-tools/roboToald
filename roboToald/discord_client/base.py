@@ -19,7 +19,7 @@ def find_match(channel, message):
             alert.alert_regex, message, flags=re.IGNORECASE)
         matches_role = True
         if matches_filter or matches_role:
-            utils.send_alert(alert.alert_url, alert.id)
+            utils.send_alert(alert.alert_url, alert.id, message)
 
 
 @DISCORD_CLIENT.event
