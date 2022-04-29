@@ -1,2 +1,4 @@
-discord
+disnake
 requests
+sqlalchemy
+validators
