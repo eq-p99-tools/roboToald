@@ -12,6 +12,7 @@ class Alert(base.Base):
     alert_regex = sqlalchemy.Column(sqlalchemy.String(255))
     alert_role = sqlalchemy.Column(sqlalchemy.Integer)
     alert_url = sqlalchemy.Column(sqlalchemy.String(100))
+    trigger_count = sqlalchemy.Column(sqlalchemy.Integer)
 
     # Cached for convenience
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
@@ -29,6 +30,29 @@ class Alert(base.Base):
         self.alert_role = alert_role
         self.alert_url = alert_url
         self.guild_id = guild_id
+        self.trigger_count = 0
+
+    def increment_counter(self):
+        # This isn't strictly speaking an atomic action, but
+        # honestly it doesn't matter. I don't care enough to deal
+        # with transactions, since they don't work right in
+        # sqlite anyway.
+        self.trigger_count += 1
+        self.store()
+
+    def reset_counter(self):
+        self.trigger_count = 0
+        self.store()
+
+    def store(self):
+        with base.get_session() as session:
+            session.merge(self)
+            session.commit()
+
+    def delete(self):
+        with base.get_session() as session:
+            session.delete(self)
+            session.commit()
 
 
 def get_alert(alert_id):
@@ -67,14 +91,6 @@ def get_registered_channels():
         for row in result:
             channels.add(row[0])
     return channels
-
-
-def delete_alert(alert_id):
-    with base.get_session() as session:
-        alert = session.get(Alert, alert_id)
-        if alert:
-            session.delete(alert)
-            session.commit()
 
 
 if __name__ == "__main__":

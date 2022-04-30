@@ -15,6 +15,12 @@ async def batphone(inter):
 
 
 @batphone.sub_command()
+async def help(inter):
+    await inter.send("A help message would go here if there was one lolol",
+                     ephemeral=True)
+
+
+@batphone.sub_command()
 async def register(inter,
                    channel: disnake.TextChannel,
                    alert_url: str,
@@ -81,13 +87,7 @@ async def list(inter):
             "No alerts configured.", ephemeral=True)
         return
 
-    await inter.response.send_message(
-        embed=disnake.Embed(
-            title="Your Batphone Alerts",
-            description="To clear an alert, react to 🔕.\n"
-                        "To test an alert, react to 🧪.",
-            color=disnake.Color.blue()),
-        ephemeral=True)
+    first = True
     for alert in alerts:
         desc = f"**Channel**: <#{alert.channel_id}>\n"
         if alert.alert_regex:
@@ -97,37 +97,58 @@ async def list(inter):
         desc += f"**URL**: {alert.alert_url}"
 
         e = disnake.Embed(description=desc,
-                          color=disnake.Color.blue())
-        e.set_thumbnail(url=f"{constants.THUMBNAIL_META_TOKEN}{alert.id}")
-        msg = await inter.followup.send(embed=e, wait=True, ephemeral=True)
-        await msg.add_reaction(constants.TEST_EMOJI)
-        await msg.add_reaction(constants.DELETE_EMOJI)
+                          color=disnake.Color.green())
+        e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
+        if first:
+            await inter.response.send_message(embed=e, ephemeral=True)
+            msg = await inter.original_message()
+            first = False
+        else:
+            msg = await inter.followup.send(embed=e, wait=True, ephemeral=True)
+        my_view = disnake.ui.View()
+        test_button = disnake.ui.Button(
+            label="Test", emoji=constants.TEST_EMOJI,
+            style=disnake.ButtonStyle.green)
+        delete_button = disnake.ui.Button(
+            label="Delete", emoji=constants.DELETE_EMOJI,
+            style=disnake.ButtonStyle.danger)
+        clear_count_button = disnake.ui.Button(
+            label="Clear Counter", emoji=constants.CLEAR_EMOJI,
+            style=disnake.ButtonStyle.grey)
 
+        async def button_callback(button_inter):
+            action = button_inter.component.emoji.name
+            print(f"Interacted with Alert #{alert.id} with {action}")
+            if action == constants.DELETE_EMOJI:
+                print(f"Removing alert {alert.id}!")
+                alert.delete()
+                test_button.disabled = True
+                delete_button.disabled = True
+                clear_count_button.disabled = True
+                e.set_footer(text="Deleted")
+                e.colour = disnake.Color.darker_grey()
+                await msg.edit(view=my_view, embed=e)
+            elif action == constants.TEST_EMOJI:
+                print(f"Testing alert {alert.id}!")
+                utils.send_alert(alert,
+                                 f"Test of alert: {alert.alert_regex}")
+                e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
+                await msg.edit(view=my_view, embed=e)
+            elif action == constants.CLEAR_EMOJI:
+                alert.reset_counter()
+                e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
+                await msg.edit(view=my_view, embed=e)
 
-@base.DISCORD_CLIENT.event
-async def on_reaction_add(reaction, user):
-    message = reaction.message
-    # Only react to our own messages
-    if message.author.id != base.DISCORD_CLIENT.user.id:
-        return
-    # Don't respond to our own initial reactions
-    if user.id == base.DISCORD_CLIENT.user.id:
-        return
-    # Only react if the message is an Alert embed
-    try:
-        thumb_url = message.embeds[0].thumbnail.url
-        if not thumb_url.startswith(constants.THUMBNAIL_META_TOKEN):
-            return
-    except:
-        return
+            try:
+                await button_inter.send()
+            except disnake.errors.HTTPException:
+                pass  # We know this isn't valid but that's fine
+            return True
 
-    alert_id = int(thumb_url[len(constants.THUMBNAIL_META_TOKEN):])
-    print(f"Reacted to Alert #{alert_id} with {reaction.emoji}")
-    if reaction.emoji == constants.DELETE_EMOJI:
-        print(f"Removing alert {alert_id}!")
-        models.delete_alert(alert_id)
-    elif reaction.emoji == constants.TEST_EMOJI:
-        print(f"Testing alert {alert_id}!")
-        alert = models.get_alert(alert_id)
-        if alert:
-            utils.send_alert(alert.alert_url, alert.id)
+        test_button.callback = button_callback
+        delete_button.callback = button_callback
+        clear_count_button.callback = button_callback
+        my_view.add_item(test_button)
+        my_view.add_item(delete_button)
+        my_view.add_item(clear_count_button)
+        await msg.edit(view=my_view)
