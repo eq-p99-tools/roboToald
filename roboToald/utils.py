@@ -32,5 +32,5 @@ def send_alert(alert, message):
         print(f"Alert ID `{alert.id}` has invalid alert_url: `{alert.alert_url}`")
         return
     print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` to {alert.alert_url}")
-    # service_func("BATPHONE", message, webhook=alert.alert_url)
+    service_func("BATPHONE", message, webhook=alert.alert_url)
     alert.increment_counter()
