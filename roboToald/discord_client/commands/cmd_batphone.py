@@ -86,7 +86,7 @@ async def list(inter):
         await inter.response.send_message(
             "No alerts configured.", ephemeral=True)
         return
-
+    footer_text = "Active (triggered {0} times) <ID: {1}>"
     first = True
     for alert in alerts:
         desc = f"**Channel**: <#{alert.channel_id}>\n"
@@ -98,7 +98,7 @@ async def list(inter):
 
         e = disnake.Embed(description=desc,
                           color=disnake.Color.green())
-        e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
+        e.set_footer(text=footer_text.format(alert.trigger_count, alert.id))
         if first:
             await inter.response.send_message(embed=e, ephemeral=True)
             msg = await inter.original_message()
@@ -116,28 +116,37 @@ async def list(inter):
             label="Clear Counter", emoji=constants.CLEAR_EMOJI,
             style=disnake.ButtonStyle.grey)
 
-        async def button_callback(button_inter):
+        async def button_callback(button_inter,
+                                  that_message=msg,
+                                  that_alert=alert,
+                                  that_embed=e,
+                                  that_view=my_view):
             action = button_inter.component.emoji.name
-            print(f"Interacted with Alert #{alert.id} with {action}")
+            print(f"Interacted with Alert #{that_alert.id} with {action}")
             if action == constants.DELETE_EMOJI:
-                print(f"Removing alert {alert.id}!")
-                alert.delete()
+                print(f"Removing alert {that_alert.id}!")
+                that_alert.delete()
                 test_button.disabled = True
                 delete_button.disabled = True
                 clear_count_button.disabled = True
-                e.set_footer(text="Deleted")
-                e.colour = disnake.Color.darker_grey()
-                await msg.edit(view=my_view, embed=e)
+                that_embed.set_footer(text="Deleted")
+                that_embed.colour = disnake.Color.darker_grey()
+                await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.TEST_EMOJI:
-                print(f"Testing alert {alert.id}!")
-                utils.send_alert(alert,
-                                 f"Test of alert: {alert.alert_regex}")
-                e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
-                await msg.edit(view=my_view, embed=e)
+                print(f"Testing alert {that_alert.id}!")
+                utils.send_alert(
+                    that_alert, f"Test of alert: {that_alert.alert_regex}")
+                that_embed.set_footer(
+                    text=footer_text.format(that_alert.trigger_count,
+                                            that_alert.id))
+                await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.CLEAR_EMOJI:
-                alert.reset_counter()
-                e.set_footer(text=f"Active (triggered {alert.trigger_count} times)")
-                await msg.edit(view=my_view, embed=e)
+                print(f"Clearing counter for alert {that_alert.id}!")
+                that_alert.reset_counter()
+                that_embed.set_footer(
+                    text=footer_text.format(that_alert.trigger_count,
+                                            that_alert.id))
+                await that_message.edit(view=that_view, embed=that_embed)
 
             try:
                 await button_inter.send()
