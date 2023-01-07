@@ -1,15 +1,19 @@
 import re
 
+import disnake
 from disnake.ext import commands
 
 from roboToald import config
 from roboToald.db import models
 from roboToald import utils
 
+DISCORD_INTENTS = disnake.Intents.default()
+DISCORD_INTENTS.message_content = True
 DISCORD_CLIENT = commands.Bot(
     command_prefix="!",
     test_guilds=config.TEST_GUILDS,
-    sync_commands_debug=True
+    sync_commands_debug=True,
+    intents=DISCORD_INTENTS
 )
 
 
