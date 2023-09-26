@@ -2,13 +2,17 @@ import re
 
 from roboToald.alert_services import squadcast
 
-SQUADCAST_WEBHOOK_REGEX = re.compile(
+SQUADCAST_WEBHOOK_REGEX_US = re.compile(
     r"https?://api.squadcast.com/v2/incidents/api/\w+")
+SQUADCAST_WEBHOOK_REGEX_EU = re.compile(
+    r"https?://api.eu.squadcast.com/v2/incidents/api/\w+")
 VALID_ALERT_PREFIXES = (
-    SQUADCAST_WEBHOOK_REGEX,
+    SQUADCAST_WEBHOOK_REGEX_US,
+    SQUADCAST_WEBHOOK_REGEX_EU,
 )
 SERVICE_MAP = {
-    SQUADCAST_WEBHOOK_REGEX: squadcast.send_alert,
+    SQUADCAST_WEBHOOK_REGEX_US: squadcast.send_alert,
+    SQUADCAST_WEBHOOK_REGEX_EU: squadcast.send_alert,
 }
 
 
