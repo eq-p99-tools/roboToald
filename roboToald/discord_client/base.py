@@ -9,6 +9,7 @@ from roboToald import utils
 
 DISCORD_INTENTS = disnake.Intents.default()
 DISCORD_INTENTS.message_content = True
+DISCORD_INTENTS.guild_messages = True
 DISCORD_CLIENT = commands.Bot(
     command_prefix="!",
     test_guilds=config.TEST_GUILDS,
