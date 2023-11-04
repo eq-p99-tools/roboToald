@@ -1,0 +1,2 @@
+class QuotaExceeded(Exception):
+    pass

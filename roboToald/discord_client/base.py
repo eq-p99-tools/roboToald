@@ -10,10 +10,12 @@ from roboToald import utils
 DISCORD_INTENTS = disnake.Intents.default()
 DISCORD_INTENTS.message_content = True
 DISCORD_INTENTS.guild_messages = True
+DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.default()
+DISCORD_SYNC_FLAGS.sync_commands_debug = True
 DISCORD_CLIENT = commands.Bot(
     command_prefix="!",
     test_guilds=config.TEST_GUILDS,
-    sync_commands_debug=True,
+    command_sync_flags=DISCORD_SYNC_FLAGS,
     intents=DISCORD_INTENTS
 )
 
@@ -42,11 +44,6 @@ def find_match(channel, message):
             else:
                 print(f"Skipping alert #{alert.id}, already triggered for "
                       f"this URL")
-
-
-@DISCORD_CLIENT.event
-async def on_ready():
-    print(f'Logged in as: {DISCORD_CLIENT.user.name}')
 
 
 @DISCORD_CLIENT.event
