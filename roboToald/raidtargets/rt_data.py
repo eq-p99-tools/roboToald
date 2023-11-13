@@ -110,7 +110,8 @@ class RaidTargets:
             r.json(cls=JSONDecoder)  # implicitly loads the class data
             cls._names = [t.name for t in cls._targets]
         else:
-            print(f'Using cached rt_data from: {cls._time}')
+            # print(f'Using cached rt_data from: {cls._time}')
+            pass
 
 
 class RaidTarget:
