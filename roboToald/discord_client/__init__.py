@@ -14,7 +14,7 @@ async def announce_subscriptions_task():
     while True:
         start = time.time()
         try:
-            print(f"Running Subscription Notifier: {datetime.datetime.now()}")
+            # print(f"Running Subscription Notifier: {datetime.datetime.now()}")
             await commands.cmd_raidtarget.announce_subscriptions()
         except Exception as e:
             print(e)

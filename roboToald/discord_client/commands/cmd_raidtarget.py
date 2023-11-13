@@ -226,7 +226,8 @@ async def announce_subscriptions():
                     sub_model.delete_subscription(sub.user_id, target.name)
 
     await asyncio.gather(*messages)
-    print(f"Sent {len(messages)} subscription notifications.")
+    if messages:
+        print(f"Sent {len(messages)} subscription notifications.")
 
 
 BUTTON_LISTENERS = {
