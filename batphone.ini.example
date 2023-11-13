@@ -1,3 +1,12 @@
 [discord]
 token = <discord_token>
-test_guilds = 12345, 67890
+
+[raidtargets]
+endpoint = http://path/to/raidtarget.json
+
+[guild.12345]
+member_role = 77777
+
+[guild.67890]
+# Raid Subscription commands will be unusable.
+member_role = 0

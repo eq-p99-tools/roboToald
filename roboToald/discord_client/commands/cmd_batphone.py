@@ -5,23 +5,23 @@ import sqlalchemy.exc
 from roboToald import constants
 from roboToald.discord_client import base
 from roboToald import db
-from roboToald.db import models
+from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
 
 @base.DISCORD_CLIENT.slash_command(description="Batphone Registration")
-async def batphone(inter):
+async def batphone(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
 @batphone.sub_command()
-async def help(inter):
+async def help(inter: disnake.ApplicationCommandInteraction):
     await inter.send("A help message would go here if there was one lolol",
                      ephemeral=True)
 
 
 @batphone.sub_command()
-async def register(inter,
+async def register(inter: disnake.ApplicationCommandInteraction,
                    channel: disnake.TextChannel,
                    alert_url: str,
                    filter: str = commands.Param(default=None),
@@ -54,7 +54,7 @@ async def register(inter,
         filter_role_id = filter_role.id
 
     with db.get_session() as session:
-        alert = models.Alert(
+        alert = alert_model.Alert(
             guild_id=inter.guild.id,
             channel_id=channel.id,
             user_id=inter.user.id,
@@ -79,8 +79,9 @@ async def register(inter,
 
 
 @batphone.sub_command()
-async def list(inter):
-    alerts = models.get_alerts_for_user(inter.user.id, guild_id=inter.guild.id)
+async def list(inter: disnake.ApplicationCommandInteraction):
+    alerts = alert_model.get_alerts_for_user(
+        inter.user.id, guild_id=inter.guild.id)
 
     if not alerts:
         await inter.response.send_message(

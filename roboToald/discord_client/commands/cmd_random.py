@@ -1,12 +1,13 @@
 import random as pyrandom
 
+import disnake
 from disnake.ext import commands
 
 from roboToald.discord_client import base
 
 
 @base.DISCORD_CLIENT.slash_command(description="Random Number Generator")
-async def random(inter,
+async def random(inter: disnake.ApplicationCommandInteraction,
                  end: int = commands.Param(ge=1, default=100),
                  start: int = commands.Param(ge=0, default=0)):
     print("Received random number request, num1: %s; num2: %s" % (start, end))

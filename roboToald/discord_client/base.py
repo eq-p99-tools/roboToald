@@ -4,12 +4,13 @@ import disnake
 from disnake.ext import commands
 
 from roboToald import config
-from roboToald.db import models
+from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
 DISCORD_INTENTS = disnake.Intents.default()
 DISCORD_INTENTS.message_content = True
 DISCORD_INTENTS.guild_messages = True
+DISCORD_INTENTS.members = True
 DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.default()
 DISCORD_SYNC_FLAGS.sync_commands_debug = True
 DISCORD_CLIENT = commands.Bot(
@@ -22,7 +23,7 @@ DISCORD_CLIENT = commands.Bot(
 
 def find_match(channel, message):
     alerts_sent = set()
-    for alert in models.get_alerts_for_channel(channel):
+    for alert in alert_model.get_alerts_for_channel(channel):
         matches_filter = True
         if alert.alert_regex:
             matches_filter = re.match(
@@ -53,5 +54,5 @@ async def on_message(message):
         return
 
     # Search for matches to registered alerts
-    if message.channel.id in models.get_registered_channels():
+    if message.channel.id in alert_model.get_registered_channels():
         find_match(channel=message.channel.id, message=message)

@@ -7,7 +7,7 @@ import typing
 import disnake
 from disnake.ext import commands
 
-from roboToald.db import models
+from roboToald.db.models import timer as timer_model
 from roboToald.discord_client import base
 
 MIN_TIMER = 5
@@ -21,7 +21,7 @@ async def repeat_every_x_seconds(tid: str, name: str, timeout: int,
     next_time_int = first_time_int
     while run:
         await asyncio.sleep(next_time_int - time.time())
-        timer_obj = models.get_timer(timer_id=tid)
+        timer_obj = timer_model.get_timer(timer_id=tid)
         if repeat:
             next_time_int += timeout
             next_time = f"Next: <t:{next_time_int}:R>. "
@@ -47,18 +47,17 @@ async def timer(inter):
 
 @timer.sub_command(description="List Timers", name="list")
 async def list_timers(
-        inter,
+        inter: disnake.ApplicationCommandInteraction,
         all_users: bool = commands.Param(
             default=False, description="Show timers for all users?"),
         channel_only: bool = commands.Param(
             default=False, description="Show timers for this channel only?")):
-    inter: disnake.Interaction = inter
     if all_users:
-        timer_list = models.get_timers()
+        timer_list = timer_model.get_timers()
     elif channel_only:
-        timer_list = models.get_timers_for_channel(inter.channel_id)
+        timer_list = timer_model.get_timers_for_channel(inter.channel_id)
     else:
-        timer_list = models.get_timers_for_user(inter.user.id)
+        timer_list = timer_model.get_timers_for_user(inter.user.id)
     timer_embeds = []
     for ut in timer_list:
         timer_embeds.append(make_timer_embed(ut))
@@ -69,10 +68,10 @@ async def list_timers(
         )
     else:
         await inter.response.send_message(
-            f"No timers found.", ephemeral=True, delete_after=60)
+            "No timers found.", ephemeral=True, delete_after=60)
 
 
-def make_timer_embed(timer_obj: models.Timer) -> disnake.Embed:
+def make_timer_embed(timer_obj: timer_model.Timer) -> disnake.Embed:
     emb = disnake.Embed(
         title=timer_obj.name
     )
@@ -95,15 +94,18 @@ def make_timer_embed(timer_obj: models.Timer) -> disnake.Embed:
     return emb
 
 
-async def send_no_timer_message(inter: disnake.Interaction, timer_id: str):
+async def send_no_timer_message(
+        inter: disnake.ApplicationCommandInteraction,
+        timer_id: str):
     await inter.response.send_message(
         f"No such timer: *{timer_id}*.", ephemeral=True, delete_after=60)
 
 
 @timer.sub_command(description="Show Timer Info")
-async def show(inter, timer_id: str):
-    inter: disnake.Interaction = inter
-    user_timer = models.get_timer(timer_id)
+async def show(
+        inter: disnake.ApplicationCommandInteraction,
+        timer_id: str):
+    user_timer = timer_model.get_timer(timer_id)
     if timer:
         await inter.response.send_message(embed=make_timer_embed(user_timer))
     else:
@@ -111,7 +113,7 @@ async def show(inter, timer_id: str):
 
 
 @timer.sub_command(description="Start Timer")
-async def start(inter,
+async def start(inter: disnake.ApplicationCommandInteraction,
                 name: str,
                 hours: int = commands.Param(default=0),
                 minutes: int = commands.Param(default=0),
@@ -130,7 +132,6 @@ async def start(inter,
                                 "Can be negative."),
                 repeating: bool = commands.Param(
                     default=False, description="Repeat until stopped?")):
-    inter: disnake.Interaction = inter
     timer_seconds = hours * 60 * 60 + minutes * 60 + seconds
     delay_seconds = delay_hours * 60 * 60 + delay_minutes * 60 + delay_seconds
     if timer_seconds < MIN_TIMER:
@@ -143,7 +144,7 @@ async def start(inter,
         timer_id = secrets.token_hex(4)
 
     first_time_int = int(time.time() + timer_seconds + delay_seconds)
-    timer_db = models.Timer(
+    timer_db = timer_model.Timer(
         timer_id=timer_id,
         channel_id=inter.channel_id,
         user_id=inter.user.id,
@@ -169,9 +170,10 @@ async def start(inter,
 
 
 @timer.sub_command(description="Stop Timer")
-async def stop(inter, timer_id: str):
-    inter: disnake.Interaction = inter
-    user_timer = models.get_timer(timer_id)
+async def stop(
+        inter: disnake.ApplicationCommandInteraction,
+        timer_id: str):
+    user_timer = timer_model.get_timer(timer_id)
     if user_timer:
         user_timer.delete()
 
@@ -190,7 +192,7 @@ async def load_timers(store={}):
         return
     store['loaded'] = True
 
-    all_timers = models.get_timers()
+    all_timers = timer_model.get_timers()
     timer_messages = {}
     for timer_obj in all_timers:
         channel = await base.DISCORD_CLIENT.fetch_channel(timer_obj.channel_id)
