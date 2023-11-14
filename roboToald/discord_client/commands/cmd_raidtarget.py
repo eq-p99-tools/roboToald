@@ -207,8 +207,12 @@ async def announce_subscriptions():
                 time_left = datetime.timedelta(
                     seconds=int(time_left.total_seconds()))
                 message += (
-                    f" Window is {percent * 100:.2f}% complete with "
-                    f"{time_left} remaining.")
+                    f" Window is `{percent * 100:.2f}%` complete with "
+                    f"`{time_left}` remaining.")
+            next_window = target.get_next_window(active_window)
+            if next_window:
+                message += (
+                    f" Next window (estimated) <t:{next_window.start}:R>.")
             for sub in sub_map.get(target.name, []):
                 if is_user_authorized(
                         user_id=sub.user_id, guild_id=sub.guild_id,

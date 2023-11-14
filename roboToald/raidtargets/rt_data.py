@@ -156,6 +156,11 @@ class RaidTarget:
             now = time.time()
         return self.get_active_window(now).get_status()
 
+    def get_next_window(self, current: RaidWindow) -> RaidWindow:
+        for window in self.windows:
+            if window.extrapolation_count == (current.extrapolation_count + 1):
+                return window
+
     @classmethod
     def from_json(cls, **kwargs) -> RaidTarget:
         return cls(**kwargs)
