@@ -140,10 +140,15 @@ async def subscriptions(inter: disnake.ApplicationCommandInteraction):
 
 
 def make_subscription_embed(sub_obj: sub_model.Subscription) -> disnake.Embed:
-    return disnake.Embed(
-        title=sub_obj.target,
-        description=f"Expires <t:{sub_obj.expiry}:R>"
+    embed = disnake.Embed(
+        title=sub_obj.target
     )
+    embed.add_field("Expires", f"<t:{sub_obj.expiry}:R>")
+    if sub_obj.last_notified:
+        embed.add_field("Last Notification", f"<t:{sub_obj.last_notified}:R>")
+    else:
+        embed.add_field("Last Notification", "Never")
+    return embed
 
 
 def get_member_role(guild_id: int) -> int:
@@ -175,6 +180,27 @@ async def unsubscribe_listener(inter: disnake.MessageInteraction):
     await inter.response.defer()
 
 
+def make_announce_embed(
+        active_window: rt_data.RaidWindow,
+        now: float) -> disnake.Embed:
+    embed = disnake.Embed()
+    target = active_window.target
+    past_tense = active_window.get_status() == rt_data.RaidWindowStatus.NOW
+    embed.title = f":boom:** {target.name} **:boom:"
+    embed.add_field("Start", f"<t:{active_window.start}:R>")
+    embed.add_field("End", f"<t:{active_window.end}:R>")
+    if past_tense:
+        percent = active_window.get_percent_elapsed(now)
+        # time_left = active_window.end - now
+        # time_left = datetime.timedelta(seconds=int(time_left))
+        embed.add_field(
+            "% Complete", f"`{percent * 100:.2f}%`")
+    next_window = active_window.get_next()
+    if next_window:
+        embed.add_field("Next (estimated)", f"<t:{next_window.start}:R>")
+    return embed
+
+
 async def announce_subscriptions():
     # print("Running subscription notification task.")
     sub_model.clean_expired_subscriptions()
@@ -196,30 +222,14 @@ async def announce_subscriptions():
         if (status <= rt_data.RaidWindowStatus.SOON and
                 (active_window.get_time_until(now) <
                  datetime.timedelta(minutes=30))):
-            past_tense = status == rt_data.RaidWindowStatus.NOW
-            message = (
-                f":boom:**Target Notification**:boom: `{target.name}` "
-                f"enter{'ed' if past_tense else 'ing'} window "
-                f"<t:{active_window.start}:R>.")
-            if past_tense:
-                percent = active_window.get_percent_elapsed(now)
-                time_left = active_window.duration * (1 - percent)
-                time_left = datetime.timedelta(
-                    seconds=int(time_left.total_seconds()))
-                message += (
-                    f" Window is `{percent * 100:.2f}%` complete with "
-                    f"`{time_left}` remaining.")
-            next_window = target.get_next_window(active_window)
-            if next_window:
-                message += (
-                    f" Next window (estimated) <t:{next_window.start}:R>.")
+            embed = make_announce_embed(active_window, now)
             for sub in sub_map.get(target.name, []):
                 if is_user_authorized(
                         user_id=sub.user_id, guild_id=sub.guild_id,
                         role_id=get_member_role(sub.guild_id)):
                     user = base.DISCORD_CLIENT.get_user(sub.user_id)
                     if user:
-                        messages.append(user.send(message))
+                        messages.append(user.send(embed=embed))
                         sub_model.mark_subscription_sent(
                             sub.user_id, target.name)
                     else:

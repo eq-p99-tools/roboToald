@@ -36,6 +36,7 @@ class RaidWindow:
     start: int = None
     end: int = None
     extrapolation_count: int = None
+    _target: RaidTarget = None
 
     def __init__(self, start, end, extrapolationCount):
         self.start = int(start)
@@ -43,21 +44,29 @@ class RaidWindow:
         self.extrapolation_count = extrapolationCount
 
     @property
+    def target(self) -> RaidTarget:
+        return self._target
+
+    @target.setter
+    def target(self, target: RaidTarget):
+        self._target = target
+
+    @property
     def duration(self) -> datetime.timedelta:
         return datetime.timedelta(seconds=self.end - self.start)
 
-    def get_time_until(self, now: int = None) -> datetime.timedelta:
+    def get_time_until(self, now: float = None) -> datetime.timedelta:
         if not now:
             now = time.time()
         return datetime.timedelta(seconds=self.start - now)
 
-    def get_percent_elapsed(self, now: int = None) -> float:
+    def get_percent_elapsed(self, now: float = None) -> float:
         if not now:
             now = time.time()
         passed_time = datetime.timedelta(seconds=now - self.start)
         return passed_time.total_seconds() / self.duration.total_seconds()
 
-    def get_status(self, now: int = None) -> RaidWindowStatus:
+    def get_status(self, now: float = None) -> RaidWindowStatus:
         if not now:
             now = time.time()
         if now > self.end:
@@ -67,6 +76,12 @@ class RaidWindow:
         elif self.start < now + config.SOON_THRESHOLD:
             return RaidWindowStatus.SOON
         return RaidWindowStatus.LATER
+
+    def get_next(self) -> RaidWindow:
+        for window in self._target.windows:
+            if window.extrapolation_count == (self.extrapolation_count + 1):
+                window.target = self.target
+                return window
 
     @classmethod
     def from_json(cls, **kwargs) -> RaidWindow:
@@ -137,10 +152,10 @@ class RaidTarget:
             return True
         return False
 
-    def get_time_until(self, now: int = None) -> datetime.timedelta:
+    def get_time_until(self, now: float = None) -> datetime.timedelta:
         return self.get_active_window(now).get_time_until(now)
 
-    def get_active_window(self, now: int = None) -> RaidWindow:
+    def get_active_window(self, now: float = None) -> RaidWindow:
         if not now:
             now = time.time()
         sorted_windows = collections.OrderedDict()
@@ -149,9 +164,10 @@ class RaidTarget:
 
         for window in sorted_windows.values():
             if window.get_status() < RaidWindowStatus.PAST:
+                window.target = self
                 return window
 
-    def get_active_window_status(self, now: int = None) -> RaidWindowStatus:
+    def get_active_window_status(self, now: float = None) -> RaidWindowStatus:
         if not now:
             now = time.time()
         return self.get_active_window(now).get_status()
@@ -159,6 +175,7 @@ class RaidTarget:
     def get_next_window(self, current: RaidWindow) -> RaidWindow:
         for window in self.windows:
             if window.extrapolation_count == (current.extrapolation_count + 1):
+                window.target = self
                 return window
 
     @classmethod
