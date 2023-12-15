@@ -55,8 +55,7 @@ async def subscribe(
         lead_time_seconds: int = commands.Param(
             default=0,
             description="Number of seconds before the window to send the "
-                        "notification (additive with minutes, which defaults "
-                        "to 30)")
+                        "notification (additive with minutes, default 30)")
 ):
     lead_time = int(lead_time_minutes * 60 + lead_time_seconds)
     if is_user_authorized(
