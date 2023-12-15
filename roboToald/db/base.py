@@ -18,12 +18,14 @@ class MyBase:
                     self.__class__).filter_by(user_id=self.user_id).count()
                 if num_objects > 5:
                     raise exceptions.QuotaExceeded()
-            session.merge(self)
+            local_object = session.merge(self)
+            session.add(local_object)
             session.commit()
 
     def delete(self) -> None:
         with get_session() as session:
-            session.delete(self)
+            local_object = session.merge(self)
+            session.delete(local_object)
             session.commit()
 
 
