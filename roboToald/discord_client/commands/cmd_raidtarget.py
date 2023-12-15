@@ -49,13 +49,14 @@ async def subscribe(
             autocomplete=autocomplete_raid_target,
             description="The name of the raid target"),
         lead_time_minutes: int = commands.Param(
-            default=0,
+            default=30,
             description="Number of minutes before the window to send the "
                         "notification (additive with seconds)"),
         lead_time_seconds: int = commands.Param(
             default=0,
             description="Number of seconds before the window to send the "
-                        "notification (additive with minutes)")
+                        "notification (additive with minutes, which defaults "
+                        "to 30)")
 ):
     lead_time = int(lead_time_minutes * 60 + lead_time_seconds)
     if is_user_authorized(
