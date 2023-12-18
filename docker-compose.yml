@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  robotoald:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./alerts.db:/app/alerts.db
+      - ./batphone.ini:/app/batphone.ini
+    restart: always

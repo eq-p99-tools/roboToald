@@ -21,6 +21,6 @@ async def random(inter: disnake.ApplicationCommandInteraction,
 
     result = pyrandom.randint(start, end)
     await inter.response.send_message(
-        f"\*\*A Magic Die is rolled by {inter.user.display_name.split()[0]}.\n"
-        f"\*\*It could have been any number from `{start}` to `{end}`, "
+        f"\\*\\*A Magic Die is rolled by {inter.user.display_name.split()[0]}."
+        f"\n\\*\\*It could have been any number from `{start}` to `{end}`, "
         f"but this time it turned up a `{result}`.")
