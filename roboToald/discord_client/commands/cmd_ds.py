@@ -183,8 +183,10 @@ async def status(inter: disnake.ApplicationCommandInteraction):
     if active_events:
         message += "Players present: "
     for event in active_events:
-        time_spent = (now - event.time).total_seconds() / 60
-        message += f"<@{event.user_id}> ({round(time_spent)} minutes), "
+        time_spent = round((now - event.time).total_seconds())
+        display_time = "{:0>8}".format(
+            str(datetime.timedelta(seconds=time_spent)))
+        message += f"<@{event.user_id}> ({display_time}), "
     message = message.rstrip(", ")
 
     await inter.send(
@@ -224,11 +226,15 @@ async def points(
             spent = 0
             for se in spent_events:
                 spent += se.points
-            member_totals.append((member.points - spent, member.user_id))
+            member_totals.append(
+                (member.points - spent, spent, member.user_id))
 
         sorted_totals = sorted(member_totals, key=lambda tup: tup[0])
-        for total_points, user_id in reversed(sorted_totals):
-            message += f"<@{user_id}>: {total_points}\n"
+        for current_points, spent_points, user_id in reversed(sorted_totals):
+            message += (
+                f"<@{user_id}>: {current_points} "
+                f"(Earned {current_points + spent_points},"
+                f" Spent {spent_points})\n")
         await inter.send(
             message, allowed_mentions=disnake.AllowedMentions(users=False))
         return
