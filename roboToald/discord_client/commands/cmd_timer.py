@@ -7,9 +7,11 @@ import typing
 import disnake
 from disnake.ext import commands
 
+from roboToald import config
 from roboToald.db.models import timer as timer_model
 from roboToald.discord_client import base
 
+TIMER_GUILDS = config.guilds_for_command('timer')
 MIN_TIMER = 5
 TIMERS = {}
 
@@ -40,7 +42,9 @@ async def repeat_every_x_seconds(tid: str, name: str, timeout: int,
         pass
 
 
-@base.DISCORD_CLIENT.slash_command(description="Timer Registration")
+@base.DISCORD_CLIENT.slash_command(
+    description="Timer Registration",
+    guild_ids=TIMER_GUILDS)
 async def timer(inter):
     pass
 

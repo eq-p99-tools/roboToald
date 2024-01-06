@@ -3,7 +3,6 @@ import re
 import disnake
 from disnake.ext import commands
 
-from roboToald import config
 from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
@@ -15,7 +14,6 @@ DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.default()
 DISCORD_SYNC_FLAGS.sync_commands_debug = True
 DISCORD_CLIENT = commands.Bot(
     command_prefix="!",
-    test_guilds=config.TEST_GUILDS,
     command_sync_flags=DISCORD_SYNC_FLAGS,
     intents=DISCORD_INTENTS
 )

@@ -10,10 +10,13 @@ from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
 
+RAIDTARGET_GUILDS = config.guilds_for_command('raidtarget')
 MAX_AC_RESULTS = 25
 
 
-@base.DISCORD_CLIENT.slash_command(description="Raid Target commands")
+@base.DISCORD_CLIENT.slash_command(
+    description="Raid Target commands",
+    guild_ids=RAIDTARGET_GUILDS)
 async def raidtarget(inter: disnake.ApplicationCommandInteraction):
     pass
 

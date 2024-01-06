@@ -3,10 +3,15 @@ import random as pyrandom
 import disnake
 from disnake.ext import commands
 
+from roboToald import config
 from roboToald.discord_client import base
 
+RANDOM_GUILDS = config.guilds_for_command('random')
 
-@base.DISCORD_CLIENT.slash_command(description="Random Number Generator")
+
+@base.DISCORD_CLIENT.slash_command(
+    description="Random Number Generator",
+    guild_ids=RANDOM_GUILDS)
 async def random(inter: disnake.ApplicationCommandInteraction,
                  end: int = commands.Param(ge=1, default=100),
                  start: int = commands.Param(ge=0, default=0)):

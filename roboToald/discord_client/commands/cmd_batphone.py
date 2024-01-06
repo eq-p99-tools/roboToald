@@ -2,14 +2,19 @@ import disnake
 from disnake.ext import commands
 import sqlalchemy.exc
 
+from roboToald import config
 from roboToald import constants
 from roboToald.discord_client import base
 from roboToald import db
 from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
+BATPHONE_GUILDS = config.guilds_for_command('batphone')
 
-@base.DISCORD_CLIENT.slash_command(description="Batphone Registration")
+
+@base.DISCORD_CLIENT.slash_command(
+    description="Batphone Registration",
+    guild_ids=BATPHONE_GUILDS)
 async def batphone(inter: disnake.ApplicationCommandInteraction):
     pass
 

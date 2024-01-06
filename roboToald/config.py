@@ -1,4 +1,5 @@
 import configparser
+from typing import List
 
 CONFIG_FILENAME = 'batphone.ini'
 
@@ -19,7 +20,26 @@ SOON_THRESHOLD = CONF.getint(
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
     GUILD_SETTINGS[guild] = {
-        'member_role': CONF.getint(f"guild.{guild}", 'member_role', fallback=0)
+        'member_role': CONF.getint(
+            f"guild.{guild}", 'member_role', fallback=0),
+        'enable_random': CONF.getboolean(
+            f"guild.{guild}", 'enable_random', fallback=True),
+        'enable_timer': CONF.getboolean(
+            f"guild.{guild}", 'enable_timer', fallback=True),
+        'enable_batphone': CONF.getboolean(
+            f"guild.{guild}", 'enable_batphone', fallback=False),
+        'enable_raidtarget': CONF.getboolean(
+            f"guild.{guild}", 'enable_raidtarget', fallback=False),
+        'enable_ds': CONF.getboolean(
+            f"guild.{guild}", 'enable_ds', fallback=False),
     }
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
+
+
+def guilds_for_command(command_name: str) -> List[int]:
+    guild_list = []
+    for guild_entry in GUILD_SETTINGS:
+        if GUILD_SETTINGS[guild_entry].get(f'enable_{command_name}', False):
+            guild_list.append(guild_entry)
+    return guild_list
