@@ -217,8 +217,18 @@ async def points(
     if show_all:
         message = "Point Balances:\n"
         earned_points = points_model.get_points_earned(inter.guild_id)
+        member_totals = []
         for member in earned_points:
-            message += f"<@{member.user_id}>: {member.points}\n"
+            spent_events = points_model.get_points_spent_by_member(
+                member.user_id, inter.guild_id)
+            spent = 0
+            for se in spent_events:
+                spent += se.points
+            member_totals.append((member.points - spent, member.user_id))
+
+        sorted_totals = sorted(member_totals, key=lambda tup: tup[0])
+        for total_points, user_id in reversed(sorted_totals):
+            message += f"<@{user_id}>: {total_points}\n"
         await inter.send(
             message, allowed_mentions=disnake.AllowedMentions(users=False))
         return
