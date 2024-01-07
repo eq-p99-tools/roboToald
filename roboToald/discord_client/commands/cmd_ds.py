@@ -1,11 +1,3 @@
-"""
-/dscontest on/off - Toggle the status of the DS camp from contested to uncontested
-/dsstart $playername - This player has begun a DS camp, start tracking SKP
-/dsend  $playername - This player has ended a DS camp
-/dslist - Show current players on the DS camp
-/dspointlist - Show current players SKP balance
-/dsbid  $playername $amount - This player has purchased an urn, deduct the value from their wallet
-"""
 import datetime
 import time
 from typing import Tuple
@@ -109,8 +101,6 @@ def close_event_and_record_points(
     windows = points_model.get_competitive_windows(
         start_event.guild_id, start_time, stop_time)
     for start_window, stop_window in windows:
-        delta = datetime.timedelta(seconds=0)
-
         # If the contested time started before this session, what was overlap?
         if start_window < start_time and stop_window < stop_time:
             delta = stop_window - start_time
@@ -284,7 +274,7 @@ async def pop(
 async def urn(
         inter: disnake.ApplicationCommandInteraction,
         player: disnake.Member = commands.Param(
-            description="Member for balance check (default: current member)."),
+            description="Member who won the urn."),
         price: int = commands.Param(
             gt=0,
             description="Number of SKP spent."),
