@@ -1,6 +1,6 @@
 import datetime
 import time
-from typing import Tuple
+from typing import Tuple, Dict
 
 import disnake
 from disnake.ext import commands
@@ -82,44 +82,86 @@ async def start(
                      allowed_mentions=disnake.AllowedMentions(users=False))
 
 
+def calculate_points(
+        start_event: points_model.PointsAudit,
+        stop_time: datetime.datetime) -> Tuple[int, int, Dict[int, int]]:
+    start_time = start_event.time.astimezone()
+    time_at_camp = stop_time.astimezone() - start_time
+    standard_minutes = round(time_at_camp.total_seconds() / 60)
+
+    contested_windows = points_model.get_competitive_windows(
+        start_event.guild_id, start_time, stop_time)
+
+    # Normalize windows to start_time = 0
+    normalized_windows = []
+    for start_window, stop_window in contested_windows:
+        norm_start = round((start_window - start_time).total_seconds() / 60)
+        norm_stop = round((stop_window - start_time).total_seconds() / 60)
+        normalized_windows.append((
+            max(0, norm_start),
+            min(standard_minutes, norm_stop)
+        ))
+
+    # Normalize offhours to start_time = 0
+    # This is likely not the most efficient way to do this (I'm VERY tired)
+    today_midnight_eastern = start_time.replace(
+        hour=0, minute=0, second=0, microsecond=0,
+        tzinfo=constants.OFFHOURS_ZONE
+        # Subtract 1 day just to be safe, we will add days later if needed
+    ) - datetime.timedelta(days=1)
+
+    # Find the offhours start and end time
+    offhours_start = today_midnight_eastern + datetime.timedelta(
+        minutes=constants.OFFHOURS_START)
+    offhours_end = today_midnight_eastern + datetime.timedelta(
+        minutes=constants.OFFHOURS_END)
+
+    # To be the current window, the end time has to be AFTER this start time
+    while offhours_end < start_time:
+        offhours_end = offhours_end + datetime.timedelta(days=1)
+        offhours_start = offhours_start + datetime.timedelta(days=1)
+
+    # Now normalize the same way we did for the windows
+    norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
+    norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
+
+    # Calculate each minute's value and add it
+    points_earned_by_rate = {}
+    for minute in range(standard_minutes):
+        # Start with a standard value for one minute of time
+        point_value = constants.POINTS_PER_MINUTE
+
+        # Check if contested
+        for c_start_window, c_stop_window in normalized_windows:
+            if c_start_window <= minute <= c_stop_window:
+                point_value *= constants.CONTESTED_MULTIPLIER
+                break
+
+        # Check if offhours
+        if norm_oh_start <= minute <= norm_oh_stop:
+            point_value *= constants.OFFHOURS_MULTIPLIER
+
+        points_earned_by_rate[point_value] = (
+                1 + points_earned_by_rate.get(point_value, 0)
+        )
+
+    total = 0
+    for pv, pn in points_earned_by_rate.items():
+        total += pv * pn
+    return total, standard_minutes, points_earned_by_rate
+
+
 def close_event_and_record_points(
         start_event: points_model.PointsAudit,
-        stop_time: datetime.datetime) -> Tuple[int, int, int]:
-    start_time = start_event.time
+        stop_time: datetime.datetime) -> Tuple[int, int, Dict[int, int]]:
+    total_points, standard_minutes, points_by_rate = calculate_points(
+        start_event, stop_time)
 
     start_event.active = False
     stop_event = points_model.PointsAudit(
         user_id=start_event.user_id, guild_id=start_event.guild_id,
         event=constants.Event.OUT, time=stop_time, active=False,
         start_id=start_event.id)
-
-    # Calculate points!
-    time_at_camp = stop_time - start_time
-    standard_minutes = round(time_at_camp.total_seconds() / 60)
-
-    contested_minutes = 0
-    windows = points_model.get_competitive_windows(
-        start_event.guild_id, start_time, stop_time)
-    for start_window, stop_window in windows:
-        # If the contested time started before this session, what was overlap?
-        if start_window < start_time and stop_window < stop_time:
-            delta = stop_window - start_time
-
-        # Was the contested time entirely within this session?
-        elif start_window > start_time and stop_window < stop_time:
-            delta = stop_window - start_window
-
-        # If the contested time ended after this session, what was overlap?
-        elif start_window > start_time and stop_window > stop_time:
-            delta = stop_time - start_window
-
-        # Window is outside our time range entirely
-        else:
-            continue
-
-        contested_minutes += round(delta.total_seconds() / 60)
-
-    total_points = standard_minutes + contested_minutes * 2
     points_earned = points_model.PointsEarned(
         user_id=start_event.user_id, guild_id=start_event.guild_id,
         points=total_points, time=stop_time)
@@ -127,7 +169,7 @@ def close_event_and_record_points(
     points_earned.store()
     points_model.close_event(start_event, stop_event)
 
-    return total_points, standard_minutes, contested_minutes
+    return total_points, standard_minutes, points_by_rate
 
 
 @ds.sub_command(description="Stop recording time in camp.")
@@ -149,7 +191,7 @@ async def stop(
         return
     stop_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
 
-    total_points, standard_minutes, contested_minutes = (
+    total_points, standard_minutes, points_by_rate = (
         close_event_and_record_points(last, stop_time))
 
     discord_exit_time = int(time.mktime(stop_time.timetuple()))
@@ -157,7 +199,7 @@ async def stop(
         f"<@{player.id}> exited camp at <t:{discord_exit_time}>. "
         f"Points earned: {total_points} "
         f"(total minutes: {standard_minutes},"
-        f" contested minutes: {contested_minutes}).",
+        f" minutes by point rate: {points_by_rate}).",
         allowed_mentions=disnake.AllowedMentions(users=False))
 
 
@@ -259,12 +301,12 @@ async def pop(
                 time=stop_time, active=False, start_id=event.id)
             points_model.close_event(event, stop_event)
             continue
-        total_points, standard_minutes, contested_minutes = (
+        total_points, standard_minutes, points_by_rate = (
             close_event_and_record_points(event, stop_time))
         message += (f"<@{event.user_id}> "
                     f"Points earned: {total_points} "
                     f"(total minutes: {standard_minutes},"
-                    f" contested minutes: {contested_minutes}).\n")
+                    f" minutes by point rate: {points_by_rate}).\n")
 
     await inter.send(
         message, allowed_mentions=disnake.AllowedMentions(users=False))

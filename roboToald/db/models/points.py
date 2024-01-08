@@ -95,7 +95,8 @@ def get_competitive_windows(
             continue
     windows = []
     for start, end in event_pairs.items():
-        windows.append((start, end))
+        windows.append((start.astimezone(),
+                        end.replace(tzinfo=start.astimezone().tzinfo)))
 
     return windows
 
