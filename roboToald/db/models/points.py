@@ -37,6 +37,13 @@ def get_event(event_id: int) -> PointsAudit:
     return event
 
 
+def get_events_for_member(user_id: int, guild_id: int) -> List[PointsAudit]:
+    with base.get_session() as session:
+        events = session.query(PointsAudit).filter_by(
+            user_id=user_id, guild_id=guild_id).all()
+    return events
+
+
 def get_last_event(user_id: int, guild_id: int) -> PointsAudit:
     # Check for latest event for user+guild
     with base.get_session() as session:
@@ -58,6 +65,29 @@ def get_active_events(
     return active_events
 
 
+def get_event_pairs(events: List[PointsAudit]
+                    ) -> Dict[datetime.datetime, datetime.datetime]:
+    event_pairs: Dict[datetime.datetime, datetime.datetime] = {}
+    for event in events:
+        if event.time in event_pairs.keys() or event.time in event_pairs.values():
+            continue
+        if event.active:
+            # Event with no pair means ongoing
+            event_pairs[event.time] = datetime.datetime.max
+            continue
+        if event.start_id:
+            matched_event = get_event(event.start_id)
+            event_pairs[matched_event.time] = event.time
+            continue
+        else:
+            with base.get_session() as session:
+                matched_event = session.query(PointsAudit).filter_by(
+                    start_id=event.id).one_or_none()
+            event_pairs[event.time] = matched_event.time
+            continue
+    return event_pairs
+
+
 def get_competitive_windows(
         guild_id: int, start_time: datetime.datetime,
         end_time: datetime.datetime
@@ -75,24 +105,8 @@ def get_competitive_windows(
             user_id=0, guild_id=guild_id, active=True)
         active_events.extend(events_query.all())
 
-    event_pairs: Dict[datetime.datetime, datetime.datetime] = {}
-    for event in active_events:
-        if event.time in event_pairs.keys() or event.time in event_pairs.values():
-            continue
-        if event.active:
-            # Event with no pair means ongoing
-            event_pairs[event.time] = datetime.datetime.max
-            continue
-        if event.start_id:
-            matched_event = get_event(event.start_id)
-            event_pairs[matched_event.time] = event.time
-            continue
-        else:
-            with base.get_session() as session:
-                matched_event = session.query(PointsAudit).filter_by(
-                    start_id=event.id).one_or_none()
-            event_pairs[event.time] = matched_event.time
-            continue
+    event_pairs = get_event_pairs(active_events)
+
     windows = []
     for start, end in event_pairs.items():
         windows.append((start.astimezone(),

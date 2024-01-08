@@ -10,7 +10,7 @@ CLEAR_EMOJI = "⏱"
 
 
 class Event(enum.Enum):
-    IN = 'IN',
+    IN = 'IN'
     OUT = 'OUT'
     COMP_START = "COMP_START"
     COMP_END = "COMP_END"

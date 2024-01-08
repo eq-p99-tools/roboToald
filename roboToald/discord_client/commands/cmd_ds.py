@@ -335,3 +335,29 @@ async def urn(
         f"<@{player.id}> won an urn for {price} SKP! "
         f"They have {earned - spent} SKP remaining.",
         allowed_mentions=disnake.AllowedMentions(users=False))
+
+
+@ds.sub_command(description="Show audit logs for a member's DS events.")
+async def audit(
+        inter: disnake.ApplicationCommandInteraction,
+        player: disnake.Member = commands.Param(
+            description="Member to audit.")):
+    events = points_model.get_events_for_member(player.id, inter.guild_id)
+    if events:
+        message = f"Audit events for <@{player.id}>:\n"
+    else:
+        message = f"No events found for <@{player.id}>."
+
+    # Pair up events
+    event_pairs = points_model.get_event_pairs(events)
+
+    for event_start, event_end in event_pairs.items():
+        minutes = round((event_end - event_start).total_seconds() / 60)
+        message += (
+            f"<t:{int(event_start.timestamp())}> -> "
+            f"<t:{int(event_end.timestamp())}> ({minutes} minutes)\n"
+        )
+
+    await inter.send(
+        message,
+        allowed_mentions=disnake.AllowedMentions(users=False))
