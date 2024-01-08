@@ -106,15 +106,15 @@ def calculate_points(
     # This is likely not the most efficient way to do this (I'm VERY tired)
     today_midnight_eastern = start_time.replace(
         hour=0, minute=0, second=0, microsecond=0,
-        tzinfo=constants.OFFHOURS_ZONE
+        tzinfo=config.OFFHOURS_ZONE
         # Subtract 1 day just to be safe, we will add days later if needed
     ) - datetime.timedelta(days=1)
 
     # Find the offhours start and end time
     offhours_start = today_midnight_eastern + datetime.timedelta(
-        minutes=constants.OFFHOURS_START)
+        minutes=config.OFFHOURS_START)
     offhours_end = today_midnight_eastern + datetime.timedelta(
-        minutes=constants.OFFHOURS_END)
+        minutes=config.OFFHOURS_END)
 
     # To be the current window, the end time has to be AFTER this start time
     while offhours_end < start_time:
@@ -129,17 +129,17 @@ def calculate_points(
     points_earned_by_rate = {}
     for minute in range(standard_minutes):
         # Start with a standard value for one minute of time
-        point_value = constants.POINTS_PER_MINUTE
+        point_value = config.POINTS_PER_MINUTE
 
         # Check if contested
         for c_start_window, c_stop_window in normalized_windows:
             if c_start_window <= minute <= c_stop_window:
-                point_value *= constants.CONTESTED_MULTIPLIER
+                point_value *= config.CONTESTED_MULTIPLIER
                 break
 
         # Check if offhours
         if norm_oh_start <= minute <= norm_oh_stop:
-            point_value *= constants.OFFHOURS_MULTIPLIER
+            point_value *= config.OFFHOURS_MULTIPLIER
 
         points_earned_by_rate[point_value] = (
                 1 + points_earned_by_rate.get(point_value, 0)

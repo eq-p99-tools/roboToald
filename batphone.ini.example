@@ -4,9 +4,29 @@ token = <discord_token>
 [raidtargets]
 endpoint = http://path/to/raidtarget.json
 
+[ds]
+points_per_minute = 1
+offhours_multiplier = 2
+contested_multiplier = 3
+
+# Offhours times are "minutes from midnight" in ET
+offhours_start = 0
+offhours_end = 360
+offhours_zone = America/New_York
+
 [guild.12345]
+# Member Role is necessary for raidtarget commands to work
 member_role = 77777
+
+# Raidtarget, batphone, and DS commands default to false, but can be enabled:
+enable_raidtarget = true
+enable_batphone = true
+enable_ds = true
+
+# Timer and Random functions default to true, but can be disabled:
+enable_timer = false
+enable_random = false
 
 [guild.67890]
 # Raid Subscription commands will be unusable.
-member_role = 0
+enable_raidtarget = false
