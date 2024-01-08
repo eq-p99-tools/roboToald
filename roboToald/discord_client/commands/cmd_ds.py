@@ -352,6 +352,8 @@ async def audit(
     event_pairs = points_model.get_event_pairs(events)
 
     for event_start, event_end in event_pairs.items():
+        if event_end == datetime.datetime.max:
+            event_end = datetime.datetime.now()
         minutes = round((event_end - event_start).total_seconds() / 60)
         message += (
             f"<t:{int(event_start.timestamp())}> -> "
