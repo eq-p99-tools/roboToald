@@ -382,9 +382,7 @@ async def urn(
             ge=0,
             description="Backdate purchase by <X> minutes.")
 ):
-    user_points_earned = points_model.get_points_earned_by_member(
-        player.id, inter.guild_id)
-    user_points_spent = points_model.get_points_spent_by_member(
+    user_points_earned, user_points_spent = get_point_data_for_member(
         player.id, inter.guild_id)
     if user_points_earned - user_points_spent < price:
         await inter.send("Not enough points for purchase.", ephemeral=True)
