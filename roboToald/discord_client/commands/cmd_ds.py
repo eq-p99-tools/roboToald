@@ -336,7 +336,8 @@ async def pop(
         return
 
     for guild_event in guild_events:
-        await guild_event.cancel()
+        if guild_event.name == "Drusella Sathir Spawn":
+            await guild_event.cancel()
 
     event_channel_id = config.GUILD_SETTINGS.get(
         inter.guild_id, {}).get('ds_event_channel')
