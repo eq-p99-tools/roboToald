@@ -245,8 +245,8 @@ async def points(
             default=None,
             description="Member for balance check (default: current member)."),
         show_all: bool = commands.Param(
-            default=False,
-            description="Show points for ALL users.")
+            default=True,
+            description="Show points for ALL users (default: true).")
 ):
     if show_all:
         message = "Point Balances:\n"
