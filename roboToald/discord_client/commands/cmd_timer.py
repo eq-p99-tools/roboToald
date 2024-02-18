@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from dateutil import parser
 import secrets
 import time
 import typing
@@ -8,6 +9,7 @@ import disnake
 from disnake.ext import commands
 
 from roboToald import config
+from roboToald import constants
 from roboToald.db.models import timer as timer_model
 from roboToald.discord_client import base
 
@@ -135,14 +137,50 @@ async def start(inter: disnake.ApplicationCommandInteraction,
                     description="Seconds to delay before starting the timer. "
                                 "Can be negative."),
                 repeating: bool = commands.Param(
-                    default=False, description="Repeat until stopped?")):
+                    default=False, description="Repeat until stopped?"),
+                timestamp: str = commands.Param(
+                    default=None,
+                    description="Timestamp to use for the timer "
+                                "(will override delays). Assumes ET.")):
     timer_seconds = hours * 60 * 60 + minutes * 60 + seconds
-    delay_seconds = delay_hours * 60 * 60 + delay_minutes * 60 + delay_seconds
+    if timestamp:
+        # Get a datetime object with Eastern TZ
+        try:
+            parsed_datetime = parser.parse(
+                timestamp, tzinfos=constants.TIMEZONES)
+        except parser.ParserError:
+            await inter.response.send_message(
+                "Sorry, I couldn't parse that timestamp.",
+                ephemeral=True, delete_after=60)
+            return
+        if not parsed_datetime.tzname():
+            parsed_datetime = parsed_datetime.replace(tzinfo=constants.TIMEZONES['ET'])
+
+        # Make it be TODAY
+        now = datetime.datetime.now(tz=constants.TIMEZONES['ET'])
+        adjusted_datetime = parsed_datetime.replace(
+            year=now.year, month=now.month, day=now.day)
+
+        # But we want it to be in the past
+        while adjusted_datetime > now:
+            adjusted_datetime = adjusted_datetime - datetime.timedelta(days=1)
+
+        delay_seconds = int((adjusted_datetime - now).total_seconds())
+    else:
+        delay_seconds = (delay_hours * 60 * 60 +
+                         delay_minutes * 60 +
+                         delay_seconds)
+
     if timer_seconds < MIN_TIMER:
         await inter.response.send_message(
             f"Sorry, timers must be at least {MIN_TIMER} seconds.",
             ephemeral=True, delete_after=60)
         return
+
+    # If delay is negative, make sure it is less than one timer increment
+    if delay_seconds < 0:
+        delay_seconds = abs(delay_seconds) % timer_seconds * -1
+
     timer_id = secrets.token_hex(4)
     while timer_id in TIMERS:
         timer_id = secrets.token_hex(4)
