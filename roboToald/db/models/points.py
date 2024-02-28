@@ -96,8 +96,8 @@ def get_competitive_windows(
         # Get the windows that started or ended within our time period
         events_query = session.query(PointsAudit)
         events_query = events_query.filter_by(user_id=0, guild_id=guild_id)
-        events_query = events_query.filter(PointsAudit.time > start_time)
-        events_query = events_query.filter(PointsAudit.time < end_time)
+        events_query = events_query.filter(PointsAudit.time >= start_time)
+        events_query = events_query.filter(PointsAudit.time <= end_time)
         active_events: List[PointsAudit] = events_query.all()
         # Add in the currently active window no matter when it started
         events_query = session.query(PointsAudit)
