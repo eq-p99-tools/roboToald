@@ -140,7 +140,7 @@ async def start(inter: disnake.ApplicationCommandInteraction,
                     description="Seconds to delay before starting the timer. "
                                 "Can be negative."),
                 repeating: bool = commands.Param(
-                    default=False, description="Repeat until stopped?"),
+                    default=True, description="Repeat until stopped?"),
                 timestamp: str = commands.Param(
                     default=None,
                     description="Timestamp to use for the timer "
