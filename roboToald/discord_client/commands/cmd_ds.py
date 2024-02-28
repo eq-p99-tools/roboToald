@@ -74,6 +74,10 @@ async def start(
         await inter.send("Player already active at camp.", ephemeral=True)
         return
     start_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
+    if start_time < last.time:
+        await inter.send("Cannot backdate prior to the player's latest entry.",
+                         ephemeral=True)
+        return
     start_event = points_model.PointsAudit(
         user_id=player.id, guild_id=inter.guild_id, event=constants.Event.IN,
         time=start_time, active=True)
