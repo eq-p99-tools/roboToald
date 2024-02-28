@@ -56,21 +56,24 @@ async def list_timers(
         inter: disnake.ApplicationCommandInteraction,
         all_users: bool = commands.Param(
             default=False, description="Show timers for all users?"),
-        channel_only: bool = commands.Param(
-            default=False, description="Show timers for this channel only?")):
-    if all_users:
+        all_channels: bool = commands.Param(
+            default=False, description="Show timers for all channels?")):
+    if all_users and all_channels:
         timer_list = timer_model.get_timers()
-    elif channel_only:
+    elif all_users:
         timer_list = timer_model.get_timers_for_channel(inter.channel_id)
-    else:
+    elif all_channels:
         timer_list = timer_model.get_timers_for_user(inter.user.id)
+    else:
+        timer_list = timer_model.get_timers_for_user_in_channel(
+            inter.user.id, inter.channel_id)
     timer_embeds = []
     for ut in timer_list:
         timer_embeds.append(make_timer_embed(ut))
 
     if timer_embeds:
         await inter.response.send_message(
-            embeds=timer_embeds
+            embeds=timer_embeds, ephemeral=True
         )
     else:
         await inter.response.send_message(

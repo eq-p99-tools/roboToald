@@ -42,21 +42,33 @@ def get_timer(timer_id: str) -> Timer:
 
 
 def get_timers() -> List[Timer]:
+    """Return timers for all users in all channels"""
     with base.get_session() as session:
         timers = session.query(Timer).all()
     return timers
 
 
-def get_timers_for_channel(channel: int) -> List[Timer]:
+def get_timers_for_channel(channel_id: int) -> List[Timer]:
+    """Return timers for all users in one channel"""
     with base.get_session() as session:
-        timers = session.query(Timer).filter_by(channel_id=channel).all()
+        timers = session.query(Timer).filter_by(channel_id=channel_id).all()
     return timers
 
 
 def get_timers_for_user(user_id: int, guild_id=None) -> List[Timer]:
+    """Return timers for one user in all channels"""
     with base.get_session() as session:
         timers = session.query(Timer).filter_by(user_id=user_id)
         if guild_id:
             timers = timers.filter_by(guild_id=guild_id)
         timers = timers.order_by(Timer.channel_id).all()
+    return timers
+
+
+def get_timers_for_user_in_channel(user_id: int,
+                                   channel_id: int) -> List[Timer]:
+    """Return timers for one user in one channel"""
+    with base.get_session() as session:
+        timers = session.query(Timer).filter_by(user_id=user_id)
+        timers = timers.filter_by(channel_id=channel_id).all()
     return timers
