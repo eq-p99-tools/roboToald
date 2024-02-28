@@ -138,13 +138,18 @@ class PointsEarned(base.Base, base.MyBase):
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
     points = sqlalchemy.Column(sqlalchemy.Integer)
     time = sqlalchemy.Column(sqlalchemy.DateTime)
+    notes = sqlalchemy.Column(sqlalchemy.Text)
+    adjustor = sqlalchemy.Column(sqlalchemy.Integer)
 
     def __init__(self, user_id: int, guild_id: int, points: int,
-                 time: datetime.datetime):
+                 time: datetime.datetime, notes: str = None,
+                 adjustor: int = None):
         self.user_id = user_id
         self.guild_id = guild_id
         self.points = points
         self.time = time
+        self.notes = notes
+        self.adjustor = adjustor
 
 
 def get_points_earned(guild_id: int) -> List[sqlalchemy.engine.row.Row]:

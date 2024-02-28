@@ -1,3 +1,4 @@
+import collections
 import datetime
 import time
 from typing import Tuple, Dict
@@ -400,14 +401,46 @@ async def urn(
         allowed_mentions=disnake.AllowedMentions(users=False))
 
 
+@ds.sub_command(description="Adjust points for a member.")
+async def adjust(
+        inter: disnake.ApplicationCommandInteraction,
+        player: disnake.Member = commands.Param(
+            description="Member to adjust points."),
+        points: int = commands.Param(
+            default=0,
+            description="Number of points to adjust (relative +/-)."),
+        notes: str = commands.Param(
+            default=None,
+            description="Optional notes / reason for adjustment.")):
+    points_earned = points_model.PointsEarned(
+        user_id=player.id, guild_id=inter.guild_id,
+        points=points, time=datetime.datetime.now(),
+        notes=notes, adjustor=inter.user.id)
+
+    points_earned.store()
+    message = f"Adjustment applied: {points} SKP for <@{player.id}>"
+    if notes:
+        message += f" with notes: `{notes}`"
+    message += "."
+    await inter.send(
+        message, allowed_mentions=disnake.AllowedMentions(users=False))
+
+
 @ds.sub_command(description="Show audit logs for a member's DS events.")
 async def audit(
         inter: disnake.ApplicationCommandInteraction,
         player: disnake.Member = commands.Param(
             description="Member to audit.")):
+    # Fetch all the audit events for the player
     events = points_model.get_events_for_member(player.id, inter.guild_id)
-    if events:
-        message = f"Audit events for <@{player.id}>:\n"
+    # Also fetch Earned/Spent entries
+    points_earned = points_model.get_points_earned_by_member(
+        player.id, inter.guild_id)
+    points_spent = points_model.get_points_spent_by_member(
+        player.id, inter.guild_id)
+
+    if events or points_earned or points_spent:
+        message = f"Audit events for <@{player.id}>:\n\n"
     else:
         message = f"No events found for <@{player.id}>."
 
@@ -415,6 +448,7 @@ async def audit(
     event_pairs = points_model.get_event_pairs(events)
 
     for event_start, event_end in event_pairs.items():
+        # Add each audit event to the response
         if event_end == datetime.datetime.max:
             event_end = datetime.datetime.now()
         minutes = round((event_end - event_start).total_seconds() / 60)
@@ -422,6 +456,30 @@ async def audit(
             f"<t:{int(event_start.timestamp())}> -> "
             f"<t:{int(event_end.timestamp())}> ({minutes} minutes)\n"
         )
+
+    earned_spent_messages = collections.OrderedDict()
+    for earned in points_earned:
+        # Add all the EARNED events to the ordered dict by time
+        em = f"**Earned**: {earned.points} at <t:{int(earned.time.timestamp())}>"
+        if earned.adjustor:
+            em += f" (by <@{earned.adjustor}>)"
+        if earned.notes:
+            em += f". **Notes:** `{earned.notes}`"
+        em += ".\n"
+        earned_spent_messages[int(earned.time.timestamp())] = em
+
+    for spent in points_spent:
+        # Add all the SPENT events to the ordered dict by time
+        sm = f"**Spent**: {spent.points} at <t:{int(spent.time.timestamp())}>.\n"
+        earned_spent_messages[int(spent.time.timestamp())] = sm
+
+    if earned_spent_messages and message.count('\n') > 2:
+        # Add an extra newline to split up audit events and point records
+        message += "\n"
+
+    # Add the ordered records to the response
+    for esm in earned_spent_messages.values():
+        message += esm
 
     await inter.send(
         message,
