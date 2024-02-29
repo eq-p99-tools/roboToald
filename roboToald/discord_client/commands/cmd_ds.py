@@ -485,6 +485,27 @@ async def audit(
     for esm in earned_spent_messages.values():
         message += esm
 
+    # Messages can only be 2000 chars so break it up if necessary
+    if len(message) < 2000:
+        dm = await inter.user.send(message)
+    else:
+        messages = []
+        message_builder = ""
+        for line in message.splitlines():
+            if len(message_builder) + len(line) > 2000:
+                messages.append(message_builder)
+                message_builder = ""
+            message_builder += f"{line}\n"
+        if message_builder:
+            messages.append(message_builder)
+
+        dm = None
+        for message in messages:
+            one_dm = await inter.user.send(message)
+            if not dm:
+                dm = one_dm
+
     await inter.send(
-        message,
-        allowed_mentions=disnake.AllowedMentions(users=False))
+        content=f"Sent audit data for <@{player.id}> via DM: {dm.jump_url}",
+        ephemeral=True
+    )
