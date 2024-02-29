@@ -19,13 +19,13 @@ async def batphone(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-@batphone.sub_command()
+@batphone.sub_command(description="Show batphone setup/usage tutorial.")
 async def help(inter: disnake.ApplicationCommandInteraction):
     await inter.send("A help message would go here if there was one lolol",
                      ephemeral=True)
 
 
-@batphone.sub_command()
+@batphone.sub_command(description="Register for a batphone.")
 async def register(inter: disnake.ApplicationCommandInteraction,
                    channel: disnake.TextChannel,
                    alert_url: str,
@@ -83,7 +83,7 @@ async def register(inter: disnake.ApplicationCommandInteraction,
         ephemeral=True)
 
 
-@batphone.sub_command()
+@batphone.sub_command(description="List batphone registrations.")
 async def list(inter: disnake.ApplicationCommandInteraction):
     alerts = alert_model.get_alerts_for_user(
         inter.user.id, guild_id=inter.guild.id)
