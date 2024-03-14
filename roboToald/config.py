@@ -19,18 +19,9 @@ SOON_THRESHOLD = CONF.getint(
     fallback=48 * 60 * 60)  # Default: 48 hours
 
 POINTS_PER_MINUTE = CONF.getint(
-    'ds', 'points_per_minute', fallback=1)
-OFFHOURS_MULTIPLIER = CONF.getint(
-    'ds', 'offhours_multiplier', fallback=2)
+    'ds', 'points_per_minute', fallback=3)
 CONTESTED_MULTIPLIER = CONF.getint(
-    'ds', 'contested_multiplier', fallback=3)
-
-OFFHOURS_START = CONF.getint(
-    'ds', 'offhours_start', fallback=0)  # Default midnight ET
-OFFHOURS_END = CONF.getint(
-    'ds', 'offhours_end', fallback=6 * 60)  # Default 6am ET
-OFFHOURS_ZONE = zoneinfo.ZoneInfo(
-    CONF.get('ds', 'offhours_zone', fallback='America/New_York'))
+    'ds', 'contested_multiplier', fallback=2)
 
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
