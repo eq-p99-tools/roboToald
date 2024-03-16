@@ -6,7 +6,7 @@ endpoint = http://path/to/raidtarget.json
 
 [ds]
 points_per_minute = 3
-contested_multiplier = 2
+contested_multiplier = 3
 
 [guild.12345]
 # Member Role is necessary for raidtarget commands to work

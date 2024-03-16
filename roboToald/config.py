@@ -21,7 +21,7 @@ SOON_THRESHOLD = CONF.getint(
 POINTS_PER_MINUTE = CONF.getint(
     'ds', 'points_per_minute', fallback=3)
 CONTESTED_MULTIPLIER = CONF.getint(
-    'ds', 'contested_multiplier', fallback=2)
+    'ds', 'contested_multiplier', fallback=3)
 
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
