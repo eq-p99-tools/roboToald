@@ -270,6 +270,7 @@ async def load_timers(store={}):
         else:
             timer_messages[timer_obj.channel_id] = [
                 make_timer_embed(timer_obj)]
-    for channel_id, messages in timer_messages.items():
-        channel = await base.DISCORD_CLIENT.fetch_channel(channel_id)
-        await channel.send(embeds=messages)
+    # Uncomment this to cause timers to re-post on startup
+    # for channel_id, messages in timer_messages.items():
+    #     channel = await base.DISCORD_CLIENT.fetch_channel(channel_id)
+    #     await channel.send(embeds=messages)
