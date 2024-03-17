@@ -217,7 +217,10 @@ async def status(
     current_rate = config.POINTS_PER_MINUTE
     if is_comp:
         current_rate *= config.CONTESTED_MULTIPLIER
-    current_rate /= len(active_events)
+    if len(active_events) > 0:
+        current_rate /= len(active_events)
+    else:
+        current_rate = f"0 of {current_rate}"
 
     message = f"Current camp status: `{'' if is_comp else 'non'}competitive` ({current_rate} SKP/min)\n"
     active_members = set()
