@@ -1,5 +1,6 @@
 import collections
 import datetime
+import math
 import time
 from typing import Tuple, Dict
 
@@ -74,7 +75,7 @@ async def start(
         await inter.send("Player already active at camp.", ephemeral=True)
         return
     start_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
-    if start_time < last.time:
+    if last and start_time < last.time:
         await inter.send("Cannot backdate prior to the player's latest entry.",
                          ephemeral=True)
         return
@@ -83,21 +84,42 @@ async def start(
         time=start_time, active=True)
     points_model.start_event(start_event)
     discord_ent_time = int(time.mktime(start_time.timetuple()))
-    await inter.send(f"<@{player.id}> entered camp at <t:{discord_ent_time}>.",
+    start_message = (f"<@{player.id}> entered camp at <t:{discord_ent_time}> "
+                     f"(<t:{discord_ent_time}:R>).")
+    await inter.send(start_message,
                      allowed_mentions=disnake.AllowedMentions(users=False))
 
 
-def calculate_points(
-        start_event: points_model.PointsAudit,
-        stop_time: datetime.datetime) -> Tuple[int, int, Dict[int, int]]:
-    start_time = start_event.time.astimezone()
+def calculate_points_for_session(
+        guild_id: int, stop_time: datetime.datetime
+) -> dict[int, dict[int, int]]:
+    # Get all start/stop event pairs since the last pop
+    event_pairs = points_model.get_event_pairs_since_last_pop(guild_id)
+
+    ### Normalize all event times
+    start_time = points_model.get_last_pop_time()
     time_at_camp = stop_time.astimezone() - start_time
-    standard_minutes = round(time_at_camp.total_seconds() / 60)
+    standard_minutes = math.ceil(time_at_camp.total_seconds() / 60)
 
+    # Normalize member event windows to start_time = 0
+    normalized_member_windows = {}
+    for member, m_event_windows in event_pairs.items():
+        normalized_member_windows[member] = []
+        for start_window, stop_window in m_event_windows.items():
+            norm_start = round(
+                (start_window.astimezone() - start_time).total_seconds() / 60)
+            norm_stop = round(
+                (stop_window.astimezone() - start_time).total_seconds() / 60)
+            normalized_member_windows[member].append((
+                max(0, norm_start),
+                min(standard_minutes, norm_stop)
+            ))
+    # end up with:
+    # {member1: [(start1, stop1), (start2, stop2)], member2: []}
+
+    # Normalize contested windows to start_time = 0
     contested_windows = points_model.get_competitive_windows(
-        start_event.guild_id, start_time, stop_time)
-
-    # Normalize windows to start_time = 0
+        guild_id, start_time, stop_time)
     normalized_windows = []
     for start_window, stop_window in contested_windows:
         norm_start = round((start_window - start_time).total_seconds() / 60)
@@ -107,30 +129,6 @@ def calculate_points(
             min(standard_minutes, norm_stop)
         ))
 
-    # Normalize offhours to start_time = 0
-    # This is likely not the most efficient way to do this (I'm VERY tired)
-    today_midnight_eastern = start_time.replace(
-        hour=0, minute=0, second=0, microsecond=0,
-        tzinfo=config.OFFHOURS_ZONE
-        # Subtract 1 day just to be safe, we will add days later if needed
-    ) - datetime.timedelta(days=1)
-
-    # Find the offhours start and end time
-    offhours_start = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_START)
-    offhours_end = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_END)
-
-    # To be the current window, the end time has to be AFTER this start time
-    while offhours_end < start_time:
-        offhours_end = offhours_end + datetime.timedelta(days=1)
-        offhours_start = offhours_start + datetime.timedelta(days=1)
-
-    # Now normalize the same way we did for the windows
-    norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
-    norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
-
-    # Calculate each minute's value and add it
     points_earned_by_rate = {}
     for minute in range(standard_minutes):
         # Start with a standard value for one minute of time
@@ -142,39 +140,37 @@ def calculate_points(
                 point_value *= config.CONTESTED_MULTIPLIER
                 break
 
-        # Check if offhours
-        if norm_oh_start <= minute <= norm_oh_stop:
-            point_value *= config.OFFHOURS_MULTIPLIER
+        # Iterate through event pairs and find active ones
+        active_players = []
+        for member, m_norm_windows in normalized_member_windows.items():
+            for m_start_window, m_stop_window in m_norm_windows:
+                if m_start_window <= minute <= m_stop_window:
+                    active_players.append(member)
 
-        points_earned_by_rate[point_value] = (
-                1 + points_earned_by_rate.get(point_value, 0)
-        )
+        # Point value is the minute-rate divided by active members, lowest=1
+        if active_players:
+            point_value = max(1, point_value / len(active_players))
 
-    total = 0
-    for pv, pn in points_earned_by_rate.items():
-        total += pv * pn
-    return total, standard_minutes, points_earned_by_rate
+        # Ensure member exists and add points
+        for member in active_players:
+            if member not in points_earned_by_rate:
+                points_earned_by_rate[member] = {}
+            points_earned_by_rate[member][point_value] = (
+                    1 + points_earned_by_rate[member].get(point_value, 0)
+            )
+
+    return points_earned_by_rate
 
 
-def close_event_and_record_points(
+def close_event(
         start_event: points_model.PointsAudit,
-        stop_time: datetime.datetime) -> Tuple[int, int, Dict[int, int]]:
-    total_points, standard_minutes, points_by_rate = calculate_points(
-        start_event, stop_time)
-
+        stop_time: datetime.datetime) -> None:
     start_event.active = False
     stop_event = points_model.PointsAudit(
         user_id=start_event.user_id, guild_id=start_event.guild_id,
         event=constants.Event.OUT, time=stop_time, active=False,
         start_id=start_event.id)
-    points_earned = points_model.PointsEarned(
-        user_id=start_event.user_id, guild_id=start_event.guild_id,
-        points=total_points, time=stop_time)
-
-    points_earned.store()
     points_model.close_event(start_event, stop_event)
-
-    return total_points, standard_minutes, points_by_rate
 
 
 @ds.sub_command(description="Stop recording time in camp.")
@@ -195,39 +191,86 @@ async def stop(
         await inter.send("No active event to stop.", ephemeral=True)
         return
     stop_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
-
-    total_points, standard_minutes, points_by_rate = (
-        close_event_and_record_points(last, stop_time))
+    close_event(last, stop_time)
 
     discord_exit_time = int(time.mktime(stop_time.timetuple()))
     await inter.send(
-        f"<@{player.id}> exited camp at <t:{discord_exit_time}>. "
-        f"Points earned: {total_points} "
-        f"(total minutes: {standard_minutes},"
-        f" minutes by point rate: {points_by_rate}).",
+        f"<@{player.id}> exited camp at <t:{discord_exit_time}>.",
         allowed_mentions=disnake.AllowedMentions(users=False))
 
 
 @ds.sub_command(description="Show current camp status.")
-async def status(inter: disnake.ApplicationCommandInteraction):
+async def status(
+        inter: disnake.ApplicationCommandInteraction,
+        verbose: bool = commands.Param(
+            default=False,
+            description="Show detailed point data.")):
     active_events = points_model.get_active_events(inter.guild_id)
     last_window = points_model.get_last_event(
         user_id=0, guild_id=inter.guild_id)
     is_comp = last_window and last_window.active
-    now = datetime.datetime.now()
+    now = datetime.datetime.now().replace(second=0)
 
-    message = f"Current camp status: `{'' if is_comp else 'non'}competitive`\n"
+    points_for_session = calculate_points_for_session(
+        guild_id=inter.guild_id, stop_time=now)
+    points_per_member = sum_points_by_member(points_for_session)
+    current_rate = config.POINTS_PER_MINUTE
+    if is_comp:
+        current_rate *= config.CONTESTED_MULTIPLIER
+    current_rate /= len(active_events)
+
+    message = f"Current camp status: `{'' if is_comp else 'non'}competitive` ({current_rate} SKP/min)\n"
+    active_members = set()
     if active_events:
-        message += "Players present: "
+        message += "\nMembers in camp:\n"
     for event in active_events:
+        active_members.add(event.user_id)
         time_spent = round((now - event.time).total_seconds())
         display_time = "{:0>8}".format(
             str(datetime.timedelta(seconds=time_spent)))
-        message += f"<@{event.user_id}> ({display_time}), "
-    message = message.rstrip(", ")
+        if event.user_id in points_per_member:
+            total_minutes = points_per_member[event.user_id][1]
+            display_total = "{:0>8}".format(
+                str(datetime.timedelta(minutes=total_minutes)))
+        else:
+            display_total = display_time
+        session_points = points_per_member.get(event.user_id, (0,))[0]
+        message += f"<@{event.user_id}>: {display_total} ({session_points} points"
+        if verbose:
+            session_rates = points_for_session.get(event.user_id, 0)
+            message += f"; rates: {session_rates}"
+        message += f")\n"
+
+    # If more players were in the session, list them
+    if len(points_per_member) > len(active_members):
+        message += "\nOther contributing members this session:\n"
+        for member, member_points in points_per_member.items():
+            if member not in active_members:
+                total_minutes = points_per_member[member][1]
+                display_total = "{:0>8}".format(
+                    str(datetime.timedelta(minutes=total_minutes)))
+                session_points = points_per_member[member][0]
+                message += f"<@{member}>: {display_total} ({session_points} points"
+                if verbose:
+                    session_rates = points_for_session.get(member, 0)
+                    message += f"; rates: {session_rates}"
+                message += f")\n"
 
     await inter.send(
         message, allowed_mentions=disnake.AllowedMentions(users=False))
+
+
+def sum_points_by_member(
+        points_dict: dict[int, dict[float, int]]) -> dict[int, (int, int)]:
+    total_points_by_member = {}
+    for member, points_by_rate in points_dict.items():
+        total_points = 0
+        total_minutes = 0
+        for rate, points in points_by_rate.items():
+            total_points += rate * points
+            total_minutes += points
+        total_points_by_member[member] = (round(total_points), total_minutes)
+    return total_points_by_member
 
 
 def get_point_data_for_member(user_id: int, guild_id: int) -> Tuple[int, int]:
@@ -307,39 +350,48 @@ async def pop(
                 time=stop_time, active=False, start_id=event.id)
             points_model.close_event(event, stop_event)
             continue
-        total_points, standard_minutes, points_by_rate = (
-            close_event_and_record_points(event, stop_time))
-        message += (f"<@{event.user_id}> "
-                    f"Points earned: {total_points} "
-                    f"(total minutes: {standard_minutes},"
-                    f" minutes by point rate: {points_by_rate}).\n")
+        close_event(event, stop_time)
+        message += f"<@{event.user_id}> stopped.\n"
         active_members += 1
 
     if active_members < 1:
         message = "DS Pop recorded. No members active.\n"
 
+    all_points_for_session = calculate_points_for_session(
+        guild_id=inter.guild_id, stop_time=stop_time)
+
+    if all_points_for_session:
+        message += "\nPoints earned in this session:\n"
+
+    summed_points = sum_points_by_member(all_points_for_session)
+    for member, session_points in summed_points.items():
+        points_earned = points_model.PointsEarned(
+            member, inter.guild_id, session_points[0], stop_time)
+        points_earned.store()
+        message += f"<@{member}>: {session_points[0]}\n"
+
     await inter.send(
         message, allowed_mentions=disnake.AllowedMentions(users=False))
 
-    guild_events = await inter.guild.fetch_scheduled_events()
     recent_ds = None
-    for guild_event in guild_events:
-        if guild_event.name != "Drusella Sathir Spawn":
-            continue
-        tte = guild_event.scheduled_start_time - datetime.datetime.now().astimezone()
-        if tte > datetime.timedelta(hours=23, minutes=50):
-            recent_ds = round(
-                (datetime.timedelta(days=1) - tte).total_seconds() / 60, 1)
-            break
+    time_since_pop = stop_time.astimezone() - points_model.get_last_pop_time()
+    if time_since_pop < datetime.timedelta(minutes=5):
+        recent_ds = round(time_since_pop.total_seconds() / 60, 1)
 
     if recent_ds and active_members < 1:
-        # There's already a VERY recent event, likely duplicate
+        # There's already a POP recorded within 5 min, likely duplicate
         message = (f"Someone just ran the pop command {recent_ds} "
                    f"minutes ago. Deleting this interaction.")
         await inter.edit_original_response(content=message)
         await inter.delete_original_response(delay=5)
         return
 
+    pop_event = points_model.PointsAudit(
+        user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
+        time=stop_time, active=False)
+    points_model.start_event(pop_event)
+
+    guild_events = await inter.guild.fetch_scheduled_events()
     for guild_event in guild_events:
         if guild_event.name == "Drusella Sathir Spawn":
             await guild_event.cancel()
@@ -363,16 +415,18 @@ async def pop(
     new_guild_event = await inter.guild.create_scheduled_event(
         name="Drusella Sathir Spawn",
         description="Get on and get us more urns!",
-        scheduled_start_time=stop_time + datetime.timedelta(days=1),
-        scheduled_end_time=stop_time + datetime.timedelta(days=1, minutes=10),
+        scheduled_start_time=stop_time + datetime.timedelta(hours=23),
+        scheduled_end_time=stop_time + datetime.timedelta(hours=24),
         entity_type=channel_type,
         channel=event_channel,
         entity_metadata=channel_metadata
     )
 
-    message += f"New event scheduled: {new_guild_event.url}"
+    message += f"\nNew event scheduled: {new_guild_event.url}"
 
-    await inter.edit_original_response(content=message)
+    await inter.edit_original_response(
+        content=message,
+        allowed_mentions=disnake.AllowedMentions(users=False))
 
 
 @ds.sub_command(description="Player has won an urn with SKP.")

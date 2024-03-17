@@ -65,6 +65,17 @@ def get_active_events(
     return active_events
 
 
+def get_events_since_time(
+        guild_id: int, start_time: datetime.datetime) -> List[PointsAudit]:
+    with base.get_session() as session:
+        event_list = session.query(PointsAudit)
+        event_list = event_list.filter_by(guild_id=guild_id)
+        event_list = event_list.filter(PointsAudit.user_id != 0)
+        event_list = event_list.filter(PointsAudit.time > start_time)
+        event_list = event_list.all()
+    return event_list
+
+
 def get_event_pairs(events: List[PointsAudit]
                     ) -> Dict[datetime.datetime, datetime.datetime]:
     event_pairs: Dict[datetime.datetime, datetime.datetime] = {}
@@ -88,6 +99,58 @@ def get_event_pairs(events: List[PointsAudit]
     return event_pairs
 
 
+def get_event_pairs_split_members(
+        events: List[PointsAudit]
+) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
+    event_pairs: Dict[int, Dict[datetime.datetime, datetime.datetime]] = {}
+    now = datetime.datetime.now()
+    for event in events:
+        if event.user_id not in event_pairs:
+            event_pairs[event.user_id] = {}
+        if event.time in event_pairs.keys() or event.time in event_pairs.values():
+            continue
+        if event.active:
+            # Event with no pair means ongoing (use now+10m to be safe)
+            event_pairs[event.user_id][event.time] = (
+                    now + datetime.timedelta(minutes=10)
+            )
+            continue
+        if event.start_id:
+            matched_event = get_event(event.start_id)
+            event_pairs[event.user_id][matched_event.time] = event.time
+            continue
+        else:
+            with base.get_session() as session:
+                matched_event = session.query(PointsAudit).filter_by(
+                    start_id=event.id).one_or_none()
+            if matched_event:
+                event_pairs[event.user_id][event.time] = matched_event.time
+            else:
+                event_pairs[event.user_id][event.time] = now
+            continue
+    return event_pairs
+
+
+def get_last_pop_time() -> datetime.datetime:
+    with base.get_session() as session:
+        last_pop = session.query(PointsAudit).filter_by(
+            event=constants.Event.POP
+        ).order_by(sqlalchemy.desc(PointsAudit.time)).limit(1).one_or_none()
+    if last_pop:
+        return last_pop.time.astimezone()
+    return (datetime.datetime.now() -
+            datetime.timedelta(hours=18)).astimezone()
+
+
+def get_event_pairs_since_last_pop(
+        guild_id: int
+) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
+    last_pop_time = get_last_pop_time()
+    events = get_events_since_time(guild_id, last_pop_time)
+    event_pairs = get_event_pairs_split_members(events)
+    return event_pairs
+
+
 def get_competitive_windows(
         guild_id: int, start_time: datetime.datetime,
         end_time: datetime.datetime
@@ -96,6 +159,7 @@ def get_competitive_windows(
         # Get the windows that started or ended within our time period
         events_query = session.query(PointsAudit)
         events_query = events_query.filter_by(user_id=0, guild_id=guild_id)
+        events_query = events_query.filter(PointsAudit.event != constants.Event.POP)
         events_query = events_query.filter(PointsAudit.time >= start_time)
         events_query = events_query.filter(PointsAudit.time <= end_time)
         active_events: List[PointsAudit] = events_query.all()

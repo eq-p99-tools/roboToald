@@ -28,3 +28,4 @@ class Event(enum.Enum):
     OUT = 'OUT'
     COMP_START = "COMP_START"
     COMP_END = "COMP_END"
+    POP = "POP"
