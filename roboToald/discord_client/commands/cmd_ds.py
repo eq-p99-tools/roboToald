@@ -217,8 +217,12 @@ async def status(
     current_rate = config.POINTS_PER_MINUTE
     if is_comp:
         current_rate *= config.CONTESTED_MULTIPLIER
+    # TODO: Make sure active_events can't be more than active_members below
+    # and if it can, clean this up so the rate is based on active_members, or
+    # so that the code below doesn't create an extra random Set for no reason
     if len(active_events) > 0:
-        current_rate /= len(active_events)
+        # Point value is the minute-rate divided by active members, lowest=1
+        current_rate = max(1, current_rate / len(active_events))
     else:
         current_rate = f"0 of {current_rate}"
 
