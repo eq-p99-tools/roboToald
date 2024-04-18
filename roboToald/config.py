@@ -38,8 +38,8 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'enable_raidtarget', fallback=False),
         'enable_ds': CONF.getboolean(
             f"guild.{guild}", 'enable_ds', fallback=False),
-        'ds_event_channel': CONF.getint(
-            f"guild.{guild}", 'ds_event_channel', fallback=0)
+        'ds_tod_channel': CONF.getint(
+            f"guild.{guild}", 'ds_tod_channel', fallback=0)
     }
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]

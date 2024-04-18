@@ -79,13 +79,19 @@ async def start(
         await inter.send("Cannot backdate prior to the player's latest entry.",
                          ephemeral=True)
         return
+    last_tod = points_model.get_last_pop_time()
+    if last_tod and start_time.astimezone() < last_tod:
+        await inter.send("Cannot backdate prior to the last ToD.",
+                         ephemeral=True)
+        return
     start_event = points_model.PointsAudit(
         user_id=player.id, guild_id=inter.guild_id, event=constants.Event.IN,
         time=start_time, active=True)
     points_model.start_event(start_event)
     discord_ent_time = int(time.mktime(start_time.timetuple()))
+    backdate_message = f", backdated {backdate} minutes" if backdate > 0 else ""
     start_message = (f"<@{player.id}> entered camp at <t:{discord_ent_time}> "
-                     f"(<t:{discord_ent_time}:R>).")
+                     f"(<t:{discord_ent_time}:R>{backdate_message}).")
     await inter.send(start_message,
                      allowed_mentions=disnake.AllowedMentions(users=False))
 
@@ -194,8 +200,10 @@ async def stop(
     close_event(last, stop_time)
 
     discord_exit_time = int(time.mktime(stop_time.timetuple()))
+    backdate_message = f", backdated {backdate} minutes" if backdate > 0 else ""
     await inter.send(
-        f"<@{player.id}> exited camp at <t:{discord_exit_time}>.",
+        f"<@{player.id}> exited camp at <t:{discord_exit_time}> "
+        f"(<t:{discord_exit_time}:R>{backdate_message}).",
         allowed_mentions=disnake.AllowedMentions(users=False))
 
 
@@ -335,15 +343,18 @@ async def points(
         ephemeral=True, allowed_mentions=disnake.AllowedMentions(users=False))
 
 
-@ds.sub_command(description="Run this when DS pops to stop all tracking.")
-async def pop(
+@ds.sub_command(description="Run this when DS dies to stop all tracking.")
+async def tod(
         inter: disnake.ApplicationCommandInteraction,
         backdate: int = commands.Param(
             default=0,
             ge=0,
             description="Backdate DS pop by <X> minutes.")
 ):
-    message = "DS Pop recorded. Stopped camp time for the following members:\n"
+    message = "DS ToD recorded"
+    if backdate > 0:
+        message += f" (backdated {backdate} minutes ago)"
+    message += ". Stopped camp time for the following members:\n"
 
     stop_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
     active_events = points_model.get_active_events(
@@ -362,7 +373,10 @@ async def pop(
         active_members += 1
 
     if active_members < 1:
-        message = "DS Pop recorded. No members active.\n"
+        message = "DS ToD recorded"
+        if backdate > 0:
+            message += f" (backdated {backdate} minutes)"
+        message += ". No members active.\n"
 
     all_points_for_session = calculate_points_for_session(
         guild_id=inter.guild_id, stop_time=stop_time)
@@ -383,11 +397,11 @@ async def pop(
     recent_ds = None
     time_since_pop = stop_time.astimezone() - points_model.get_last_pop_time()
     if time_since_pop < datetime.timedelta(minutes=5):
-        recent_ds = round(time_since_pop.total_seconds() / 60, 1)
+        recent_ds = abs(round(time_since_pop.total_seconds() / 60, 1))
 
     if recent_ds and active_members < 1:
         # There's already a POP recorded within 5 min, likely duplicate
-        message = (f"Someone just ran the pop command {recent_ds} "
+        message = (f"Someone just ran the ToD command {recent_ds} "
                    f"minutes ago. Deleting this interaction.")
         await inter.edit_original_response(content=message)
         await inter.delete_original_response(delay=5)
@@ -398,42 +412,42 @@ async def pop(
         time=stop_time, active=False)
     points_model.start_event(pop_event)
 
-    guild_events = await inter.guild.fetch_scheduled_events()
-    for guild_event in guild_events:
-        if guild_event.name == "Drusella Sathir Spawn":
-            await guild_event.cancel()
-
-    event_channel_id = config.GUILD_SETTINGS.get(
-        inter.guild_id, {}).get('ds_event_channel')
-    event_channel = inter.guild.get_channel(event_channel_id)
-    channel_type = disnake.GuildScheduledEventEntityType.external
-    if event_channel and event_channel.type == disnake.ChannelType.voice:
-        channel_type = disnake.GuildScheduledEventEntityType.voice
-        channel_metadata = disnake.utils.MISSING
-    elif event_channel and event_channel.type == disnake.ChannelType.text:
-        channel_metadata = disnake.GuildScheduledEventMetadata(
-            location=event_channel.jump_url)
-        event_channel = disnake.utils.MISSING
-    else:
-        channel_metadata = disnake.GuildScheduledEventMetadata(
-            location="Drusella Camp!")
-        event_channel = disnake.utils.MISSING
-
-    new_guild_event = await inter.guild.create_scheduled_event(
-        name="Drusella Sathir Spawn",
-        description="Get on and get us more urns!",
-        scheduled_start_time=stop_time + datetime.timedelta(hours=23),
-        scheduled_end_time=stop_time + datetime.timedelta(hours=24),
-        entity_type=channel_type,
-        channel=event_channel,
-        entity_metadata=channel_metadata
-    )
-
-    message += f"\nNew event scheduled: {new_guild_event.url}"
-
-    await inter.edit_original_response(
-        content=message,
-        allowed_mentions=disnake.AllowedMentions(users=False))
+    # guild_events = await inter.guild.fetch_scheduled_events()
+    # for guild_event in guild_events:
+    #     if guild_event.name == "Drusella Sathir Spawn":
+    #         await guild_event.cancel()
+    #
+    # event_channel_id = config.GUILD_SETTINGS.get(
+    #     inter.guild_id, {}).get('ds_event_channel')
+    # event_channel = inter.guild.get_channel(event_channel_id)
+    # channel_type = disnake.GuildScheduledEventEntityType.external
+    # if event_channel and event_channel.type == disnake.ChannelType.voice:
+    #     channel_type = disnake.GuildScheduledEventEntityType.voice
+    #     channel_metadata = disnake.utils.MISSING
+    # elif event_channel and event_channel.type == disnake.ChannelType.text:
+    #     channel_metadata = disnake.GuildScheduledEventMetadata(
+    #         location=event_channel.jump_url)
+    #     event_channel = disnake.utils.MISSING
+    # else:
+    #     channel_metadata = disnake.GuildScheduledEventMetadata(
+    #         location="Drusella Camp!")
+    #     event_channel = disnake.utils.MISSING
+    #
+    # new_guild_event = await inter.guild.create_scheduled_event(
+    #     name="Drusella Sathir Spawn",
+    #     description="Get on and get us more urns!",
+    #     scheduled_start_time=stop_time + datetime.timedelta(hours=23),
+    #     scheduled_end_time=stop_time + datetime.timedelta(hours=24),
+    #     entity_type=channel_type,
+    #     channel=event_channel,
+    #     entity_metadata=channel_metadata
+    # )
+    #
+    # message += f"\nNew event scheduled: {new_guild_event.url}"
+    #
+    # await inter.edit_original_response(
+    #     content=message,
+    #     allowed_mentions=disnake.AllowedMentions(users=False))
 
 
 @ds.sub_command(description="Player has won an urn with SKP.")
