@@ -10,7 +10,9 @@ from disnake.ext import commands
 from roboToald import config
 from roboToald import constants
 from roboToald.db.models import points as points_model
+from roboToald.db.models import timer as timer_model
 from roboToald.discord_client import base
+from roboToald.discord_client.commands import cmd_timer
 
 DS_GUILDS = config.guilds_for_command('ds')
 CONTESTED = False
@@ -412,42 +414,25 @@ async def tod(
         time=stop_time, active=False)
     points_model.start_event(pop_event)
 
-    # guild_events = await inter.guild.fetch_scheduled_events()
-    # for guild_event in guild_events:
-    #     if guild_event.name == "Drusella Sathir Spawn":
-    #         await guild_event.cancel()
-    #
-    # event_channel_id = config.GUILD_SETTINGS.get(
-    #     inter.guild_id, {}).get('ds_event_channel')
-    # event_channel = inter.guild.get_channel(event_channel_id)
-    # channel_type = disnake.GuildScheduledEventEntityType.external
-    # if event_channel and event_channel.type == disnake.ChannelType.voice:
-    #     channel_type = disnake.GuildScheduledEventEntityType.voice
-    #     channel_metadata = disnake.utils.MISSING
-    # elif event_channel and event_channel.type == disnake.ChannelType.text:
-    #     channel_metadata = disnake.GuildScheduledEventMetadata(
-    #         location=event_channel.jump_url)
-    #     event_channel = disnake.utils.MISSING
-    # else:
-    #     channel_metadata = disnake.GuildScheduledEventMetadata(
-    #         location="Drusella Camp!")
-    #     event_channel = disnake.utils.MISSING
-    #
-    # new_guild_event = await inter.guild.create_scheduled_event(
-    #     name="Drusella Sathir Spawn",
-    #     description="Get on and get us more urns!",
-    #     scheduled_start_time=stop_time + datetime.timedelta(hours=23),
-    #     scheduled_end_time=stop_time + datetime.timedelta(hours=24),
-    #     entity_type=channel_type,
-    #     channel=event_channel,
-    #     entity_metadata=channel_metadata
-    # )
-    #
-    # message += f"\nNew event scheduled: {new_guild_event.url}"
-    #
-    # await inter.edit_original_response(
-    #     content=message,
-    #     allowed_mentions=disnake.AllowedMentions(users=False))
+    timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get('ds_tod_channel')
+    if not timer_channel_id:
+        return
+    timers = timer_model.get_timers_for_channel(timer_channel_id)
+    timer_channel = inter.guild.get_channel(timer_channel_id)
+    if timers:
+        for timer in timers:
+            await cmd_timer._stop(timer.id, timer_channel.send)
+
+    await cmd_timer._start(
+        timer_channel.send,
+        timer_channel,
+        base.DISCORD_CLIENT.user.id,
+        inter.guild_id,
+        name="DS Spawn",
+        hours=24,
+        minutes=1,
+        delay_minutes=backdate * -1 - 1,
+        repeating=True)
 
 
 @ds.sub_command(description="Player has won an urn with SKP.")
