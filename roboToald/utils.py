@@ -38,5 +38,6 @@ def send_alert(alert, message):
         return
     print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` "
           f"to {alert.alert_url}")
+    message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)
     alert.increment_counter()
