@@ -670,6 +670,26 @@ async def statistics(
     await inter.send(
         content=message_camp, allowed_mentions=disnake.AllowedMentions(users=False)
     )
-    await inter.send(
-        content=message_members, allowed_mentions=disnake.AllowedMentions(users=False)
-    )
+
+    # Messages can only be 2000 chars so break it up if necessary
+    if len(message_members) < 2000:
+        await inter.send(
+            content=message_members, allowed_mentions=disnake.AllowedMentions(users=False)
+        )
+    else:
+        messages = []
+        message_builder = ""
+        for line in message_members.splitlines():
+            if len(message_builder) + len(line) > 2000:
+                messages.append(message_builder)
+                message_builder = ""
+            message_builder += f"{line}\n"
+        if message_builder:
+            messages.append(message_builder)
+
+        for message in messages:
+            await inter.send(
+                content=message, allowed_mentions=disnake.AllowedMentions(users=False)
+            )
+
+
