@@ -574,6 +574,9 @@ async def audit(
 @ds.sub_command(description="Show statistics for the DS camp.")
 async def statistics(
         inter: disnake.ApplicationCommandInteraction):
+    # Defer the response to avoid timeouts
+    await inter.response.defer()
+
     # Get total number of points earned
     earned_by_member = {}
     all_earned = points_model.get_points_earned(inter.guild_id)
