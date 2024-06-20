@@ -638,7 +638,7 @@ async def statistics(
     urns_per_week_adjective = "almost" if urns_per_week_rounded > urns_per_week else "over"
     average_cost = round(total_spent / num_urns, 2)
 
-    message = (
+    message_camp = (
         "**Camp Statistics**\n"
         f"Together, `{num_players}` players spent `{round(total_minutes)}` "
         f"minutes in camp, earning `{total_earned}` points. "
@@ -651,9 +651,8 @@ async def statistics(
         f" on <t:{int(first_urn.timestamp())}:D> by <@{first_urn_buyer}>.\n"
         f"The cheapest urn was purchased by <@{min_spent_by}> for `{min_spent} points`.\n"
         f"The most expensive urn was purchased by <@{max_spent_by}> for `{max_spent} points`.\n"
-        "\n"
-        "**Member Statistics**\n"
     )
+    message_members = "**Member Statistics**\n"
     for member, points_earned in earned_by_member.items():
         points_spent = spent_by_member.get(member, 0)
         num_urns = num_spent_by_member.get(member, 0)
@@ -662,12 +661,15 @@ async def statistics(
         if num_urns > 0:
             average_cost = round(points_spent / num_urns, 2)
             average_string = f" (avg. `{average_cost} points` per urn)"
-        message += (
+        message_members += (
             f"* <@{member}> earned `{points_earned} points` over "
             f"`{member_minutes} minutes`, and spent a total of "
             f"`{points_spent} points` on `{num_urns} urn{'s' if num_urns != 1 else ''}`"
             f"{average_string}.\n")
 
     await inter.send(
-        content=message, allowed_mentions=disnake.AllowedMentions(users=False)
+        content=message_camp, allowed_mentions=disnake.AllowedMentions(users=False)
+    )
+    await inter.send(
+        content=message_members, allowed_mentions=disnake.AllowedMentions(users=False)
     )
