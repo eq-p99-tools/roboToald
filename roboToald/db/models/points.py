@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Type, Optional
 
 import sqlalchemy
 import sqlalchemy.orm
@@ -31,20 +31,20 @@ class PointsAudit(base.Base):
         self.start_id = start_id
 
 
-def get_event(event_id: int) -> PointsAudit:
+def get_event(event_id: int) -> Optional[Type[PointsAudit]]:
     with base.get_session() as session:
         event = session.query(PointsAudit).filter_by(id=event_id).one_or_none()
     return event
 
 
-def get_events_for_member(user_id: int, guild_id: int) -> List[PointsAudit]:
+def get_events_for_member(user_id: int, guild_id: int) -> list[Type[PointsAudit]]:
     with base.get_session() as session:
         events = session.query(PointsAudit).filter_by(
             user_id=user_id, guild_id=guild_id).all()
     return events
 
 
-def get_last_event(user_id: int, guild_id: int) -> PointsAudit:
+def get_last_event(user_id: int, guild_id: int) -> Optional[Type[PointsAudit]]:
     # Check for latest event for user+guild
     with base.get_session() as session:
         last_event = session.query(PointsAudit)
@@ -55,7 +55,7 @@ def get_last_event(user_id: int, guild_id: int) -> PointsAudit:
 
 
 def get_active_events(
-        guild_id: int, include_0: bool = False) -> List[PointsAudit]:
+        guild_id: int, include_0: bool = False) -> list[Type[PointsAudit]]:
     with base.get_session() as session:
         active_events = session.query(PointsAudit)
         active_events = active_events.filter_by(guild_id=guild_id, active=True)
@@ -230,7 +230,7 @@ def get_points_earned(guild_id: int) -> List[sqlalchemy.engine.row.Row]:
     return earned
 
 
-def get_points_earned_by_member(user_id: int, guild_id: int) -> List[PointsEarned]:
+def get_points_earned_by_member(user_id: int, guild_id: int) -> list[Type[PointsEarned]]:
     with base.get_session() as session:
         earned = session.query(PointsEarned).filter_by(
             user_id=user_id, guild_id=guild_id).all()
@@ -256,7 +256,14 @@ class PointsSpent(base.Base, base.MyBase):
         self.time = time
 
 
-def get_points_spent_by_member(user_id: int, guild_id: int) -> List[PointsSpent]:
+def get_points_spent(guild_id: int) -> list[Type[PointsSpent]]:
+    with base.get_session() as session:
+        spent = session.query(PointsSpent).filter_by(
+            guild_id=guild_id).order_by(sqlalchemy.asc(PointsSpent.time)).all()
+    return spent
+
+
+def get_points_spent_by_member(user_id: int, guild_id: int) -> list[Type[PointsSpent]]:
     with base.get_session() as session:
         spent = session.query(PointsSpent).filter_by(
             user_id=user_id, guild_id=guild_id).all()
