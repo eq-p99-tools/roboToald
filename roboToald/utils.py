@@ -32,12 +32,15 @@ def send_function(url):
 
 def send_alert(alert, message):
     service_func = send_function(alert.alert_url)
+    # Strip non-printable characters
+    message = ''.join(c for c in message if c.isprintable())
     if not service_func:
         print(f"Alert ID `{alert.id}` has invalid alert_url: "
               f"`{alert.alert_url}`")
         return
     print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` "
           f"to {alert.alert_url}: {message}")
+    # Remove @everyone from the message if present
     message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)
     alert.increment_counter()
