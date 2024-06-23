@@ -10,6 +10,19 @@ from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
 BATPHONE_GUILDS = config.guilds_for_command('batphone')
+HELP_MESSAGE = (
+    "To use this service, you must have an account created with [SquadCast](https://www.squadcast.com/).\n"
+    "The service is free for our use, but you cannot sign up with a Gmail account, so you may need to use a different "
+    "email address than you normally do.\n"
+    "Once you have an account, you need to create a new `Service` (the name can be anything, like 'Batphone'), then "
+    "add an `Alert Source` of type `Incident Webhook` and copy the `Webhook URL` to use here.\n"
+    "**Note**: You can use the same `Webhook URL` for multiple alerts. This URL is unique to you, so don't share it "
+    "with anyone else, or they may mercilessly troll you with fake alerts at odd hours.\n"
+    "\n"
+    "**Example Usage**:\n"
+    "One of the most useful alerts I rely on is for quakes:"
+    # Example Image will go after this in the embed
+)
 
 
 @base.DISCORD_CLIENT.slash_command(
@@ -21,17 +34,38 @@ async def batphone(inter: disnake.ApplicationCommandInteraction):
 
 @batphone.sub_command(description="Show batphone setup/usage tutorial.")
 async def help(inter: disnake.ApplicationCommandInteraction):
-    await inter.send("A help message would go here if there was one lolol",
-                     ephemeral=True)
+    embed = disnake.Embed(
+        title="Batphone Setup",
+        description=HELP_MESSAGE
+    )
+    embed.set_image(url="https://i.imgur.com/LKnMHGT.png")
+    await inter.send(embed=embed, ephemeral=True)
 
 
 @batphone.sub_command(description="Register for a batphone.")
 async def register(inter: disnake.ApplicationCommandInteraction,
-                   channel: disnake.TextChannel,
-                   alert_url: str,
-                   filter: str = commands.Param(default=None),
-                   filter_regex: str = commands.Param(default=None),
-                   filter_role: disnake.Role = commands.Param(default=None)):
+                   channel: disnake.TextChannel = commands.Param(
+                       description="The channel to watch for batphones."
+                   ),
+                   alert_url: str = commands.Param(
+                       description="The Webhook URL to trigger when a batphone registration triggers."
+                   ),
+                   filter: str = commands.Param(
+                       description="A plain-text filter to match. Only one of `filter` or `filter_regex` may be used. "
+                                   "For example: `quake` should match any earthquake batphone.",
+                       default=None
+                   ),
+                   filter_regex: str = commands.Param(
+                       description="A regex filter to match. Only one of `filter` or `filter_regex` may be used. "
+                                   "For example: `.*(TFA|MOTG|PROG).*` should match any ST Golem batphone.",
+                       default=None
+                   ),
+                   filter_role: disnake.Role = commands.Param(
+                       description="A role to match. This can be used with or without other filters. "
+                                   "For example: selecting `@raiders` will match ANY message that pings the "
+                                   "`@raiders` role.",
+                       default=None
+                   )):
     has_both_filters = filter and filter_regex
     has_one_filter = filter or filter_regex or filter_role
     if has_both_filters or not has_one_filter:
