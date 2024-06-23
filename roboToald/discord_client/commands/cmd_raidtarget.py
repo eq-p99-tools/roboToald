@@ -9,7 +9,6 @@ from roboToald import config
 from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
-from roboToald import utils
 
 RAIDTARGET_GUILDS = config.guilds_for_command('raidtarget')
 MAX_AC_RESULTS = 25
@@ -49,7 +48,7 @@ async def subscribe(
                         "notification")
 ):
     lead_time = int(lead_time_minutes * 60)
-    if utils.is_user_authorized(
+    if base.is_user_authorized(
             guild=inter.guild,
             user_id=inter.user.id,
             role_id=config.get_member_role(inter.guild_id)):
@@ -216,7 +215,7 @@ async def announce_subscriptions():
             within_lead = time_until <= datetime.timedelta(seconds=sub.lead_time)
             already_notified = sub.last_window_start == active_window.start
             if within_lead and not already_notified:
-                if utils.is_user_authorized(
+                if base.is_user_authorized(
                         guild=base.DISCORD_CLIENT.get_guild(sub.guild_id),
                         user_id=sub.user_id,
                         role_id=config.get_member_role(sub.guild_id)):

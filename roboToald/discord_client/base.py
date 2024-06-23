@@ -38,7 +38,7 @@ def find_match(channel, message):
                     break
         if matches_filter and matches_role:
             # Check to make sure the user has the right role to see this alert
-            if not utils.is_user_authorized(
+            if not is_user_authorized(
                     message.guild,
                     alert.user_id,
                     config.get_member_role(message.guild.id)):
@@ -50,6 +50,15 @@ def find_match(channel, message):
             else:
                 print(f"Skipping alert #{alert.id}, already triggered for "
                       f"this URL")
+
+
+def is_user_authorized(guild: disnake.Guild, user_id: int, role_id: int) -> bool:
+    user = guild.get_member(user_id)
+    if user:
+        role = user.get_role(role_id)
+        if role:
+            return True
+    return False
 
 
 @DISCORD_CLIENT.event
