@@ -50,24 +50,24 @@ async def register(inter: disnake.ApplicationCommandInteraction,
                    alert_url: str = commands.Param(
                        description="The Webhook URL to trigger when a batphone registration triggers."
                    ),
-                   filter: str = commands.Param(
-                       description="A plain-text filter to match. Only one of `filter` or `filter_regex` may be used. "
-                                   "For example: `quake` should match any earthquake batphone.",
-                       default=None
+                   filter_str: str = commands.Param(
+                       name="filter",
+                       description="Plain-text to match. Only one of `filter` or `filter_regex` may be used. "
+                                   "Example: `quake`",
+                       default=None,
+
                    ),
                    filter_regex: str = commands.Param(
-                       description="A regex filter to match. Only one of `filter` or `filter_regex` may be used. "
-                                   "For example: `.*(TFA|MOTG|PROG).*` should match any ST Golem batphone.",
+                       description="A regex to match. Only one of `filter` or `filter_regex` may be used. "
+                                   "Example: `.*(TFA|MOTG|PROG).*`",
                        default=None
                    ),
                    filter_role: disnake.Role = commands.Param(
-                       description="A role to match. This can be used with or without other filters. "
-                                   "For example: selecting `@raiders` will match ANY message that pings the "
-                                   "`@raiders` role.",
+                       description="Match any message pinging this role. This can be used with/without other filters.",
                        default=None
                    )):
-    has_both_filters = filter and filter_regex
-    has_one_filter = filter or filter_regex or filter_role
+    has_both_filters = filter_str and filter_regex
+    has_one_filter = filter_str or filter_regex or filter_role
     if has_both_filters or not has_one_filter:
         await inter.response.send_message(
             "ERROR: You must supply one of `filter` or `filter_regex` "
@@ -85,8 +85,8 @@ async def register(inter: disnake.ApplicationCommandInteraction,
         )
         return
 
-    if filter:
-        filter_regex = f".*{filter}.*"
+    if filter_str:
+        filter_regex = f".*{filter_str}.*"
 
     filter_role_id = None
     if filter_role:
