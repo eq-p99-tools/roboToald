@@ -36,6 +36,11 @@ def find_match(channel, message):
                 if mention.id == alert.alert_role:
                     matches_role = True
                     break
+            # handle if the role is @everyone
+            if message.mention_everyone:
+                role_name = message.guild.get_role(alert.alert_role).mention
+                if role_name == '@everyone':
+                    matches_role = True
         if matches_filter and matches_role:
             # Check to make sure the user has the right role to see this alert
             if not is_user_authorized(
