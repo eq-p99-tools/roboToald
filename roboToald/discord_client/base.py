@@ -3,6 +3,7 @@ import re
 import disnake
 from disnake.ext import commands
 
+from roboToald import config
 from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
@@ -36,7 +37,13 @@ def find_match(channel, message):
                     matches_role = True
                     break
         if matches_filter and matches_role:
-            if alert.alert_url not in alerts_sent:
+            # Check to make sure the user has the right role to see this alert
+            if not utils.is_user_authorized(
+                    message.guild,
+                    alert.user_id,
+                    config.get_member_role(message.guild.id)):
+                print(f"Skipping alert #{alert.id}, user not authorized")
+            elif alert.alert_url not in alerts_sent:
                 print(f"Sending alert #{alert.id}")
                 utils.send_alert(alert, message.clean_content)
                 alerts_sent.add(alert.alert_url)

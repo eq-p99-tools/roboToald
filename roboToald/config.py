@@ -45,6 +45,10 @@ for guild in TEST_GUILDS:
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
 
 
+def get_member_role(guild_id: int) -> int:
+    return GUILD_SETTINGS[guild_id].get('member_role')
+
+
 def guilds_for_command(command_name: str) -> List[int]:
     guild_list = []
     for guild_entry in GUILD_SETTINGS:

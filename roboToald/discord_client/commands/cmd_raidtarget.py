@@ -9,6 +9,7 @@ from roboToald import config
 from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
+from roboToald import utils
 
 RAIDTARGET_GUILDS = config.guilds_for_command('raidtarget')
 MAX_AC_RESULTS = 25
@@ -35,15 +36,6 @@ def autocomplete_existing_subscription(
     return [sub.target for sub in subs]
 
 
-def is_user_authorized(user_id: int, guild_id: int, role_id: int) -> bool:
-    user = base.DISCORD_CLIENT.get_guild(guild_id).get_member(user_id)
-    if user:
-        role = user.get_role(role_id)
-        if role:
-            return True
-    return False
-
-
 @raidtarget.sub_command(
     description="Subscribe to a raid target timer", name="subscribe")
 async def subscribe(
@@ -57,10 +49,10 @@ async def subscribe(
                         "notification")
 ):
     lead_time = int(lead_time_minutes * 60)
-    if is_user_authorized(
+    if utils.is_user_authorized(
+            guild=inter.guild,
             user_id=inter.user.id,
-            guild_id=inter.guild_id,
-            role_id=get_member_role(inter.guild_id)):
+            role_id=config.get_member_role(inter.guild_id)):
         sub_db = sub_model.Subscription(
             user_id=inter.user.id,
             target=target,
@@ -160,10 +152,6 @@ def make_subscription_embed(sub_obj: sub_model.Subscription) -> disnake.Embed:
     return embed
 
 
-def get_member_role(guild_id: int) -> int:
-    return config.GUILD_SETTINGS[guild_id].get('member_role')
-
-
 async def refresh_listener(inter: disnake.MessageInteraction):
     target = inter.message.embeds[0].title
     user_id = inter.user.id
@@ -228,9 +216,10 @@ async def announce_subscriptions():
             within_lead = time_until <= datetime.timedelta(seconds=sub.lead_time)
             already_notified = sub.last_window_start == active_window.start
             if within_lead and not already_notified:
-                if is_user_authorized(
-                        user_id=sub.user_id, guild_id=sub.guild_id,
-                        role_id=get_member_role(sub.guild_id)):
+                if utils.is_user_authorized(
+                        guild=base.DISCORD_CLIENT.get_guild(sub.guild_id),
+                        user_id=sub.user_id,
+                        role_id=config.get_member_role(sub.guild_id)):
                     user = base.DISCORD_CLIENT.get_user(sub.user_id)
                     if user:
                         messages.append(user.send(embed=embed))

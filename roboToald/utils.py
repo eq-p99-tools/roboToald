@@ -1,5 +1,7 @@
 import re
 
+import disnake
+
 from roboToald.alert_services import squadcast
 
 SQUADCAST_WEBHOOK_REGEX_US = re.compile(
@@ -41,3 +43,12 @@ def send_alert(alert, message):
     message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)
     alert.increment_counter()
+
+
+def is_user_authorized(guild: disnake.Guild, user_id: int, role_id: int) -> bool:
+    user = guild.get_member(user_id)
+    if user:
+        role = user.get_role(role_id)
+        if role:
+            return True
+    return False
