@@ -313,6 +313,8 @@ async def points(
             default=True,
             description="Show points for ALL users (default: true).")
 ):
+    if player is not None:
+        show_all = False
     if show_all:
         message = "Point Balances:\n"
         earned_points = points_model.get_points_earned(inter.guild_id)
@@ -332,8 +334,7 @@ async def points(
                 f"<@{user_id}>: {current_points} "
                 f"(Earned {current_points + spent_points},"
                 f" Spent {spent_points})\n")
-        await inter.send(
-            message, allowed_mentions=disnake.AllowedMentions(users=False))
+        await send_and_split(inter, message)
         return
 
     if player is None:
@@ -674,15 +675,19 @@ async def statistics(
         content=message_camp, allowed_mentions=disnake.AllowedMentions(users=False)
     )
 
+    await send_and_split(inter, message_members)
+
+
+async def send_and_split(inter: disnake.ApplicationCommandInteraction, long_message: str):
     # Messages can only be 2000 chars so break it up if necessary
-    if len(message_members) < 2000:
+    if len(long_message) < 2000:
         await inter.send(
-            content=message_members, allowed_mentions=disnake.AllowedMentions(users=False)
+            content=long_message, allowed_mentions=disnake.AllowedMentions(users=False)
         )
     else:
         messages = []
         message_builder = ""
-        for line in message_members.splitlines():
+        for line in long_message.splitlines():
             if len(message_builder) + len(line) > 2000:
                 messages.append(message_builder)
                 message_builder = ""
