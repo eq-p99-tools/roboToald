@@ -1,5 +1,7 @@
 import re
 
+import disnake
+
 from roboToald.alert_services import squadcast
 
 SQUADCAST_WEBHOOK_REGEX_US = re.compile(
@@ -44,3 +46,34 @@ def send_alert(alert, message):
     message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)
     alert.increment_counter()
+
+
+async def send_and_split(
+        inter: disnake.ApplicationCommandInteraction, long_message: str):
+    # Messages can only be 2000 chars so break it up if necessary
+    if len(long_message) < 2000:
+        await inter.send(
+            content=long_message,
+            allowed_mentions=disnake.AllowedMentions(users=False)
+        )
+    else:
+        messages = split_message(long_message)
+        for message in messages:
+            await inter.send(
+                content=message,
+                allowed_mentions=disnake.AllowedMentions(users=False)
+            )
+
+
+def split_message(long_message: str):
+    messages = []
+    message_builder = ""
+    for line in long_message.splitlines():
+        if len(message_builder) + len(line) > 2000:
+            messages.append(message_builder)
+            message_builder = ""
+        message_builder += f"{line}\n"
+    if message_builder:
+        messages.append(message_builder)
+
+    return messages
