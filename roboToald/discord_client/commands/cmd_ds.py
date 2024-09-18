@@ -243,7 +243,7 @@ async def status(
         message += "\nMembers in camp:\n"
     for event in active_events:
         active_members.add(event.user_id)
-        time_spent = round((now - event.time).total_seconds())
+        time_spent = max(round((now - event.time).total_seconds()), 0)
         display_time = "{:0>8}".format(
             str(datetime.timedelta(seconds=time_spent)))
         if event.user_id in points_per_member:
@@ -260,7 +260,7 @@ async def status(
         message += f")\n"
 
     # If more players were in the session, list them
-    if len(points_per_member) > len(active_members):
+    if len(set(points_per_member).difference(active_members)) > 0:
         message += "\nOther contributing members this session:\n"
         for member, member_points in points_per_member.items():
             if member not in active_members:
@@ -353,7 +353,11 @@ async def tod(
         backdate: int = commands.Param(
             default=0,
             ge=0,
-            description="Backdate DS pop by <X> minutes.")
+            description="Backdate DS pop by <X> minutes."),
+        quake: bool = commands.Param(
+            default=False,
+            description="Quake?"
+        )
 ):
     message = "DS ToD recorded"
     if backdate > 0:
@@ -395,8 +399,21 @@ async def tod(
         points_earned.store()
         message += f"<@{member}>: {session_points[0]}\n"
 
-    await inter.send(
-        message, allowed_mentions=disnake.AllowedMentions(users=False))
+    # Grant adjustment to active members for quake bonus
+    if quake and active_members > 0:
+        message += f"\nQuake Bonus of {config.QUAKE_BONUS} granted to active members: "
+        for event in active_events:
+            if event.user_id == 0:
+                continue
+            bonus_points = points_model.PointsEarned(
+                user_id=event.user_id, guild_id=inter.guild_id,
+                points=config.QUAKE_BONUS, time=stop_time,
+                notes='Automatic Quake Bonus', adjustor=inter.user.id)
+            bonus_points.store()
+            message += f"<@{event.user_id}>, "
+        message = message[:-2] + ".\n"
+
+    await utils.send_and_split(inter, message)
 
     recent_ds = None
     time_since_pop = stop_time.astimezone() - points_model.get_last_pop_time()
@@ -411,11 +428,13 @@ async def tod(
         await inter.delete_original_response(delay=5)
         return
 
+    # Record the POP event
     pop_event = points_model.PointsAudit(
         user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
         time=stop_time, active=False)
     points_model.start_event(pop_event)
 
+    # Restart the ToD Timer
     timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get('ds_tod_channel')
     if not timer_channel_id:
         return
