@@ -14,7 +14,28 @@ async def data(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-@data.sub_command(description="Show overall statistics for the DS camp.")
+@data.sub_command(description="Show urn purchase history.")
+async def purchases(
+        inter: disnake.ApplicationCommandInteraction):
+    # Defer the response to avoid timeouts
+    await inter.response.defer()
+
+    # Get all urn purchases
+    urns = points_model.get_points_spent(inter.guild_id)
+    if not urns:
+        await inter.send(content="No urn purchases found.")
+        return
+
+    # Create a list of urn purchases
+    urn_message = "**Urn Purchase History**\n"
+    for urn in urns:
+        urn_message += f"* <@{urn.user_id}>: {urn.points} points at <t:{int(urn.time.timestamp())}>.\n"
+
+    # Send the list of urn purchases
+    await utils.send_and_split(inter, urn_message)
+
+
+@data.sub_command(description="Show a historical overview of the DS camp.")
 async def overview(
         inter: disnake.ApplicationCommandInteraction):
     # Defer the response to avoid timeouts
