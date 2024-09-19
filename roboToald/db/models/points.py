@@ -192,6 +192,12 @@ def close_event(start: PointsAudit, end: PointsAudit) -> None:
         session.commit()
 
 
+def update_event(event: PointsAudit) -> None:
+    with base.get_session() as session:
+        session.add(session.merge(event))
+        session.commit()
+
+
 class PointsEarned(base.Base, base.MyBase):
     __use_quota__ = False
     __tablename__ = "points_earned"

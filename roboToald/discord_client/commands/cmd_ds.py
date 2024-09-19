@@ -189,21 +189,46 @@ async def stop(
             default=None,
             description="Member exiting camp (default: current member)."),
         backdate: int = commands.Param(
-            default=0,
+            default=None,
             ge=0,
-            description="Backdate exit by <X> minutes.")
+            description="Backdate exit by <X> minutes. If already stopped, "
+                        "update the last stop time.")
 ):
     if player is None:
         player = inter.user
     last = points_model.get_last_event(player.id, guild_id=inter.guild_id)
+    stop_time = datetime.datetime.now()
+    if backdate:
+        stop_time -= datetime.timedelta(minutes=backdate)
+    last_pop = points_model.get_last_pop_time()
+    # If there is an event, it is closed, it is after the last pop,
+    # and backdate is set, then update the last event's stop time
+    if last and not last.active and last.time.astimezone() > last_pop and backdate is not None:
+        # Update the last event to be backdated
+        start_event = points_model.get_event(last.start_id)
+        if stop_time < start_event.time:
+            minutes_since_start = int(
+                (datetime.datetime.now() - start_event.time).total_seconds() / 60)
+            await inter.send(
+                f"Cannot backdate to before start time ({minutes_since_start} minutes ago).",
+                ephemeral=True)
+            return
+        last.time = stop_time
+        points_model.update_event(last)
+        discord_exit_time = int(time.mktime(last.time.timetuple()))
+        await inter.send(f"Previous stop time for <@{player.id}> updated to"
+                         f" <t:{discord_exit_time}>.",
+                         allowed_mentions=disnake.AllowedMentions(users=False))
+        return
     if not last or not last.active:
         await inter.send("No active event to stop.", ephemeral=True)
         return
-    stop_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
     close_event(last, stop_time)
 
     discord_exit_time = int(time.mktime(stop_time.timetuple()))
-    backdate_message = f", backdated {backdate} minutes" if backdate > 0 else ""
+    backdate_message = ""
+    if backdate is not None:
+        backdate_message = f", backdated {backdate} minutes"
     await inter.send(
         f"<@{player.id}> exited camp at <t:{discord_exit_time}> "
         f"(<t:{discord_exit_time}:R>{backdate_message}).",
