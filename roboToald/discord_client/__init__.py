@@ -29,6 +29,8 @@ async def on_ready():
     print(f'Logged in as: {DISCORD_CLIENT.user.name}')
     await commands.cmd_timer.load_timers()
     print("Loaded timers from DB.")
+    await commands.cmd_ds.schedule_messages()
+    print("Scheduled DS messages.")
     SUBSCRIPTION_TASK = asyncio.create_task(announce_subscriptions_task())
     asyncio.ensure_future(SUBSCRIPTION_TASK)
     print("Started Subscription Notifier.")

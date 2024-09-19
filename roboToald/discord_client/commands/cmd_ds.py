@@ -1,3 +1,4 @@
+import asyncio
 import collections
 import datetime
 import math
@@ -607,3 +608,89 @@ async def audit(
         content=f"Sent audit data for <@{player.id}> via DM: {dm.jump_url}",
         ephemeral=True
     )
+
+
+async def schedule_messages():
+    for guild_id in DS_GUILDS:
+        channel_id = config.GUILD_SETTINGS.get(guild_id, {}).get('ds_schedule_channel')
+        if channel_id:
+            channel = await base.DISCORD_CLIENT.fetch_channel(channel_id)
+            if not channel:
+                print(f"Could not find channel with ID {channel_id} for guild {guild_id}")
+                return
+
+            task = asyncio.create_task(_schedule_message_repeating(channel))
+            asyncio.ensure_future(task)
+
+
+async def _schedule_message_repeating(channel: disnake.TextChannel):
+    # Get all messages from today
+    today = datetime.datetime.now().astimezone(
+        constants.TIMEZONES['ET']).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    existing_message = None
+    async for message in channel.history(after=today):
+        if message.author.id == base.DISCORD_CLIENT.user.id:
+            existing_message = message
+            break
+
+    while True:
+        # If no existing message today, send one
+        if not existing_message:
+            await _schedule_message(channel)
+            existing_message = True
+
+        # We should now be past first run, so calculate noon tomorrow
+        now = datetime.datetime.now().astimezone(constants.TIMEZONES['ET'])
+        tomorrow = now + datetime.timedelta(days=1)
+        noon_tomorrow = tomorrow.replace(hour=12, minute=0, second=0, microsecond=0)
+
+        # Sleep until the next noon
+        await asyncio.sleep((noon_tomorrow - now).total_seconds())
+        await _schedule_message(channel)
+
+
+async def _schedule_message(channel: disnake.TextChannel):
+    # Get the current time
+    current_datetime = datetime.datetime.now().astimezone(constants.TIMEZONES['ET'])
+    # Get the current day of the week
+    day_of_week = current_datetime.strftime("%A")
+    # Get the current month
+    month = current_datetime.strftime("%B")
+    # Get the current date, ie "18th" or "2nd"
+    date = int(current_datetime.strftime("%d"))
+    tomorrow = current_datetime + datetime.timedelta(days=1)
+    tomorrow_date = int(tomorrow.strftime("%d"))
+
+    def get_ordinal(i):
+        # Adapted from https://gist.github.com/FlantasticDan/3eb192fac85ab5efa2002fb7165e4f35
+        if 10 <= i % 100 <= 20:
+            return 'th'
+        else:
+            return {1: 'st', 2: 'nd', 3: 'rd'}.get(i % 10, 'th')
+
+    title_dates = f"{day_of_week} {month} {date}{get_ordinal(date)} -> {tomorrow_date}{get_ordinal(tomorrow_date)}"
+    midnight = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+    midnight_timestamp = int(midnight.timestamp())
+    message = f"""**{title_dates} - Late Shift Availability**
+We usually have thinner numbers during the night in Eastern Time.
+If you're able to commit to those hours for this spawn cycle, please mark the appropriate emoji here.
+You may select multiple emoji, one for each hour you're available. 
+
+Please only add an emoji if you're definitely going to be there.
+
+🇦 <t:{midnight_timestamp}:f> - <t:{midnight_timestamp + 3600 * 1}:t>
+🇧 <t:{midnight_timestamp + 3600 * 1}:f> - <t:{midnight_timestamp + 3600 * 2}:t>
+🇨 <t:{midnight_timestamp + 3600 * 2}:f> - <t:{midnight_timestamp + 3600 * 3}:t>
+🇩 <t:{midnight_timestamp + 3600 * 3}:f> - <t:{midnight_timestamp + 3600 * 4}:t>
+🇪 <t:{midnight_timestamp + 3600 * 4}:f> - <t:{midnight_timestamp + 3600 * 5}:t>
+🇫 <t:{midnight_timestamp + 3600 * 5}:f> - <t:{midnight_timestamp + 3600 * 6}:t>
+🇬 <t:{midnight_timestamp + 3600 * 6}:f> - <t:{midnight_timestamp + 3600 * 7}:t>
+🇭 <t:{midnight_timestamp + 3600 * 7}:f> - <t:{midnight_timestamp + 3600 * 8}:t>
+🇮 <t:{midnight_timestamp + 3600 * 8}:f> - <t:{midnight_timestamp + 3600 * 9}:t>
+@everyone"""
+
+    message_object = await channel.send(
+        message, allowed_mentions=disnake.AllowedMentions(everyone=True))
+    for emoji in "🇦🇧🇨🇩🇪🇫🇬🇭🇮":
+        await message_object.add_reaction(emoji)
