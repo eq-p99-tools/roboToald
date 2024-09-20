@@ -34,4 +34,4 @@ COPY roboToald/ /app/roboToald/
 COPY batphone.py /app/
 
 # Run the app
-CMD ["python", "./batphone.py"]
+CMD ["python", "-u", "./batphone.py"]
