@@ -42,7 +42,9 @@ for guild in TEST_GUILDS:
         'ds_tod_channel': CONF.getint(
             f"guild.{guild}", 'ds_tod_channel', fallback=0),
         'ds_schedule_channel': CONF.getint(
-            f"guild.{guild}", 'ds_schedule_channel', fallback=0)
+            f"guild.{guild}", 'ds_schedule_channel', fallback=0),
+        'ds_admin_role': CONF.getint(
+            f"guild.{guild}", 'ds_admin_role', fallback=0),
     }
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]

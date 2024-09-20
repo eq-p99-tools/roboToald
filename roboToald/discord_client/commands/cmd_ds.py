@@ -524,6 +524,13 @@ async def adjust(
         notes: str = commands.Param(
             default=None,
             description="Optional notes / reason for adjustment.")):
+
+    # Check if the user has the correct role to adjust points
+    admin_role = config.GUILD_SETTINGS.get(inter.guild_id, {}).get('ds_admin_role')
+    if admin_role != 0 and admin_role not in (role.id for role in inter.user.roles):
+        await inter.send("You do not have permission to adjust points.", ephemeral=True)
+        return
+
     points_earned = points_model.PointsEarned(
         user_id=player.id, guild_id=inter.guild_id,
         points=points, time=datetime.datetime.now(),
