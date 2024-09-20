@@ -242,6 +242,7 @@ async def status(
         verbose: bool = commands.Param(
             default=False,
             description="Show detailed point data.")):
+    await inter.response.defer()
     active_events = points_model.get_active_events(inter.guild_id)
     last_window = points_model.get_last_event(
         user_id=0, guild_id=inter.guild_id)
