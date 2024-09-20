@@ -1,9 +1,8 @@
+import calendar
 import datetime
 
 import disnake
 
-from roboToald import config
-from roboToald import constants
 from roboToald.discord_client.commands import cmd_ds
 from roboToald.db.models import points as points_model
 from roboToald import utils
@@ -12,6 +11,110 @@ from roboToald import utils
 @cmd_ds.ds.sub_command_group()
 async def data(inter: disnake.ApplicationCommandInteraction):
     pass
+
+
+@data.sub_command(
+    name="calendar",
+    description="Render a calendar of urn purchases.")
+async def calendar_cmd(
+        inter: disnake.ApplicationCommandInteraction):
+    # Defer the response to avoid timeouts
+    await inter.response.defer()
+
+    # Get all urn purchases
+    urns = points_model.get_points_spent(inter.guild_id)
+    if not urns:
+        await inter.send(content="No urn purchases found.")
+        return
+
+    # Create a calendar of urn purchases
+    cal_dict = {}
+    for urn in urns:
+        date = urn.time.date()
+        if date not in cal_dict:
+            cal_dict[date] = []
+        cal_dict[date].append(urn)
+
+    cal_message = "**Urn Purchase Calendar**"
+
+    # Get the year and month of the first urn purchase
+    first_date = min(cal_dict.keys())
+    first_year = first_date.year
+    first_month = first_date.month
+    today = datetime.date.today()
+    months = []
+    for year in range(first_year, datetime.date.today().year + 1):
+        for month in range(1, 13):
+            if year == first_year and month < first_month:
+                continue
+            if year >= today.year and month > today.month:
+                break
+            cal_month = calendar.month(year, month, w=5)
+            cal_month = pad_month(cal_month)
+            for date in cal_dict:
+                if date.year == year and date.month == month:
+                    cal_month = mark_date(cal_month, date.day)
+            months.append(cal_month)
+
+    month_groups = combine_months(months, 2)
+    await inter.send(content=cal_message)
+    cal_message = ""
+    for i, month_group in enumerate(month_groups):
+        if i % 2 == 0 and i != 0:
+            await inter.send(content=f'```{cal_message}```')
+            cal_message = ""
+        horizontal_line = ""
+        if i % 2 != 0:
+            horizontal_line = "\n\n" + "=" * len(month_group.splitlines()[0]) + "\n\n"
+        cal_message += f"{horizontal_line}" + month_group
+    if cal_message:
+        await inter.send(content=f'```{cal_message}```')
+
+
+def combine_months(months, num_cols):
+    # Group months into sets of `num_cols`
+    month_groups = []
+    one_set = []
+    for i, month in enumerate(months):
+        if i % num_cols == 0 and i != 0:
+            month_groups.append(one_set)
+            one_set = []
+        one_set.append(month)
+    month_groups.append(one_set)
+
+    # Combine the months in each set, line by line
+    combined_months = []
+    for month_set in month_groups:
+        one_set = []
+        # Find the number of lines in the longest month
+        max_lines = max(len(month.splitlines()) for month in month_set)
+        for i in range(max_lines):
+            line = ""
+            for month in month_set:
+                try:
+                    line += month.splitlines()[i] + " || "
+                except IndexError as e:
+                    line += " " * len(month.splitlines()[0]) + " || "
+            one_set.append(line[:-4])
+        combined_months.append('\n'.join(one_set))
+    return combined_months
+
+
+def pad_month(cal_month):
+    cal_month = cal_month.splitlines()
+    max_width = max(len(line) for line in cal_month)
+    for i, line in enumerate(cal_month):
+        if len(line) < max_width:
+            cal_month[i] = line + " " * (max_width - len(line))
+    return "\n".join(cal_month)
+
+
+def mark_date(cal_month, day):
+    cal_month = cal_month.splitlines()
+    for i, line in enumerate(cal_month):
+        if str(day) in line:
+            cal_month[i] = line.replace(f" {day} ", f"[{day}]")
+    return "\n".join(cal_month)
 
 
 @data.sub_command(description="Show urn purchase history.")
