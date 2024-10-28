@@ -343,6 +343,10 @@ async def points(
 ):
     if player is not None:
         show_all = False
+
+    # Defer the response to avoid timeouts
+    await inter.response.defer(ephemeral=not show_all)
+
     if show_all:
         message = "Point Balances:\n"
         earned_points = points_model.get_points_earned(inter.guild_id)
@@ -550,6 +554,9 @@ async def audit(
         inter: disnake.ApplicationCommandInteraction,
         player: disnake.Member = commands.Param(
             description="Member to audit.")):
+    # Defer the response to avoid timeouts
+    await inter.response.defer(ephemeral=True)
+
     # Fetch all the audit events for the player
     events = points_model.get_events_for_member(player.id, inter.guild_id)
     # Also fetch Earned/Spent entries
