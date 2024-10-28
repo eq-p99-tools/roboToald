@@ -5,6 +5,7 @@ from disnake.ext import commands
 
 from roboToald import config
 from roboToald.db.models import alert as alert_model
+from roboToald.discord_client.wakeup import wakeup
 from roboToald import utils
 
 DISCORD_INTENTS = disnake.Intents.default()
@@ -75,3 +76,5 @@ async def on_message(message):
     # Search for matches to registered alerts
     if message.channel.id in alert_model.get_registered_channels():
         find_match(channel=message.channel.id, message=message)
+
+    await wakeup.process_message(message)
