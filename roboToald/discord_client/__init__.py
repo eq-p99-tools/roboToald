@@ -6,6 +6,7 @@ import disnake
 
 from roboToald.discord_client import commands
 from roboToald.discord_client.base import DISCORD_CLIENT
+from roboToald.discord_client.wakeup import wakeup
 
 SUBSCRIPTION_TASK = None
 
@@ -34,6 +35,14 @@ async def on_ready():
     SUBSCRIPTION_TASK = asyncio.create_task(announce_subscriptions_task())
     asyncio.ensure_future(SUBSCRIPTION_TASK)
     print("Started Subscription Notifier.")
+
+
+@DISCORD_CLIENT.event
+async def on_message(message: disnake.Message):
+    if message.author.id == DISCORD_CLIENT.user.id:
+        return
+
+    await wakeup.process_message(message)
 
 
 @DISCORD_CLIENT.listen("on_button_click")

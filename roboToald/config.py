@@ -24,6 +24,10 @@ CONTESTED_MULTIPLIER = CONF.getint(
 QUAKE_BONUS = CONF.getint(
     'ds', 'quake_bonus', fallback=150)
 
+WAKEUP_AUDIOFILE = CONF.get(
+    'wakeup', 'audiofile', fallback='wakeup.wav')
+
+WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
     GUILD_SETTINGS[guild] = {
@@ -45,7 +49,13 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'ds_schedule_channel', fallback=0),
         'ds_admin_role': CONF.getint(
             f"guild.{guild}", 'ds_admin_role', fallback=0),
+        'wakeup_channels': CONF.get(
+            f"guild.{guild}", 'wakeup_channels', fallback=None),
     }
+    if GUILD_SETTINGS[guild]['wakeup_channels']:
+        for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
+            text_channel, voice_channel = x.split(':')
+            WAKEUP_CHANNELS[int(text_channel)] = int(voice_channel)
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
 

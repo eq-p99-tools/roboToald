@@ -17,11 +17,17 @@ RUN pip wheel -r requirements.txt --wheel-dir /wheels
 ##########################
 FROM python:3.9-slim AS RUNTIME_IMAGE
 
+# Install ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg
+
 # Set our working directory to /app
 WORKDIR /app
 
 # Copy only the requirements.txt files to utilize layer cache
 COPY requirements.txt /app/
+
+# Copy our wakeup sound
+COPY wakeup.wav /app/
 
 # Copy over wheels
 COPY --from=BUILD_IMAGE /wheels /wheels

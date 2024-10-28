@@ -9,6 +9,9 @@ points_per_minute = 3
 contested_multiplier = 3
 quake_bonus = 150
 
+[wakeup]
+audiofile = wakeup.wav
+
 [guild.12345]
 # Member Role is necessary for raidtarget commands to work
 member_role = 77777
@@ -24,6 +27,9 @@ ds_admin_role = <role_id>
 # Timer and Random functions default to true, but can be disabled:
 enable_timer = false
 enable_random = false
+
+# Wakeup channel mappings
+wakeup_channels = textchannel_id1:voicechannel_id1, textchannel_id2:voicechannel_id2
 
 [guild.67890]
 # Raid Subscription commands will be unusable.

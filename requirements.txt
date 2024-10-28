@@ -4,3 +4,4 @@ sqlalchemy
 validators
 tzdata
 python-dateutil
+pynacl
