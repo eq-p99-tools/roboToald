@@ -1,4 +1,6 @@
 import configparser
+import os
+import random
 from typing import List
 
 CONFIG_FILENAME = 'batphone.ini'
@@ -51,17 +53,30 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'ds_admin_role', fallback=0),
         'wakeup_channels': CONF.get(
             f"guild.{guild}", 'wakeup_channels', fallback=None),
+        'wakeup_exclusions': CONF.get(
+            f"guild.{guild}", 'wakeup_exclusions', fallback=None),
     }
     if GUILD_SETTINGS[guild]['wakeup_channels']:
         for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
             text_channel, voice_channel = x.split(':')
             WAKEUP_CHANNELS[int(text_channel)] = int(voice_channel)
+    if GUILD_SETTINGS[guild]['wakeup_exclusions']:
+        GUILD_SETTINGS[guild]['wakeup_exclusions'] = [
+            x.strip().lower()
+            for x in GUILD_SETTINGS[guild]['wakeup_exclusions'].split(',')
+        ]
+    else:
+        GUILD_SETTINGS[guild]['wakeup_exclusions'] = []
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
 
 
 def get_member_role(guild_id: int) -> int:
     return GUILD_SETTINGS[guild_id].get('member_role')
+
+
+def get_wakeup_exclusions(guild_id: int) -> List[str]:
+    return GUILD_SETTINGS[guild_id].get('wakeup_exclusions', [])
 
 
 def guilds_for_command(command_name: str) -> List[int]:
