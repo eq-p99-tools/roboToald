@@ -1,6 +1,4 @@
 import configparser
-import os
-import random
 from typing import List
 
 CONFIG_FILENAME = 'batphone.ini'
@@ -29,6 +27,9 @@ QUAKE_BONUS = CONF.getint(
 WAKEUP_AUDIOFILE = CONF.get(
     'wakeup', 'audiofile', fallback='wakeup.wav')
 
+ENCRYPTION_KEY = CONF.get(
+    'sso', 'encryption_key')
+
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
@@ -43,6 +44,8 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'enable_batphone', fallback=False),
         'enable_raidtarget': CONF.getboolean(
             f"guild.{guild}", 'enable_raidtarget', fallback=False),
+        'enable_sso': CONF.getboolean(
+            f"guild.{guild}", 'enable_sso', fallback=False),
         'enable_ds': CONF.getboolean(
             f"guild.{guild}", 'enable_ds', fallback=False),
         'ds_tod_channel': CONF.getint(
