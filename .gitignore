@@ -4,3 +4,4 @@ __pycache__
 alerts.db
 batphone.ini
 .python-version
+certs

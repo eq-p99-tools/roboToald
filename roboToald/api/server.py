@@ -1,13 +1,12 @@
 """REST API server implementation for RoboToald."""
-from typing import Optional, Dict, Any, Union
+from typing import Union
 import logging
-import datetime
 
 from fastapi import FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
 import sqlalchemy.exc
 
-from roboToald.db.models import sso
+from roboToald.db.models import sso as sso_model
 from roboToald.db import base
 
 # Configure logging
@@ -17,25 +16,30 @@ logger = logging.getLogger(__name__)
 # Create FastAPI app
 app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services")
 
+
 # Define request and response models
 class AuthRequest(BaseModel):
     """Request model for SSO authentication."""
     username: str
     password: str
 
+
 class SSOResponse(BaseModel):
     """Response model for successful SSO authentication."""
     real_user: str
     real_pass: str
 
+
 class ErrorResponse(BaseModel):
     """Response model for error cases."""
     detail: str
+
 
 @app.get("/")
 async def root():
     """Root endpoint for API health check."""
     return {"status": "ok", "service": "RoboToald API"}
+
 
 @app.post("/auth", response_model=Union[SSOResponse, ErrorResponse], 
           status_code=status.HTTP_200_OK, 
@@ -48,11 +52,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     Authenticate a user based on username and password.
     
     The authentication process:
-    1. Look up the username in the SSOAccount table
-    2. If not found, continue to access key check
-    3. Look up the password in the SSOAccessKey table to find discord_user_id
-    4. Check if the user has access to the requested username
-    5. Return the real credentials if authorized, otherwise return access denied
+    1. Check if the client IP is rate limited
+    2. Check the provided password is a valid access key, otherwise return access denied
+    3. Find an account associated with the provided username, otherwise return access denied
+    4. Check if the user has access to the requested account, otherwise return access denied
+    5. Return the real credentials if authorized
     
     Note: For security reasons, all authentication failures return the same error code
     to avoid leaking information about what accounts exist in the system.
@@ -60,20 +64,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     Rate limiting:
     - IP addresses with more than 10 failed attempts in the last hour will be blocked
     """
-    username = auth_data.username
-    password = auth_data.password
-    client_ip = request.client.host if request.client else None
+    client_ip = request.client.host
     
     # Check if the IP is rate limited
-    if client_ip and sso.is_ip_rate_limited(client_ip):
+    if sso_model.is_ip_rate_limited(client_ip):
         logger.warning(f"Rate limited IP: {client_ip} - too many failed attempts")
-        # Create audit log entry for the rate limit
-        sso.create_audit_log(
-            username=username,
-            ip_address=client_ip,
-            success=False,
-            details="Rate limited: too many failed attempts"
-        )
         # Return a 429 Too Many Requests status code
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -81,101 +76,65 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         )
     
     # Initialize audit log variables
-    audit_success = False
-    discord_user_id = None
     account_id = None
     guild_id = None
-    details = None
-    
-    try:
-        # Try to find the discord_user_id associated with the provided password
-        discord_user_id = find_discord_user_by_access_key(password)
-        
-        if not discord_user_id:
-            # Log with specific reason but return generic error
-            details = "Invalid access key"
-            logger.warning(f"Authentication failed: {details}")
-            # Create audit log entry before raising exception
-            sso.create_audit_log(
-                username=username,
-                ip_address=client_ip,
-                success=False,
-                discord_user_id=None,
-                account_id=None,
-                guild_id=None,
-                details=details
-            )
-            sso.increment_failed_login_attempt(client_ip)
-            raise_auth_failed()
-        
-        # Find the account by username
-        account = find_account_by_username(username)
-        
-        if not account:
-            # Log with specific reason but return generic error
-            details = "Account not found"
-            logger.warning(f"Authentication failed: {details}")
-            # Create audit log entry before raising exception
-            sso.create_audit_log(
-                username=username,
-                ip_address=client_ip,
-                success=False,
-                discord_user_id=discord_user_id,
-                account_id=None,
-                guild_id=None,
-                details=details
-            )
-            sso.increment_failed_login_attempt(client_ip)
-            raise_auth_failed()
-        
-        account_id = account.id
-        guild_id = account.guild_id
-        
-        # Check if the discord user has access to this account
-        if not user_has_access_to_account(discord_user_id, account.guild_id, account.id):
-            # Log with specific reason but return generic error
-            details = "Access denied"
-            logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
-            # Create audit log entry before raising exception
-            sso.create_audit_log(
-                username=username,
-                ip_address=client_ip,
-                success=False,
-                discord_user_id=discord_user_id,
-                account_id=account_id,
-                guild_id=guild_id,
-                details=details
-            )
-            sso.increment_failed_login_attempt(client_ip)
-            raise_auth_failed()
-        
-        # Authentication successful - update account's last_login timestamp
-        update_last_login(account_id)
-        
-        # Create successful audit log entry
-        sso.create_audit_log(
-            username=username,
-            ip_address=client_ip,
-            success=True,
-            discord_user_id=discord_user_id,
-            account_id=account_id,
-            guild_id=guild_id,
-            details="Authentication successful"
-        )
-        
-        # Return the real credentials
-        return SSOResponse(
-            real_user=account.real_user,
-            real_pass=account.real_pass
-        )
-        
-    except sqlalchemy.exc.NoResultFound:
-        # Log with specific reason but return generic error
-        details = "Database query returned no results"
+    discord_user_id = None
+
+    # Find the discord_user_id associated with the provided password
+    access_key = sso_model.get_access_key_by_key(auth_data.password)
+
+    """
+    If we have an access key, we can look up the account by the guild_id.
+    If we don't have an access key, we'll log the failed attempt and continue.
+    """
+    if access_key:
+        discord_user_id = access_key.discord_user_id
+        guild_id = access_key.guild_id
+        account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id)
+        if account:
+            account_id = account.id
+    else:
+        # Log failed authentication attempt
+        details = "Invalid access key"
         logger.warning(f"Authentication failed: {details}")
         # Create audit log entry before raising exception
-        sso.create_audit_log(
-            username=username,
+        sso_model.create_audit_log(
+            username=auth_data.username,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=None,
+            account_id=None,
+            guild_id=None,
+            details=details
+        )
+        raise_auth_failed()
+
+    if not account_id:
+        # Log with specific reason but return generic error
+        details = "Account not found"
+        logger.warning(f"Authentication failed: {details}")
+        # Create audit log entry before raising exception
+        sso_model.create_audit_log(
+            username=auth_data.username,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=None,
+            guild_id=access_key.guild_id,
+            details=details
+        )
+        raise_auth_failed()
+
+    # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
+
+    # Check if the discord user has access to this account
+    if not user_has_access_to_account(discord_user_id, guild_id, account_id):
+        # Log with specific reason but return generic error
+        details = "Access denied"
+        logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
+        # Create audit log entry before raising exception
+        sso_model.create_audit_log(
+            username=auth_data.username,
             ip_address=client_ip,
             success=False,
             discord_user_id=discord_user_id,
@@ -183,41 +142,28 @@ async def authenticate(auth_data: AuthRequest, request: Request):
             guild_id=guild_id,
             details=details
         )
-        sso.increment_failed_login_attempt(client_ip)
-        raise_auth_failed()
-    except HTTPException:
-        # Re-raise HTTP exceptions (like our auth failed exception)
-        # Audit log already created before raising the exception
-        raise
-    except Exception as e:
-        # Log the specific error but return generic message
-        details = f"Unexpected error: {str(e)}"
-        logger.error(f"Authentication error: {details}")
-        # Create audit log entry before raising exception
-        sso.create_audit_log(
-            username=username,
-            ip_address=client_ip,
-            success=False,
-            discord_user_id=discord_user_id,
-            account_id=account_id,
-            guild_id=guild_id,
-            details=details[:255]  # Limit to column size
-        )
-        sso.increment_failed_login_attempt(client_ip)
         raise_auth_failed()
 
-def update_last_login(account_id: int) -> None:
-    """Update the last_login timestamp for an account."""
-    with base.get_session() as session:
-        try:
-            account = session.query(sso.SSOAccount).filter(
-                sso.SSOAccount.id == account_id
-            ).one()
-            account.last_login = datetime.datetime.now()
-            session.commit()
-        except Exception as e:
-            logger.error(f"Error updating last_login: {str(e)}")
-            session.rollback()
+    # Authentication successful - update account's last_login timestamp
+    sso_model.update_last_login(account_id)
+
+    # Create successful audit log entry
+    sso_model.create_audit_log(
+        username=auth_data.username,
+        ip_address=client_ip,
+        success=True,
+        discord_user_id=discord_user_id,
+        account_id=account_id,
+        guild_id=guild_id,
+        details="Authentication successful"
+    )
+
+    # Return the real credentials
+    return SSOResponse(
+        real_user=account.real_user,
+        real_pass=account.real_pass
+    )
+
 
 def raise_auth_failed():
     """Helper function to raise a consistent authentication failure exception."""
@@ -226,53 +172,6 @@ def raise_auth_failed():
         detail="Authentication failed"
     )
 
-def find_discord_user_by_access_key(access_key: str) -> Optional[int]:
-    """Find the discord user ID associated with an access key."""
-    with base.get_session() as session:
-        try:
-            # Query for the access key
-            access_key_obj = session.query(sso.SSOAccessKey).filter(
-                sso.SSOAccessKey.access_key == access_key
-            ).one_or_none()
-            
-            if access_key_obj:
-                return access_key_obj.discord_user_id
-            return None
-        except Exception as e:
-            logger.error(f"Error finding discord user by access key: {str(e)}")
-            return None
-
-def find_account_by_username(username: str) -> Optional[sso.SSOAccount]:
-    """Find an account by username."""
-    with base.get_session() as session:
-        try:
-            # Try to find the account directly by real_user
-            account = session.query(sso.SSOAccount).filter(
-                sso.SSOAccount.real_user == username
-            ).one_or_none()
-            
-            if account:
-                session.expunge(account)
-                return account
-                
-            # If not found, try to find by alias
-            alias = session.query(sso.SSOAccountAlias).filter(
-                sso.SSOAccountAlias.alias == username
-            ).one_or_none()
-            
-            if alias:
-                account = session.query(sso.SSOAccount).filter(
-                    sso.SSOAccount.id == alias.account_id
-                ).one_or_none()
-                
-                if account:
-                    session.expunge(account)
-                    return account
-                    
-            return None
-        except Exception as e:
-            logger.error(f"Error finding account by username: {str(e)}")
-            return None
 
 def user_has_access_to_account(discord_user_id: int, guild_id: int, account_id: int) -> bool:
     """
@@ -285,16 +184,16 @@ def user_has_access_to_account(discord_user_id: int, guild_id: int, account_id: 
     with base.get_session() as session:
         try:
             # Get all groups for the guild
-            groups = session.query(sso.SSOAccountGroup).filter(
-                sso.SSOAccountGroup.guild_id == guild_id
+            groups = session.query(sso_model.SSOAccountGroup).filter(
+                sso_model.SSOAccountGroup.guild_id == guild_id
             ).all()
             
             # Check each group to see if the user has the role and if the account is in the group
             for group in groups:
                 # Check if the account is in this group
-                account_in_group = session.query(sso.account_group_mapping).filter(
-                    sso.account_group_mapping.c.account_id == account_id,
-                    sso.account_group_mapping.c.group_id == group.id
+                account_in_group = session.query(sso_model.account_group_mapping).filter(
+                    sso_model.account_group_mapping.c.account_id == account_id,
+                    sso_model.account_group_mapping.c.group_id == group.id
                 ).count() > 0
                 
                 if account_in_group:

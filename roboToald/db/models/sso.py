@@ -1,6 +1,7 @@
+import datetime
+
 import sqlalchemy.orm
 import sqlalchemy_utils
-import datetime
 
 from roboToald import config
 from roboToald.db import base
@@ -34,6 +35,7 @@ class SSOAccount(base.Base):
 
     groups = sqlalchemy.orm.relationship("SSOAccountGroup", secondary=account_group_mapping,
                                          back_populates="accounts")
+    audit_logs = sqlalchemy.orm.relationship("SSOAuditLog", back_populates="account")
     tags = sqlalchemy.orm.relationship("SSOTag", back_populates="account",
                                        cascade="all, delete-orphan")
     aliases = sqlalchemy.orm.relationship("SSOAccountAlias", back_populates="account",
@@ -66,13 +68,49 @@ def create_account(guild_id: int, real_user: str, real_pass: str) -> SSOAccount:
     return account
 
 
-def get_account(guild_id: int, real_user: str) -> SSOAccount:
+def get_account(guild_id: int, real_user: str) -> SSOAccount or None:
     with base.get_session() as session:
         account = session.query(SSOAccount).filter(
             SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        session.expunge(account)
+            SSOAccount.real_user == real_user).one_or_none()
+        if account:
+            session.expunge(account)
     return account
+
+
+def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount or None:
+    """Find an account by username."""
+    with base.get_session() as session:
+        # Try to find the account directly by real_user
+        account = session.query(SSOAccount).filter(
+            SSOAccount.real_user == username
+        ).one_or_none()
+
+        if account:
+            session.expunge(account)
+            return account
+
+        # If not found, try to find by alias
+        alias = session.query(SSOAccountAlias).filter(
+            SSOAccountAlias.alias == username
+        ).one_or_none()
+
+        if alias:
+            account = alias.account
+            session.expunge(account)
+            return account
+
+        tagged_accounts = session.query(SSOTag).filter(
+            SSOTag.tag == username,
+            SSOTag.guild_id == guild_id
+        ).all()
+
+        if tagged_accounts:
+            accounts = [tagged_account.account for tagged_account in tagged_accounts]
+            # Sort accounts by last_login
+            accounts.sort(key=lambda account: account.last_login, reverse=True)
+            session.expunge(accounts[0])
+            return accounts[0]
 
 
 def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSOAccount]:
@@ -99,6 +137,17 @@ def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
         session.commit()
         session.expunge(account)
     return account
+
+
+def update_last_login(account_id: int) -> None:
+    """Update the last_login timestamp for an account."""
+    with base.get_session() as session:
+        account = session.query(SSOAccount).filter(
+            SSOAccount.id == account_id
+        ).one_or_none()
+        if account:
+            account.last_login = datetime.datetime.now()
+            session.commit()
 
 
 def delete_account(guild_id: int, real_user: str) -> None:
@@ -250,7 +299,7 @@ def generate_access_key():
     return passkey
 
 
-def get_access_key(guild_id: int, discord_user_id: int) -> SSOAccessKey:
+def get_access_key_by_user(guild_id: int, discord_user_id: int) -> SSOAccessKey:
     with base.get_session() as session:
         access_key = session.query(SSOAccessKey).filter(
             SSOAccessKey.guild_id == guild_id,
@@ -273,13 +322,22 @@ def get_access_key(guild_id: int, discord_user_id: int) -> SSOAccessKey:
     return access_key
 
 
+def get_access_key_by_key(access_key: str) -> SSOAccessKey or None:
+    with base.get_session() as session:
+        access_key_obj = session.query(SSOAccessKey).filter(
+            SSOAccessKey.access_key == access_key).one_or_none()
+        if access_key_obj:
+            session.expunge(access_key_obj)
+    return access_key_obj
+
+
 def reset_access_key(guild_id: int, discord_user_id: int) -> SSOAccessKey:
     with base.get_session() as session:
         access_key = session.query(SSOAccessKey).filter(
             SSOAccessKey.guild_id == guild_id,
             SSOAccessKey.discord_user_id == discord_user_id).one_or_none()
         if access_key is None:
-            return get_access_key(guild_id, discord_user_id)
+            return get_access_key_by_user(guild_id, discord_user_id)
 
         access_key.access_key = generate_access_key()
         session.commit()
@@ -321,11 +379,13 @@ class SSOTag(base.Base):
         self.account_id = account_id
 
 
-def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
+def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag or None:
     with base.get_session() as session:
         account = session.query(SSOAccount).filter(
             SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
+            SSOAccount.real_user == real_user).one_or_none()
+        if account is None:
+            return None
         tag = SSOTag(guild_id=guild_id, tag=tag, account_id=account.id)
         session.add(tag)
         session.commit()
@@ -434,10 +494,13 @@ class SSOAuditLog(base.Base):
     
     # Result information
     success = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
+    # if discord user lookup succeeded:
     discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
-    account_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
     guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
-    
+    # if account lookup succeeded:
+    account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=True)
+    account = sqlalchemy.orm.relationship("SSOAccount", back_populates="audit_logs")
+
     # Additional information
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
@@ -471,19 +534,33 @@ def create_audit_log(username, ip_address=None, success=False, discord_user_id=N
     return audit_log
 
 
-def get_audit_logs(limit=100, offset=0, username=None, success=None, 
-                   guild_id=None, since=None) -> list[SSOAuditLog]:
-    """Get audit logs with optional filtering."""
+def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0) -> list[SSOAuditLog]:
+    """Get audit logs for a specific Discord user ID."""
     with base.get_session() as session:
-        query = session.query(SSOAuditLog)
+        logs = session.query(SSOAuditLog).filter(
+            SSOAuditLog.discord_user_id == discord_user_id
+        ).order_by(SSOAuditLog.timestamp.desc()).limit(limit).offset(offset).all()
+        session.expunge_all()
+    return logs
+
+
+def get_audit_logs(limit=100, offset=0, username=None, success=None, 
+                   since=None) -> list[SSOAuditLog]:
+    """
+    Get audit logs with optional filtering.
+    
+    Note: For failed authentication attempts, the guild_id field might be NULL in the database.
+    When filtering by guild_id, we need to consider this special case.
+    """
+    with base.get_session() as session:
+        query = session.query(SSOAuditLog).options(
+            sqlalchemy.orm.joinedload(SSOAuditLog.account))
         
         # Apply filters if provided
         if username:
             query = query.filter(SSOAuditLog.username == username)
         if success is not None:
             query = query.filter(SSOAuditLog.success == success)
-        if guild_id:
-            query = query.filter(SSOAuditLog.guild_id == guild_id)
         if since:
             query = query.filter(SSOAuditLog.timestamp >= since)
             
@@ -498,13 +575,13 @@ def get_audit_logs(limit=100, offset=0, username=None, success=None,
     return logs
 
 
-def count_failed_attempts(ip_address: str, hours: int = 1) -> int:
+def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
     """
     Count the number of failed authentication attempts from an IP address within a time period.
     
     Args:
         ip_address: The IP address to check
-        hours: The number of hours to look back (default: 1)
+        minutes: The number of minutes to look back (default: 60)
         
     Returns:
         The number of failed attempts
@@ -514,7 +591,7 @@ def count_failed_attempts(ip_address: str, hours: int = 1) -> int:
         
     with base.get_session() as session:
         # Calculate the time threshold
-        time_threshold = datetime.datetime.now() - datetime.timedelta(hours=hours)
+        time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=minutes)
         
         # Count failed attempts
         count = session.query(SSOAuditLog).filter(
@@ -525,14 +602,15 @@ def count_failed_attempts(ip_address: str, hours: int = 1) -> int:
         
         return count
 
-def is_ip_rate_limited(ip_address: str, max_attempts: int = 10, hours: int = 1) -> bool:
+
+def is_ip_rate_limited(ip_address: str, max_attempts: int = 10, minutes: int = 60) -> bool:
     """
     Check if an IP address should be rate limited based on failed login attempts.
     
     Args:
         ip_address: The IP address to check
         max_attempts: Maximum number of allowed failed attempts (default: 10)
-        hours: The number of hours to look back (default: 1)
+        minutes: The number of minutes to look back (default: 60)
         
     Returns:
         True if the IP should be rate limited, False otherwise
@@ -540,5 +618,5 @@ def is_ip_rate_limited(ip_address: str, max_attempts: int = 10, hours: int = 1) 
     if not ip_address:
         return False
         
-    failed_attempts = count_failed_attempts(ip_address, hours)
+    failed_attempts = count_failed_attempts(ip_address, minutes)
     return failed_attempts >= max_attempts
