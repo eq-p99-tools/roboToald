@@ -482,13 +482,15 @@ def list_account_aliases(guild_id: int) -> list[SSOAccountAlias]:
     return aliases
 
 
-def delete_account_alias(guild_id: int, alias: str) -> None:
+def delete_account_alias(guild_id: int, alias: str) -> str:
     with base.get_session() as session:
         alias = session.query(SSOAccountAlias).filter(
             SSOAccountAlias.guild_id == guild_id,
             SSOAccountAlias.alias == alias).one()
+        account_name = alias.account.real_user
         session.delete(alias)
         session.commit()
+    return account_name
 
 
 class SSOAuditLog(base.Base):

@@ -313,7 +313,7 @@ For API documentation, see the README_API.md file.
                              )):
         # Implement account creation logic
         account = sso_model.create_account(inter.guild_id, username, password, group)
-        await inter.send(content=f"🤖{'🗂️' if group else ''} Created account: `{account.real_user}`{' in group `' + group + '`' if group else ''}")
+        await inter.send(content=f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}")
 
     @account.sub_command(description="Show account details", name="show")
     async def account_show(self, inter: disnake.ApplicationCommandInteraction,
@@ -325,11 +325,11 @@ For API documentation, see the README_API.md file.
         account = sso_model.get_account(inter.guild_id, username)
         group_names = '\n'.join([f'• `{group.group_name}`' for group in account.groups])
         group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
-        tag_names = '\n'.join([f'• `{tag.name}`' for tag in account.tags])
+        tag_names = '\n'.join([f'• `{tag.tag}`' for tag in account.tags])
         tag_string = f"\n🏷️ Tags:\n{tag_names}" if tag_names else ""
         alias_names = '\n'.join([f'• `{alias.alias}`' for alias in account.aliases])
         alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
-        await inter.send(content=f"🤖 Account: {account.real_user}{group_string}{tag_string}{alias_string}", ephemeral=True)
+        await inter.send(content=f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}", ephemeral=True)
 
     @account.sub_command(description="List accounts", name="list")
     async def account_list(self, inter: disnake.ApplicationCommandInteraction,
@@ -355,7 +355,7 @@ For API documentation, see the README_API.md file.
                 group_string = f"🗂️ Groups: {group_names}"
                 formatted_accounts += f"🤖 **{account.real_user}**:\n  →  {group_string}\n"
             if account.tags:
-                tag_names = ', '.join([f"{tag.name}" for tag in account.tags])
+                tag_names = ', '.join([f"{tag.tag}" for tag in account.tags])
                 tag_string = f"🏷️ Tags: {tag_names}"
                 formatted_accounts += f"  →  {tag_string}\n"
             if account.aliases:
@@ -375,7 +375,7 @@ For API documentation, see the README_API.md file.
                              )):
         # Implement account update logic
         account = sso_model.update_account(inter.guild_id, username, new_password)
-        await inter.send(content=f"🤖 Updated account password: `{account.real_user}`")
+        await inter.send(content=f"🔑🤖 **Updated password** for account `{account.real_user}`")
 
     @account.sub_command(description="Delete an account", name="delete")
     async def account_delete(self, inter: disnake.ApplicationCommandInteraction,
@@ -385,7 +385,7 @@ For API documentation, see the README_API.md file.
                             )):
         # Implement account delete logic
         sso_model.delete_account(inter.guild_id, username)
-        await inter.send(content=f"Deleted account: {username}")
+        await inter.send(content=f"🗑️👤 **Deleted account** `{username}`")
 
     @sso.sub_command_group(description="Tag related commands")
     async def tag(self, inter: disnake.ApplicationCommandInteraction):
@@ -413,9 +413,9 @@ For API documentation, see the README_API.md file.
         # Implement tag add logic
         try:
             tag = sso_model.tag_account(inter.guild_id, username, tag)
-            await inter.send(content=f"🏷️ Tagged account: `{tag.account.real_user}` with tag: `{tag.tag}`")
+            await inter.send(content=f"✨🏷️ **Tagged account** `{tag.account.real_user}` with tag `{tag.tag}`")
         except sqlalchemy.exc.IntegrityError:
-            await inter.send(content=f"⚠️ Tag already exists for account: `{username}`")
+            await inter.send(content=f"⚠️🏷️ **Tag already exists** for account `{username}`")
 
     @tag.sub_command(description="Remove a tag from an account", name="remove")
     async def tag_remove(self, inter: disnake.ApplicationCommandInteraction,
@@ -428,7 +428,7 @@ For API documentation, see the README_API.md file.
                          )):
         # Implement tag remove logic
         sso_model.untag_account(inter.guild_id, username, tag)
-        await inter.send(content=f"🏷️ **Untagged account**: `{username}` with tag: `{tag}`")
+        await inter.send(content=f"🗑️🏷️ **Untagged account** `{username}` with tag `{tag}`")
 
     @sso.sub_command_group(description="Group related commands")
     async def group(self, inter: disnake.ApplicationCommandInteraction):
@@ -442,7 +442,7 @@ For API documentation, see the README_API.md file.
                            ):
         # Implement group create logic
         account_group = sso_model.create_account_group(inter.guild_id, name, role.id)
-        await inter.send(content=f"Created group: {account_group.group_name} accessible by role: <@&{role.id}>.",
+        await inter.send(content=f"✨🗂️ **Created group** `{account_group.group_name}` accessible by role <@&{role.id}>.",
                          allowed_mentions=disnake.AllowedMentions.none())
 
     @group.sub_command(description="Show group details", name="show")
@@ -454,8 +454,8 @@ For API documentation, see the README_API.md file.
         # Implement group show logic
         account_group = sso_model.get_account_group(inter.guild_id, name)
         account_names = '\n'.join([f'• `{account.real_user}`' for account in account_group.accounts])
-        await inter.send(content=f"🗂️ Group: {account_group.group_name}\n"
-                                 f"🤖 Accounts:\n{account_names}", ephemeral=True)
+        await inter.send(content=f"🗂️ **Group:** `{account_group.group_name}`\n"
+                                 f" → 🤖 Accounts:\n{account_names}", ephemeral=True)
 
     @group.sub_command(description="List groups", name="list")
     async def group_list(self, inter: disnake.ApplicationCommandInteraction,
@@ -483,7 +483,7 @@ For API documentation, see the README_API.md file.
                            )):
         # Implement group delete logic
         sso_model.delete_account_group(inter.guild_id, name)
-        await inter.send(content=f"🗂️ Deleted group: `{name}`")
+        await inter.send(content=f"🗑️🗂️ **Deleted group** `{name}`")
 
     @group.sub_command(description="Add a user to a group", name="add")
     async def group_add(self, inter: disnake.ApplicationCommandInteraction,
@@ -497,7 +497,7 @@ For API documentation, see the README_API.md file.
                         )):
         # Implement group add logic
         sso_model.add_account_to_group(inter.guild_id, group_name, username)
-        await inter.send(content=f"🤖🗂️ Added user: `{username}` to group: `{group_name}`")
+        await inter.send(content=f"✨🤖🗂️ **Added user** `{username}` to group `{group_name}`")
 
     @group.sub_command(description="Remove a user from a group", name="remove")
     async def group_remove(self, inter: disnake.ApplicationCommandInteraction,
@@ -511,7 +511,7 @@ For API documentation, see the README_API.md file.
                            )):
         # Implement group remove logic
         sso_model.remove_account_from_group(inter.guild_id, group_name, username)
-        await inter.send(content=f"🤖🗂️ Removed user: `{username}` from group: `{group_name}`")
+        await inter.send(content=f"🗑️🤖🗂️ **Removed user** `{username}` from group `{group_name}`")
 
     @sso.sub_command_group(description="Alias related commands")
     async def alias(self, inter: disnake.ApplicationCommandInteraction):
@@ -529,11 +529,11 @@ For API documentation, see the README_API.md file.
         # Implement alias create logic
         try:
             account_alias = sso_model.create_account_alias(inter.guild_id, username, alias)
-            await inter.send(content=f"🔗 **Created alias**: `{alias}` for account: `{username}`")
+            await inter.send(content=f"✨🔗 **Created alias** `{alias}` for account `{username}`")
         except sqlalchemy.exc.IntegrityError:
-            await inter.send(content=f"⚠️ **Alias already exists**: `{alias}`", ephemeral=True)
+            await inter.send(content=f"⚠️🔗 **Alias already exists:** `{alias}`", ephemeral=True)
         except Exception as e:
-            await inter.send(content=f"⚠️ **Error creating alias**: something unexpected happened.", ephemeral=True)
+            await inter.send(content=f"⚠️🔗 **Error creating alias:** something unexpected happened.", ephemeral=True)
 
     @alias.sub_command(description="List aliases", name="list")
     async def alias_list(self, inter: disnake.ApplicationCommandInteraction):
@@ -552,8 +552,8 @@ For API documentation, see the README_API.md file.
                                autocomplete=alias_autocomplete
                            )):
         # Implement alias delete logic
-        sso_model.delete_account_alias(inter.guild_id, alias)
-        await inter.send(content=f"🔗 **Deleted alias**: `{alias}`")
+        deleted_account = sso_model.delete_account_alias(inter.guild_id, alias)
+        await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` for account `{deleted_account}`")
 
     @sso.sub_command_group(description="Audit related commands")
     async def audit(self, inter: disnake.ApplicationCommandInteraction):
