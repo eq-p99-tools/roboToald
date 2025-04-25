@@ -236,7 +236,7 @@ For API documentation, see the README_API.md file.
     async def alias_create(self, inter: disnake.ApplicationCommandInteraction, username: str, alias: str):
         # Implement alias create logic
         account_alias = sso_model.create_account_alias(inter.guild_id, username, alias)
-        await inter.send(content=f"Created alias: {account_alias.alias} for account: {account_alias.account.real_user}")
+        await inter.send(content=f"Created alias: {alias} for account: {username}")
 
     @alias.sub_command(description="List aliases", name="list")
     async def alias_list(self, inter: disnake.ApplicationCommandInteraction):

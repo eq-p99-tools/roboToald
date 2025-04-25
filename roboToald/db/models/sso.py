@@ -450,7 +450,7 @@ def create_account_alias(guild_id: int, real_user: str, alias: str) -> SSOAccoun
         alias = SSOAccountAlias(guild_id=guild_id, alias=alias, account_id=account.id)
         session.add(alias)
         session.commit()
-        session.expunge(alias)
+        session.expunge_all()
     return alias
 
 

@@ -1,6 +1,13 @@
 [discord]
 token = <discord_token>
 
+[sso]
+encryption_key = <encryption_key>
+
+[api]
+ssl_certfile = <path_to_cert_file>
+ssl_keyfile = <path_to_key_file>
+
 [raidtargets]
 endpoint = http://path/to/raidtarget.json
 
@@ -16,10 +23,11 @@ audiofile = wakeup.wav
 # Member Role is necessary for raidtarget commands to work
 member_role = 77777
 
-# Raidtarget, batphone, and DS commands default to false, but can be enabled:
+# Raidtarget, batphone, DS, and SSO commands default to false, but can be enabled:
 enable_raidtarget = true
 enable_batphone = true
 enable_ds = true
+enable_sso = true
 ds_tod_channel = <channel_id>
 ds_schedule_channel = <channel_id>
 ds_admin_role = <role_id>

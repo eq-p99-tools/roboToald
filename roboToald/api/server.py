@@ -1,10 +1,12 @@
 """REST API server implementation for RoboToald."""
-from typing import Union
 import logging
+from typing import Union
+import threading
 
+from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
-import sqlalchemy.exc
+import uvicorn
 
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
@@ -16,6 +18,27 @@ logger = logging.getLogger(__name__)
 # Create FastAPI app
 app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services")
 
+# Expose a function to run the API server in a thread with injected discord_client
+
+
+def run_api_server(discord_client, host='0.0.0.0', port=8000, use_tls=False, certfile=None, keyfile=None):
+    """
+    Start the API server in a background thread, injecting the Discord client.
+    """
+    app.state.discord_client = discord_client
+    def _run():
+        uvicorn.run(
+            "roboToald.api.server:app",
+            host=host,
+            port=port,
+            log_level="info",
+            ssl_certfile=certfile if use_tls else None,
+            ssl_keyfile=keyfile if use_tls else None,
+        )
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    logger.info(f"API server started in thread on {host}:{port} (TLS: {use_tls})")
+    return thread
 
 # Define request and response models
 class AuthRequest(BaseModel):
@@ -36,9 +59,12 @@ class ErrorResponse(BaseModel):
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Root endpoint for API health check."""
-    return {"status": "ok", "service": "RoboToald API"}
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    if discord_client is None:
+        return {"status": "warning", "service": "RoboToald API", "message": "Discord client not initialized"}
+    return {"status": "ok", "service": "RoboToald API", "message": "API server is running"}
 
 
 @app.post("/auth", response_model=Union[SSOResponse, ErrorResponse], 
@@ -50,6 +76,10 @@ async def root():
 async def authenticate(auth_data: AuthRequest, request: Request):
     """
     Authenticate a user based on username and password.
+    
+    # Access the Discord client from app.state
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    # You can now use discord_client in this route if needed
     
     The authentication process:
     1. Check if the client IP is rate limited
@@ -126,9 +156,10 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         raise_auth_failed()
 
     # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
 
     # Check if the discord user has access to this account
-    if not user_has_access_to_account(discord_user_id, guild_id, account_id):
+    if not user_has_access_to_account(discord_client, discord_user_id, guild_id, account_id):
         # Log with specific reason but return generic error
         details = "Access denied"
         logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
@@ -173,7 +204,7 @@ def raise_auth_failed():
     )
 
 
-def user_has_access_to_account(discord_user_id: int, guild_id: int, account_id: int) -> bool:
+def user_has_access_to_account(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_id: int) -> bool:
     """
     Check if a Discord user has access to a specific account.
     
@@ -187,7 +218,20 @@ def user_has_access_to_account(discord_user_id: int, guild_id: int, account_id: 
             groups = session.query(sso_model.SSOAccountGroup).filter(
                 sso_model.SSOAccountGroup.guild_id == guild_id
             ).all()
-            
+
+            # Check if discord is available
+            try:
+                guild = discord_client.get_guild(guild_id)
+                verify_discord_role = True
+            except Exception:
+                verify_discord_role = False
+
+            if verify_discord_role:
+                member = guild.get_member(discord_user_id)
+                role_ids = [role.id for role in member.roles]
+            else:
+                role_ids = []
+
             # Check each group to see if the user has the role and if the account is in the group
             for group in groups:
                 # Check if the account is in this group
@@ -197,9 +241,9 @@ def user_has_access_to_account(discord_user_id: int, guild_id: int, account_id: 
                 ).count() > 0
                 
                 if account_in_group:
-                    # For now, we're assuming that if the account is in a group, the user has access
-                    # In a real implementation, you would check if the user has the role_id associated with the group
-                    return True
+                    # Check if the user has the role_id associated with the group
+                    if group.role_id in role_ids:
+                        return True
                     
             # If we get here, the user doesn't have access to the account
             return False
