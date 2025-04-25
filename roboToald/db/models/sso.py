@@ -433,7 +433,7 @@ class SSOAccountAlias(base.Base):
 
     __table_args__ = (
         sqlalchemy.UniqueConstraint(
-            'alias', 'account_id', name='uq_alias_account_id'),
+            'alias', 'guild_id', name='uq_alias_guild_id'),
     )
 
     def __init__(self, guild_id, alias, account_id):
@@ -544,7 +544,7 @@ def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0) -> lis
     return logs
 
 
-def get_audit_logs(limit=100, offset=0, username=None, success=None, 
+def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=None, 
                    since=None) -> list[SSOAuditLog]:
     """
     Get audit logs with optional filtering.
@@ -557,6 +557,8 @@ def get_audit_logs(limit=100, offset=0, username=None, success=None,
             sqlalchemy.orm.joinedload(SSOAuditLog.account))
         
         # Apply filters if provided
+        if guild_id:
+            query = query.filter(SSOAuditLog.guild_id == guild_id)
         if username:
             query = query.filter(SSOAuditLog.username == username)
         if success is not None:

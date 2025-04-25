@@ -1,16 +1,16 @@
+import datetime
+
 import disnake
 from disnake.ext import commands
+import sqlalchemy.exc
 
 from roboToald import config
 from roboToald.db.models import sso as sso_model
-import datetime
 
 SSO_GUILDS = config.guilds_for_command('sso')
 
 # TEMPORARY: This is a temporary solution to get the current function name
 import inspect
-
-
 def get_current_function_name():
     return inspect.currentframe().f_back.f_code.co_name
 
@@ -48,8 +48,125 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
         else:
             filtered_accounts = [account.real_user for account in available_accounts]
         
-        # Return up to 25 choices
-        return filtered_accounts[:25]
+        # Return up to 50 choices
+        return filtered_accounts[:50]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
+async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for alias names available to the user."""
+    try:
+        # Get the user's roles
+        user_roles = [role.id for role in inter.author.roles]
+        
+        # Get all aliases for this guild
+        all_aliases = sso_model.list_aliases(inter.guild_id)
+        
+        # Filter aliases based on user's roles and access permissions
+        available_aliases = []
+        for alias in all_aliases:
+            # Check if alias is in a group that the user has access to
+            has_access = False
+            for group in alias.groups:
+                if group.role_id in user_roles:
+                    has_access = True
+                    break
+            
+            # If no groups or has access, add to available aliases
+            if not alias.groups or has_access:
+                available_aliases.append(alias)
+        
+        # Filter by the input string if provided
+        if string:
+            filtered_aliases = [
+                alias.alias for alias in available_aliases 
+                if string.lower() in alias.alias.lower()
+            ]
+        else:
+            filtered_aliases = [alias.alias for alias in available_aliases]
+        
+        # Return up to 50 choices
+        return filtered_aliases[:50]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
+async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for group names available to the user."""
+    try:
+        # Get the user's roles
+        user_roles = [role.id for role in inter.author.roles]
+        
+        # Get all groups for this guild
+        all_groups = sso_model.list_groups(inter.guild_id)
+        
+        # Filter groups based on user's roles and access permissions
+        available_groups = []
+        for group in all_groups:
+            # Check if group has role-based access
+            has_access = False
+            for role in group.roles:
+                if role.id in user_roles:
+                    has_access = True
+                    break
+            
+            # If no roles or has access, add to available groups
+            if not group.roles or has_access:
+                available_groups.append(group)
+        
+        # Filter by the input string if provided
+        if string:
+            filtered_groups = [
+                group.name for group in available_groups 
+                if string.lower() in group.name.lower()
+            ]
+        else:
+            filtered_groups = [group.name for group in available_groups]
+        
+        # Return up to 50 choices
+        return filtered_groups[:50]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
+async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for tag names available to the user."""
+    try:
+        # Get the user's roles
+        user_roles = [role.id for role in inter.author.roles]
+        
+        # Get all tags for this guild
+        all_tags = sso_model.list_tags(inter.guild_id)
+        
+        # Filter tags based on user's roles and access permissions
+        available_tags = []
+        for tag in all_tags:
+            # Check if tag is in a group that the user has access to
+            has_access = False
+            for group in tag.groups:
+                if group.role_id in user_roles:
+                    has_access = True
+                    break
+            
+            # If no groups or has access, add to available tags
+            if not tag.groups or has_access:
+                available_tags.append(tag)
+        
+        # Filter by the input string if provided
+        if string:
+            filtered_tags = [
+                tag.name for tag in available_tags 
+                if string.lower() in tag.name.lower()
+            ]
+        else:
+            filtered_tags = [tag.name for tag in available_tags]
+        
+        # Return up to 50 choices
+        return filtered_tags[:50]
     except Exception:
         # In case of error, return an empty list
         return []
@@ -134,25 +251,48 @@ For API documentation, see the README_API.md file.
         await inter.send(content=f"Created account: {account.real_user}")
 
     @account.sub_command(description="Show account details", name="show")
-    async def account_show(self, inter: disnake.ApplicationCommandInteraction, username: str):
+    async def account_show(self, inter: disnake.ApplicationCommandInteraction,
+                           username: str = commands.Param(
+                               description="Account username to show details for",
+                               autocomplete=account_autocomplete
+                           )):
         # Implement account show logic
         account = sso_model.get_account(inter.guild_id, username)
         await inter.send(content=f"Account: {account.real_user}")
 
     @account.sub_command(description="List accounts", name="list")
-    async def account_list(self, inter: disnake.ApplicationCommandInteraction, group: str = None, tag: str = None):
+    async def account_list(self, inter: disnake.ApplicationCommandInteraction,
+                           group: str = commands.Param(
+                               description="Group to filter accounts by",
+                               autocomplete=group_autocomplete
+                           ),
+                           tag: str = commands.Param(
+                               description="Tag to filter accounts by",
+                               autocomplete=tag_autocomplete
+                           )):
         # Implement account list logic
         account_list = sso_model.list_accounts(inter.guild_id, group, tag)
         await inter.send(content=f"Accounts: {[account.real_user for account in account_list]}")
 
     @account.sub_command(description="Update account password", name="update")
-    async def account_update(self, inter: disnake.ApplicationCommandInteraction, username: str, new_password: str):
+    async def account_update(self, inter: disnake.ApplicationCommandInteraction,
+                             username: str = commands.Param(
+                               description="Account username to update password for",
+                               autocomplete=account_autocomplete
+                             ),
+                             new_password: str = commands.Param(
+                               description="New password for the account"
+                             )):
         # Implement account update logic
         account = sso_model.update_account(inter.guild_id, username, new_password)
         await inter.send(content=f"Updated account password: {account.real_user}")
 
     @account.sub_command(description="Delete an account", name="delete")
-    async def account_delete(self, inter: disnake.ApplicationCommandInteraction, username: str):
+    async def account_delete(self, inter: disnake.ApplicationCommandInteraction,
+                             username: str = commands.Param(
+                               description="Account username to delete",
+                               autocomplete=account_autocomplete
+                            )):
         # Implement account delete logic
         sso_model.delete_account(inter.guild_id, username)
         await inter.send(content=f"Deleted account: {username}")
@@ -168,13 +308,27 @@ For API documentation, see the README_API.md file.
         await inter.send(content=f"Tags: {tags}")
 
     @tag.sub_command(description="Add a tag to an account", name="add")
-    async def tag_add(self, inter: disnake.ApplicationCommandInteraction, username: str, tag: str):
+    async def tag_add(self, inter: disnake.ApplicationCommandInteraction,
+                      username: str = commands.Param(
+                               description="Account username to create alias for",
+                               autocomplete=account_autocomplete
+                      ), tag: str = commands.Param(
+                        description="Tag to add to the account",
+                        autocomplete=tag_autocomplete
+                      )):
         # Implement tag add logic
         tag = sso_model.tag_account(inter.guild_id, username, tag)
         await inter.send(content=f"Tagged account: {tag.account.real_user} with tag: {tag.tag}")
 
     @tag.sub_command(description="Remove a tag from an account", name="remove")
-    async def tag_remove(self, inter: disnake.ApplicationCommandInteraction, username: str, tag: str):
+    async def tag_remove(self, inter: disnake.ApplicationCommandInteraction,
+                         username: str = commands.Param(
+                               description="Account username to create alias for",
+                               autocomplete=account_autocomplete
+                         ), tag: str = commands.Param(
+                               description="Tag to remove from the account",
+                               autocomplete=tag_autocomplete
+                         )):
         # Implement tag remove logic
         sso_model.untag_account(inter.guild_id, username, tag)
         await inter.send(content=f"Untagged account: {username} with tag: {tag}")
@@ -194,7 +348,11 @@ For API documentation, see the README_API.md file.
         await inter.send(content=f"Created group: {account_group.group_name} accessible by role: <@&{role.id}>")
 
     @group.sub_command(description="Show group details", name="show")
-    async def group_show(self, inter: disnake.ApplicationCommandInteraction, name: str):
+    async def group_show(self, inter: disnake.ApplicationCommandInteraction,
+                         name: str = commands.Param(
+                             description="Group name to show details for",
+                             autocomplete=group_autocomplete
+                         )):
         # Implement group show logic
         account_group = sso_model.get_account_group(inter.guild_id, name)
         await inter.send(content=f"Group: {account_group.group_name}\n"
@@ -211,19 +369,39 @@ For API documentation, see the README_API.md file.
         await inter.send(content=f"Groups: {[group.group_name for group in account_groups]}")
 
     @group.sub_command(description="Delete a group", name="delete")
-    async def group_delete(self, inter: disnake.ApplicationCommandInteraction, name: str):
+    async def group_delete(self, inter: disnake.ApplicationCommandInteraction,
+                           name: str = commands.Param(
+                               description="Group name to delete",
+                               autocomplete=group_autocomplete
+                           )):
         # Implement group delete logic
         sso_model.delete_account_group(inter.guild_id, name)
         await inter.send(content=f"Deleted group: {name}")
 
     @group.sub_command(description="Add a user to a group", name="add")
-    async def group_add(self, inter: disnake.ApplicationCommandInteraction, group_name: str, username: str):
+    async def group_add(self, inter: disnake.ApplicationCommandInteraction,
+                        group_name: str = commands.Param(
+                            description="Group name to add user to",
+                            autocomplete=group_autocomplete
+                        ),
+                        username: str = commands.Param(
+                            description="Account username to add to the group",
+                            autocomplete=account_autocomplete
+                        )):
         # Implement group add logic
         sso_model.add_account_to_group(inter.guild_id, group_name, username)
         await inter.send(content=f"Added user: {username} to group: {group_name}")
 
     @group.sub_command(description="Remove a user from a group", name="remove")
-    async def group_remove(self, inter: disnake.ApplicationCommandInteraction, group_name: str, username: str):
+    async def group_remove(self, inter: disnake.ApplicationCommandInteraction,
+                           group_name: str = commands.Param(
+                               description="Group name to remove user from",
+                               autocomplete=group_autocomplete
+                           ),
+                           username: str = commands.Param(
+                               description="Account username to remove from the group",
+                               autocomplete=account_autocomplete
+                           )):
         # Implement group remove logic
         sso_model.remove_account_from_group(inter.guild_id, group_name, username)
         await inter.send(content=f"Removed user: {username} from group: {group_name}")
@@ -233,10 +411,22 @@ For API documentation, see the README_API.md file.
         pass
 
     @alias.sub_command(description="Create an alias for an account", name="create")
-    async def alias_create(self, inter: disnake.ApplicationCommandInteraction, username: str, alias: str):
+    async def alias_create(self, inter: disnake.ApplicationCommandInteraction,
+                           username: str = commands.Param(
+                               description="Account username to create alias for",
+                               autocomplete=account_autocomplete
+                           ),
+                           alias: str = commands.Param(
+                               description="Alias to create"
+                           )):
         # Implement alias create logic
-        account_alias = sso_model.create_account_alias(inter.guild_id, username, alias)
-        await inter.send(content=f"Created alias: {alias} for account: {username}")
+        try:
+            account_alias = sso_model.create_account_alias(inter.guild_id, username, alias)
+            await inter.send(content=f"✅ **Created alias**: {alias} for account: {username}")
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(content=f"⚠️ **Alias already exists**: `{alias}`", ephemeral=True)
+        except Exception as e:
+            await inter.send(content=f"⚠️ **Error creating alias**: something unexpected happened.", ephemeral=True)
 
     @alias.sub_command(description="List aliases", name="list")
     async def alias_list(self, inter: disnake.ApplicationCommandInteraction):
@@ -245,7 +435,11 @@ For API documentation, see the README_API.md file.
         await inter.send(content=f"Aliases: {[f'{alias.alias} => {alias.account.real_user}' for alias in aliases]}")
 
     @alias.sub_command(description="Delete an alias", name="delete")
-    async def alias_delete(self, inter: disnake.ApplicationCommandInteraction, alias: str):
+    async def alias_delete(self, inter: disnake.ApplicationCommandInteraction,
+                           alias: str = commands.Param(
+                               description="Alias to delete",
+                               autocomplete=alias_autocomplete
+                           )):
         # Implement alias delete logic
         sso_model.delete_account_alias(inter.guild_id, alias)
         await inter.send(content=f"Deleted alias: {alias}")
