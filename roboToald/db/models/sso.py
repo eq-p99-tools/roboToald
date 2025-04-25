@@ -53,9 +53,11 @@ class SSOAccount(base.Base):
         self.last_login = last_login
 
 
-def create_account(guild_id: int, real_user: str, real_pass: str) -> SSOAccount:
+def create_account(guild_id: int, real_user: str, real_pass: str, group: str = None) -> SSOAccount:
     with base.get_session() as session:
         account = SSOAccount(guild_id=guild_id, real_user=real_user, real_pass=real_pass)
+        if group:
+            account.groups.append(get_account_group(guild_id, group))
         session.add(account)
         session.commit()
         account = session.query(SSOAccount).options(
@@ -70,7 +72,10 @@ def create_account(guild_id: int, real_user: str, real_pass: str) -> SSOAccount:
 
 def get_account(guild_id: int, real_user: str) -> SSOAccount or None:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
+        account = session.query(SSOAccount).options(
+            sqlalchemy.orm.joinedload(SSOAccount.groups),
+            sqlalchemy.orm.joinedload(SSOAccount.tags),
+            sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
             SSOAccount.guild_id == guild_id,
             SSOAccount.real_user == real_user).one_or_none()
         if account:
@@ -82,7 +87,10 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
     """Find an account by username."""
     with base.get_session() as session:
         # Try to find the account directly by real_user
-        account = session.query(SSOAccount).filter(
+        account = session.query(SSOAccount).options(
+            sqlalchemy.orm.joinedload(SSOAccount.groups),
+            sqlalchemy.orm.joinedload(SSOAccount.tags),
+            sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
             SSOAccount.real_user == username
         ).one_or_none()
 
@@ -91,7 +99,8 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
             return account
 
         # If not found, try to find by alias
-        alias = session.query(SSOAccountAlias).filter(
+        alias = session.query(SSOAccountAlias).options(
+            sqlalchemy.orm.joinedload(SSOAccountAlias.account)).filter(
             SSOAccountAlias.alias == username
         ).one_or_none()
 
@@ -100,7 +109,8 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
             session.expunge(account)
             return account
 
-        tagged_accounts = session.query(SSOTag).filter(
+        tagged_accounts = session.query(SSOTag).options(
+            sqlalchemy.orm.joinedload(SSOTag.account)).filter(
             SSOTag.tag == username,
             SSOTag.guild_id == guild_id
         ).all()
@@ -204,7 +214,7 @@ def get_account_group(guild_id: int, group_name: str) -> SSOAccountGroup:
     return group
 
 
-def list_account_groups(guild_id: int, role: int) -> list[SSOAccountGroup]:
+def list_account_groups(guild_id: int, role: int = None) -> list[SSOAccountGroup]:
     with base.get_session() as session:
         query = session.query(SSOAccountGroup).filter(SSOAccountGroup.guild_id == guild_id)
         if role:

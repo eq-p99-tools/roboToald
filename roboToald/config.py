@@ -48,6 +48,8 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'enable_raidtarget', fallback=False),
         'enable_sso': CONF.getboolean(
             f"guild.{guild}", 'enable_sso', fallback=False),
+        'sso_admin_role': CONF.getint(
+            f"guild.{guild}", 'sso_admin_role', fallback=0),
         'enable_ds': CONF.getboolean(
             f"guild.{guild}", 'enable_ds', fallback=False),
         'ds_tod_channel': CONF.getint(

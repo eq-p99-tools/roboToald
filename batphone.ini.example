@@ -27,10 +27,11 @@ member_role = 77777
 enable_raidtarget = true
 enable_batphone = true
 enable_ds = true
-enable_sso = true
 ds_tod_channel = <channel_id>
 ds_schedule_channel = <channel_id>
 ds_admin_role = <role_id>
+enable_sso = true
+sso_admin_role = <role_id>
 
 # Timer and Random functions default to true, but can be disabled:
 enable_timer = false
