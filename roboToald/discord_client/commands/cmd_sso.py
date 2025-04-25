@@ -226,6 +226,21 @@ def is_admin(user_roles, guild_id):
     return admin_role in user_roles
 
 
+async def send_and_split(send_fn, message: str, ephemeral: bool = False):
+    max_length = 2000
+    lines = message.splitlines(keepends=True)
+    current_chunk = ''
+    for line in lines:
+        if len(current_chunk) + len(line) > max_length:
+            await send_fn(content=current_chunk, ephemeral=ephemeral,
+                          allowed_mentions=disnake.AllowedMentions.none())
+            current_chunk = ''
+        current_chunk += line
+    if current_chunk:
+        await send_fn(content=current_chunk, ephemeral=ephemeral,
+                      allowed_mentions=disnake.AllowedMentions.none())
+
+
 class SSOCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -362,7 +377,8 @@ For API documentation, see the README_API.md file.
                 alias_names = ', '.join([f"{alias.alias}" for alias in account.aliases])
                 alias_string = f"🔗 Aliases: {alias_names}"
                 formatted_accounts += f"  →  {alias_string}\n"
-        await inter.send(content=f"**Accounts:**\n{formatted_accounts}", ephemeral=True)
+        await send_and_split(inter.send, f"**Accounts:**\n{formatted_accounts}", ephemeral=True)
+
 
     @account.sub_command(description="Update account password", name="update")
     async def account_update(self, inter: disnake.ApplicationCommandInteraction,
@@ -399,7 +415,7 @@ For API documentation, see the README_API.md file.
             await inter.send(content="ℹ️ **No tags found in this server.**")
             return
         formatted = '\n'.join([f"🏷️ **{tag}**" for tag in tags])
-        await inter.send(content=f"**Tags:**\n{formatted}")
+        await send_and_split(inter.send, f"**Tags:**\n{formatted}", ephemeral=True)
 
     @tag.sub_command(description="Add a tag to an account", name="add")
     async def tag_add(self, inter: disnake.ApplicationCommandInteraction,
@@ -472,8 +488,7 @@ For API documentation, see the README_API.md file.
                 await inter.send(content="ℹ️ **No groups found in this server.**")
             return
         formatted = '\n'.join([f"🗂️ `{group.group_name}` → <@&{group.role_id}>" for group in account_groups])
-        await inter.send(content=f"**Groups:**\n{formatted}",
-                         allowed_mentions=disnake.AllowedMentions.none())
+        await send_and_split(inter.send, f"**Groups:**\n{formatted}", ephemeral=True)
 
     @group.sub_command(description="Delete a group", name="delete")
     async def group_delete(self, inter: disnake.ApplicationCommandInteraction,
@@ -543,7 +558,7 @@ For API documentation, see the README_API.md file.
             await inter.send(content="ℹ️ **No aliases found in this server.**", ephemeral=True)
             return
         formatted = '\n'.join([f"🔗 `{alias.alias}` → `{alias.account.real_user}`" for alias in aliases])
-        await inter.send(content=f"**Aliases:**\n{formatted}")
+        await send_and_split(inter.send, f"**Aliases:**\n{formatted}", ephemeral=True)
 
     @alias.sub_command(description="Delete an alias", name="delete")
     async def alias_delete(self, inter: disnake.ApplicationCommandInteraction,
