@@ -29,8 +29,10 @@ WAKEUP_AUDIOFILE = CONF.get(
 
 ENCRYPTION_KEY = CONF.get(
     'sso', 'encryption_key')
-SSO_CERTFILE = CONF.get('api', 'ssl_certfile', fallback=None)
-SSO_KEYFILE = CONF.get('api', 'ssl_keyfile', fallback=None)
+API_CERTFILE = CONF.get('sso', 'ssl_certfile', fallback=None)
+API_KEYFILE = CONF.get('sso', 'ssl_keyfile', fallback=None)
+API_PORT = CONF.getint('sso', 'port', fallback=9443)
+API_HOST = CONF.get('sso', 'host', fallback='0.0.0.0')
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}

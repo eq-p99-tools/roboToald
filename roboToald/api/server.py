@@ -21,7 +21,7 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 # Expose a function to run the API server in a thread with injected discord_client
 
 
-def run_api_server(discord_client, host='0.0.0.0', port=8000, use_tls=False, certfile=None, keyfile=None):
+def run_api_server(discord_client, certfile, keyfile, host, port):
     """
     Start the API server in a background thread, injecting the Discord client.
     """
@@ -32,12 +32,12 @@ def run_api_server(discord_client, host='0.0.0.0', port=8000, use_tls=False, cer
             host=host,
             port=port,
             log_level="info",
-            ssl_certfile=certfile if use_tls else None,
-            ssl_keyfile=keyfile if use_tls else None,
+            ssl_certfile=certfile,
+            ssl_keyfile=keyfile,
         )
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
-    logger.info(f"API server started in thread on {host}:{port} (TLS: {use_tls})")
+    logger.info(f"API server started in thread on {host}:{port}")
     return thread
 
 # Define request and response models

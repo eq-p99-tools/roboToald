@@ -1,7 +1,7 @@
 ##########################
 ##  Create build image  ##
 ##########################
-FROM python:3.9 as BUILD_IMAGE
+FROM python:3.13 as BUILD_IMAGE
 
 # Set our working directory to /app
 WORKDIR /app
@@ -15,7 +15,7 @@ RUN pip wheel -r requirements.txt --wheel-dir /wheels
 ##########################
 ## Create runtime image ##
 ##########################
-FROM python:3.9-slim AS RUNTIME_IMAGE
+FROM python:3.13-slim AS RUNTIME_IMAGE
 
 # Install ffmpeg
 RUN apt-get update && apt-get install -y ffmpeg

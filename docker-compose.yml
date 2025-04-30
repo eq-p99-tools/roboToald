@@ -7,4 +7,10 @@ services:
     volumes:
       - ./alerts.db:/app/alerts.db
       - ./batphone.ini:/app/batphone.ini
+      - ./certs:/app/certs  # Bind local certs directory
+
     restart: always
+    ports:
+      # Expose API port (adjust if your API runs on a different port)
+      - "9443:9443"
+

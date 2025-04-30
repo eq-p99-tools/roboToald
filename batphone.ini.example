@@ -3,10 +3,10 @@ token = <discord_token>
 
 [sso]
 encryption_key = <encryption_key>
-
-[api]
 ssl_certfile = <path_to_cert_file>
 ssl_keyfile = <path_to_key_file>
+host = 0.0.0.0
+port = 443
 
 [raidtargets]
 endpoint = http://path/to/raidtarget.json

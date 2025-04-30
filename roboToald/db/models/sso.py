@@ -14,6 +14,7 @@ account_group_mapping = sqlalchemy.Table(
     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
     sqlalchemy.Column("account_id", sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id")),
     sqlalchemy.Column("group_id", sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account_group.id")),
+    sqlalchemy.UniqueConstraint("account_id", "group_id", name="uq_account_id_group_id"),
 )
 
 
@@ -268,6 +269,8 @@ def remove_account_from_group(guild_id: int, group_name: str, real_user: str) ->
         group = session.query(SSOAccountGroup).filter(
             SSOAccountGroup.guild_id == guild_id,
             SSOAccountGroup.group_name == group_name).one()
+        if group not in account.groups:
+            raise sqlalchemy.exc.IntegrityError(None, None, "Account is not in this group")
         account.groups.remove(group)
         session.commit()
 
@@ -491,6 +494,81 @@ def delete_account_alias(guild_id: int, alias: str) -> str:
         session.delete(alias)
         session.commit()
     return account_name
+
+
+class SSORevocation(base.Base):
+    __tablename__ = "sso_revocations"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.now())
+    
+    # Expiry information
+    expiry_days = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    active = sqlalchemy.Column(sqlalchemy.Boolean, default=True)
+    
+    # User information
+    discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+
+    details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
+
+    def __init__(self, guild_id: int, discord_user_id: int, expiry_days: int, active: bool = True, details: str = None):
+        self.guild_id = guild_id
+        self.discord_user_id = discord_user_id
+        self.expiry_days = expiry_days
+        self.active = active
+        self.details = details
+
+
+def revoke_user_access(guild_id: int, discord_user_id: int, expiry_days: int, details: str = None) -> SSORevocation:
+    with base.get_session() as session:
+        revocation = SSORevocation(guild_id=guild_id, discord_user_id=discord_user_id, expiry_days=expiry_days, details=details)
+        session.add(revocation)
+        session.commit()
+        session.expunge_all()
+    return revocation
+
+
+def get_user_access_revocations(guild_id: int, discord_user_id: int = None, active_only: bool = True) -> list[SSORevocation]:
+    with base.get_session() as session:
+        revocations = session.query(SSORevocation).filter(
+            SSORevocation.guild_id == guild_id)
+
+        if discord_user_id is not None:
+            revocations = revocations.filter(
+                SSORevocation.discord_user_id == discord_user_id)
+        if active_only:
+            revocations = revocations.filter(
+                SSORevocation.active == True)
+        revocations = revocations.all()
+        session.expunge_all()
+    return revocations
+
+
+def is_user_access_revoked(guild_id: int, discord_user_id: int) -> bool:
+    with base.get_session() as session:
+        revocations = session.query(SSORevocation).filter(
+            SSORevocation.guild_id == guild_id,
+            SSORevocation.discord_user_id == discord_user_id,
+            SSORevocation.active == True).all()
+        session.expunge_all()
+        for revocation in revocations:
+            if revocation.expiry_days == 0:
+                return True
+            elif datetime.datetime.now() < revocation.timestamp + datetime.timedelta(days=revocation.expiry_days):
+                return True
+    return False
+
+
+def remove_access_revocation(guild_id: int, discord_user_id: int) -> None:
+    with base.get_session() as session:
+        revocations = session.query(SSORevocation).filter(
+            SSORevocation.guild_id == guild_id,
+            SSORevocation.discord_user_id == discord_user_id,
+            SSORevocation.active == True).all()
+        for revocation in revocations:
+            revocation.active = False
+        session.commit()
 
 
 class SSOAuditLog(base.Base):
