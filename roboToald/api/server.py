@@ -29,10 +29,10 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
     Otherwise, it will run without TLS (HTTP).
     """
     app.state.discord_client = discord_client
+
+    # Check if both certfile and keyfile are provided
+    use_ssl = certfile and keyfile
     def _run():
-        # Check if both certfile and keyfile are provided
-        use_ssl = certfile and keyfile
-        
         # Common parameters for both HTTP and HTTPS
         uvicorn_params = {
             "app": "roboToald.api.server:app",
