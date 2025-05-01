@@ -152,7 +152,7 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
         if tagged_accounts:
             accounts = [tagged_account.account for tagged_account in tagged_accounts]
             # Sort accounts by last_login
-            accounts.sort(key=lambda account: account.last_login, reverse=True)
+            accounts.sort(key=lambda account: account.last_login, reverse=False)
             session.expunge(accounts[0])
             return accounts[0]
 
