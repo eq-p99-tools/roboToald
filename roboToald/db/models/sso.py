@@ -1,11 +1,42 @@
 import datetime
 
+import sqlalchemy
+import sqlalchemy.exc
 import sqlalchemy.orm
 import sqlalchemy_utils
 
 from roboToald import config
 from roboToald.db import base
 from roboToald import words
+
+# Custom exceptions for different entity types
+class SSOEntityNotFoundError(sqlalchemy.exc.NoResultFound):
+    """Base exception for SSO entities not found"""
+    pass
+
+class SSOAccountNotFoundError(SSOEntityNotFoundError):
+    """Raised when an SSOAccount is not found"""
+    pass
+
+class SSOAccountGroupNotFoundError(SSOEntityNotFoundError):
+    """Raised when an SSOAccountGroup is not found"""
+    pass
+
+class SSOAccountTagNotFoundError(SSOEntityNotFoundError):
+    """Raised when an SSOAccountTag is not found"""
+    pass
+
+class SSOAccountAliasNotFoundError(SSOEntityNotFoundError):
+    """Raised when an SSOAccountAlias is not found"""
+    pass
+
+class SSOAccessKeyNotFoundError(SSOEntityNotFoundError):  # unused?
+    """Raised when an SSOAccessKey is not found"""
+    pass
+
+class SSORevocationNotFoundError(SSOEntityNotFoundError):  # unused?
+    """Raised when an SSORevocation is not found"""
+    pass
 
 
 account_group_mapping = sqlalchemy.Table(
@@ -71,17 +102,19 @@ def create_account(guild_id: int, real_user: str, real_pass: str, group: str = N
     return account
 
 
-def get_account(guild_id: int, real_user: str) -> SSOAccount or None:
+def get_account(guild_id: int, real_user: str) -> SSOAccount:
     with base.get_session() as session:
-        account = session.query(SSOAccount).options(
-            sqlalchemy.orm.joinedload(SSOAccount.groups),
-            sqlalchemy.orm.joinedload(SSOAccount.tags),
-            sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one_or_none()
-        if account:
+        try:
+            account = session.query(SSOAccount).options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
             session.expunge(account)
-    return account
+            return account
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
 
 
 def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount or None:
@@ -141,11 +174,14 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
 
 def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        account.real_pass = password
-        session.commit()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+            account.real_pass = password
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
         session.expunge(account)
     return account
 
@@ -163,11 +199,14 @@ def update_last_login(account_id: int) -> None:
 
 def delete_account(guild_id: int, real_user: str) -> None:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        session.delete(account)
-        session.commit()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+            session.delete(account)
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
 
 
 class SSOAccountGroup(base.Base):
@@ -207,12 +246,15 @@ def create_account_group(guild_id: int, group_name: str, role_id: int) -> SSOAcc
 
 def get_account_group(guild_id: int, group_name: str) -> SSOAccountGroup:
     with base.get_session() as session:
-        group = session.query(SSOAccountGroup).options(
-            sqlalchemy.orm.joinedload(SSOAccountGroup.accounts)).filter(
-            SSOAccountGroup.guild_id == guild_id,
-            SSOAccountGroup.group_name == group_name).one()
-        session.expunge_all()
-    return group
+        try:
+            group = session.query(SSOAccountGroup).options(
+                sqlalchemy.orm.joinedload(SSOAccountGroup.accounts)).filter(
+                SSOAccountGroup.guild_id == guild_id,
+                SSOAccountGroup.group_name == group_name).one()
+            session.expunge_all()
+            return group
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
 
 
 def list_account_groups(guild_id: int, role: int = None) -> list[SSOAccountGroup]:
@@ -228,11 +270,14 @@ def list_account_groups(guild_id: int, role: int = None) -> list[SSOAccountGroup
 
 def update_account_group(guild_id: int, group_name: str, new_name: str) -> SSOAccountGroup:
     with base.get_session() as session:
-        group = session.query(SSOAccountGroup).filter(
-            SSOAccountGroup.guild_id == guild_id,
-            SSOAccountGroup.group_name == group_name).one()
-        group.group_name = new_name
-        session.commit()
+        try:
+            group = session.query(SSOAccountGroup).filter(
+                SSOAccountGroup.guild_id == guild_id,
+                SSOAccountGroup.group_name == group_name).one()
+            group.group_name = new_name
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
         group = session.query(SSOAccountGroup).options(
             sqlalchemy.orm.joinedload(SSOAccountGroup.accounts)).filter(
             SSOAccountGroup.id == group.id).one()
@@ -242,33 +287,52 @@ def update_account_group(guild_id: int, group_name: str, new_name: str) -> SSOAc
 
 def delete_account_group(guild_id: int, group_name: str) -> None:
     with base.get_session() as session:
-        group = session.query(SSOAccountGroup).filter(
-            SSOAccountGroup.guild_id == guild_id,
-            SSOAccountGroup.group_name == group_name).one()
-        session.delete(group)
-        session.commit()
+        try:
+            group = session.query(SSOAccountGroup).filter(
+                SSOAccountGroup.guild_id == guild_id,
+                SSOAccountGroup.group_name == group_name).one()
+            session.delete(group)
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
 
 
 def add_account_to_group(guild_id: int, group_name: str, real_user: str) -> None:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        group = session.query(SSOAccountGroup).filter(
-            SSOAccountGroup.guild_id == guild_id,
-            SSOAccountGroup.group_name == group_name).one()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+            
+        try:
+            group = session.query(SSOAccountGroup).filter(
+                SSOAccountGroup.guild_id == guild_id,
+                SSOAccountGroup.group_name == group_name).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
+            
         account.groups.append(group)
         session.commit()
 
 
 def remove_account_from_group(guild_id: int, group_name: str, real_user: str) -> None:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        group = session.query(SSOAccountGroup).filter(
-            SSOAccountGroup.guild_id == guild_id,
-            SSOAccountGroup.group_name == group_name).one()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+            
+        try:
+            group = session.query(SSOAccountGroup).filter(
+                SSOAccountGroup.guild_id == guild_id,
+                SSOAccountGroup.group_name == group_name).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
+            
         if group not in account.groups:
             raise sqlalchemy.exc.IntegrityError(None, None, "Account is not in this group")
         account.groups.remove(group)
@@ -392,33 +456,48 @@ class SSOTag(base.Base):
         self.account_id = account_id
 
 
-def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag or None:
+def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one_or_none()
-        if account is None:
-            return None
-        tag = SSOTag(guild_id=guild_id, tag=tag, account_id=account.id)
-        session.add(tag)
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+            
+        tag_obj = SSOTag(guild_id=guild_id, tag=tag, account_id=account.id)
+        session.add(tag_obj)
         session.commit()
-        tag = session.query(SSOTag).options(
-            sqlalchemy.orm.joinedload(SSOTag.account)).filter(
-            SSOTag.id == tag.id).one()
-        session.expunge_all()
-    return tag
+        
+        try:
+            tag_obj = session.query(SSOTag).options(
+                sqlalchemy.orm.joinedload(SSOTag.account)).filter(
+                SSOTag.id == tag_obj.id).one()
+            session.expunge_all()
+            return tag_obj
+        except sqlalchemy.exc.NoResultFound:
+            # This should never happen, but just in case
+            raise SSOAccountTagNotFoundError(f"Tag '{tag}' not found after creation")
 
 
 def untag_account(guild_id: int, real_user: str, tag: str) -> None:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
-        tag = session.query(SSOTag).filter(
-            SSOTag.tag == tag,
-            SSOTag.account_id == account.id).one()
-        session.delete(tag)
-        session.commit()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+            
+        try:
+            tag_obj = session.query(SSOTag).filter(
+                SSOTag.tag == tag,
+                SSOTag.account_id == account.id).one()
+            session.delete(tag_obj)
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountTagNotFoundError(f"Tag '{tag}' not found for account '{real_user}'")
+
 
 
 def list_tags(guild_id: int) -> dict[str, list[str]]:
@@ -457,9 +536,12 @@ class SSOAccountAlias(base.Base):
 
 def create_account_alias(guild_id: int, real_user: str, alias: str) -> SSOAccountAlias:
     with base.get_session() as session:
-        account = session.query(SSOAccount).filter(
-            SSOAccount.guild_id == guild_id,
-            SSOAccount.real_user == real_user).one()
+        try:
+            account = session.query(SSOAccount).filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
         alias = SSOAccountAlias(guild_id=guild_id, alias=alias, account_id=account.id)
         session.add(alias)
         session.commit()
@@ -469,10 +551,13 @@ def create_account_alias(guild_id: int, real_user: str, alias: str) -> SSOAccoun
 
 def get_account_alias(guild_id: int, alias: str) -> SSOAccountAlias:
     with base.get_session() as session:
-        alias = session.query(SSOAccountAlias).filter(
-            SSOAccountAlias.guild_id == guild_id,
-            SSOAccountAlias.alias == alias).one()
-        session.expunge(alias)
+        try:
+            alias = session.query(SSOAccountAlias).filter(
+                SSOAccountAlias.guild_id == guild_id,
+                SSOAccountAlias.alias == alias).one()
+            session.expunge(alias)
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountAliasNotFoundError(f"Alias '{alias}' not found in guild {guild_id}")
     return alias
 
 
@@ -487,12 +572,15 @@ def list_account_aliases(guild_id: int) -> list[SSOAccountAlias]:
 
 def delete_account_alias(guild_id: int, alias: str) -> str:
     with base.get_session() as session:
-        alias = session.query(SSOAccountAlias).filter(
-            SSOAccountAlias.guild_id == guild_id,
-            SSOAccountAlias.alias == alias).one()
-        account_name = alias.account.real_user
-        session.delete(alias)
-        session.commit()
+        try:
+            alias = session.query(SSOAccountAlias).filter(
+                SSOAccountAlias.guild_id == guild_id,
+                SSOAccountAlias.alias == alias).one()
+            account_name = alias.account.real_user
+            session.delete(alias)
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountAliasNotFoundError(f"Alias '{alias}' not found in guild {guild_id}")
     return account_name
 
 

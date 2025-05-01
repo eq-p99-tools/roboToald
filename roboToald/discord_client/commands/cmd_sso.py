@@ -337,7 +337,7 @@ class SSOCommands(commands.Cog):
     @sso.sub_command(description="Show SSO usage tutorial.")
     async def help(self, inter: disnake.ApplicationCommandInteraction):
         help_text = USER_HELP_TEXT
-        await send_and_split(inter.send, help_text)
+        await send_and_split(inter.send, help_text, ephemeral=True)
 
     @sso.sub_command(description="Get your access key", name="get")
     async def access_get(self, inter: disnake.ApplicationCommandInteraction):
@@ -382,8 +382,8 @@ class SSOCommands(commands.Cog):
             alias_names = '\n'.join([f'• `{alias.alias}`' for alias in account.aliases])
             alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
             await inter.send(content=f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}", ephemeral=True)
-        except sqlalchemy.exc.NoResultFound:
-            await inter.send(content=f"⚠️👤 **Account not found:** `{username}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @account.sub_command(description="List accounts", name="list")
     async def account_list(self, inter: disnake.ApplicationCommandInteraction,
@@ -459,8 +459,8 @@ class SSOCommands(commands.Cog):
         try:
             account = sso_model.update_account(inter.guild_id, username, new_password)
             await inter.send(content=f"🔑🤖 **Updated password** for account `{account.real_user}`")
-        except sqlalchemy.exc.NoResultFound:
-            await inter.send(content=f"⚠️👤 **Account not found:** `{username}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @admin_account.sub_command(description="Delete an account", name="delete")
     async def account_delete(self, inter: disnake.ApplicationCommandInteraction,
@@ -471,9 +471,9 @@ class SSOCommands(commands.Cog):
         # Implement account delete logic
         try:
             sso_model.delete_account(inter.guild_id, username)
-            await inter.send(content=f"🗑️👤 **Deleted account** `{username}`")
+            await inter.send(content=f"🗑️🤖 **Deleted account** `{username}`")
         except sqlalchemy.exc.NoResultFound:
-            await inter.send(content=f"⚠️👤 **Account not found:** `{username}`", ephemeral=True)
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @sso.sub_command_group(description="Tag related commands")
     async def tag(self, inter: disnake.ApplicationCommandInteraction):
@@ -522,7 +522,9 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.untag_account(inter.guild_id, username, tag)
             await inter.send(content=f"🗑️🏷️ **Untagged account** `{username}` from tag `{tag}`")
-        except sqlalchemy.exc.NoResultFound:
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🏷️🤖 **Account not found:** `{username}`", ephemeral=True)
+        except sso_model.SSOAccountTagNotFoundError:
             await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{username}`", ephemeral=True)
 
     @sso.sub_command_group(description="Group related commands")
@@ -594,8 +596,10 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.add_account_to_group(inter.guild_id, group_name, username)
             await inter.send(content=f"✨🤖🗂️ **Added user** `{username}` to group `{group_name}`")
-        except sqlalchemy.exc.NoResultFound:
+        except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖🗂️ **Account/group mapping already exists:** `{username}` : `{group_name}`", ephemeral=True)
 
@@ -613,8 +617,10 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.remove_account_from_group(inter.guild_id, group_name, username)
             await inter.send(content=f"🗑️🤖🗂️ **Removed user** `{username}` from group `{group_name}`")
-        except sqlalchemy.exc.NoResultFound:
+        except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{username}` : `{group_name}`", ephemeral=True)
 
@@ -628,7 +634,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.delete_account_group(inter.guild_id, name)
             await inter.send(content=f"🗑️🗂️ **Deleted group** `{name}`")
-        except sqlalchemy.exc.NoResultFound:
+        except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
 
     @sso.sub_command_group(description="Alias related commands")
@@ -664,6 +670,8 @@ class SSOCommands(commands.Cog):
             await inter.send(content=f"✨🔗 **Created alias** `{alias}` for account `{username}`")
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🔗 **Alias already exists:** `{alias}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @admin_alias.sub_command(description="Delete an alias", name="delete")
     async def alias_delete(self, inter: disnake.ApplicationCommandInteraction,
@@ -675,7 +683,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.delete_account_alias(inter.guild_id, alias)
             await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{username}`")
-        except sqlalchemy.exc.NoResultFound:
+        except sso_model.SSOAccountAliasNotFoundError:
             await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
 
     @sso_admin.sub_command_group(description="Audit related commands")
@@ -741,7 +749,8 @@ class SSOCommands(commands.Cog):
             
             # Send the response
             await inter.send(content=response, ephemeral=True)
-            
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
