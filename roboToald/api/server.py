@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
 import uvicorn
 
+from roboToald import config
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
 
@@ -34,7 +35,8 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             log_level="info",
             ssl_certfile=certfile,
             ssl_keyfile=keyfile,
-            proxy_headers=True
+            proxy_headers=True,
+            forwarded_allow_ips=config.FORWARDED_ALLOW_IPS
         )
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()

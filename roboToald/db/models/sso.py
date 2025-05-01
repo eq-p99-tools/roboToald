@@ -777,13 +777,14 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
         count = session.query(SSOAuditLog).filter(
             SSOAuditLog.ip_address == ip_address,
             SSOAuditLog.success == False,
-            SSOAuditLog.timestamp >= time_threshold
+            SSOAuditLog.timestamp >= time_threshold,
+            SSOAuditLog.account_id.isnot(None)
         ).count()
         
         return count
 
 
-def is_ip_rate_limited(ip_address: str, max_attempts: int = 10, minutes: int = 60) -> bool:
+def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 10) -> bool:
     """
     Check if an IP address should be rate limited based on failed login attempts.
     

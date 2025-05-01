@@ -33,6 +33,8 @@ API_CERTFILE = CONF.get('sso', 'ssl_certfile', fallback=None)
 API_KEYFILE = CONF.get('sso', 'ssl_keyfile', fallback=None)
 API_PORT = CONF.getint('sso', 'port', fallback=9443)
 API_HOST = CONF.get('sso', 'host', fallback='0.0.0.0')
+FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
+FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
