@@ -34,6 +34,7 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             log_level="info",
             ssl_certfile=certfile,
             ssl_keyfile=keyfile,
+            proxy_headers=True
         )
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
@@ -126,7 +127,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     else:
         # Log failed authentication attempt
         details = "Invalid access key"
-        logger.warning(f"Authentication failed: {details}")
+        logger.warning(f"Authentication failed: {details} [account: {auth_data.username}]")
         # Create audit log entry before raising exception
         sso_model.create_audit_log(
             username=auth_data.username,

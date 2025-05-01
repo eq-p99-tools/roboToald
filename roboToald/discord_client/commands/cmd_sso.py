@@ -681,8 +681,8 @@ class SSOCommands(commands.Cog):
                            )):
         # Implement alias delete logic
         try:
-            sso_model.delete_account_alias(inter.guild_id, alias)
-            await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{username}`")
+            account_name = sso_model.delete_account_alias(inter.guild_id, alias)
+            await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{account_name}`")
         except sso_model.SSOAccountAliasNotFoundError:
             await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
 
