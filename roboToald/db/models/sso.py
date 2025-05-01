@@ -63,7 +63,7 @@ class SSOAccount(base.Base):
     real_pass = sqlalchemy.Column(sqlalchemy_utils.EncryptedType(
         sqlalchemy.String(255), config.ENCRYPTION_KEY), nullable=False)
 
-    last_login = sqlalchemy.Column(sqlalchemy.DateTime)
+    last_login = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.min)
 
     groups = sqlalchemy.orm.relationship("SSOAccountGroup", secondary=account_group_mapping,
                                          back_populates="accounts")
@@ -82,7 +82,7 @@ class SSOAccount(base.Base):
         self.guild_id = guild_id
         self.real_user = real_user
         self.real_pass = real_pass
-        self.last_login = last_login
+        self.last_login = last_login or datetime.datetime.min
 
 
 def create_account(guild_id: int, real_user: str, real_pass: str, group: str = None) -> SSOAccount:
