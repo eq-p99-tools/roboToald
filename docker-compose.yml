@@ -11,6 +11,6 @@ services:
 
     restart: always
     ports:
-      # Expose API port (adjust if your API runs on a different port)
-      - "9443:9443"
+      # Expose API port only on localhost (127.0.0.1)
+      - "127.0.0.1:5998:8080"
 

@@ -25,22 +25,41 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 def run_api_server(discord_client, certfile, keyfile, host, port):
     """
     Start the API server in a background thread, injecting the Discord client.
+    If certfile and keyfile are provided, the server will run with TLS.
+    Otherwise, it will run without TLS (HTTP).
     """
     app.state.discord_client = discord_client
     def _run():
-        uvicorn.run(
-            "roboToald.api.server:app",
-            host=host,
-            port=port,
-            log_level="info",
-            ssl_certfile=certfile,
-            ssl_keyfile=keyfile,
-            proxy_headers=True,
-            forwarded_allow_ips=config.FORWARDED_ALLOW_IPS
-        )
+        # Check if both certfile and keyfile are provided
+        use_ssl = certfile and keyfile
+        
+        # Common parameters for both HTTP and HTTPS
+        uvicorn_params = {
+            "app": "roboToald.api.server:app",
+            "host": host,
+            "port": port,
+            "log_level": "info",
+            "proxy_headers": True,
+            "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS
+        }
+        
+        # Add SSL parameters if certificates are provided
+        if use_ssl:
+            logger.info(f"Starting API server with TLS on {host}:{port}")
+            uvicorn_params["ssl_certfile"] = certfile
+            uvicorn_params["ssl_keyfile"] = keyfile
+        else:
+            logger.warning(f"Starting API server WITHOUT TLS on {host}:{port} - THIS IS POSSIBLY INSECURE")
+        
+        # Run the server with the appropriate configuration
+        uvicorn.run(**uvicorn_params)
+        
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
-    logger.info(f"API server started in thread on {host}:{port}")
+    
+    # Log the server start with appropriate protocol
+    protocol = "https" if use_ssl else "http"
+    logger.info(f"API server started in thread at {protocol}://{host}:{port}")
     return thread
 
 # Define request and response models

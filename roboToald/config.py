@@ -31,8 +31,8 @@ ENCRYPTION_KEY = CONF.get(
     'sso', 'encryption_key')
 API_CERTFILE = CONF.get('sso', 'ssl_certfile', fallback=None)
 API_KEYFILE = CONF.get('sso', 'ssl_keyfile', fallback=None)
-API_PORT = CONF.getint('sso', 'port', fallback=9443)
-API_HOST = CONF.get('sso', 'host', fallback='0.0.0.0')
+API_PORT = CONF.getint('sso', 'port', fallback=8080)
+API_HOST = CONF.get('sso', 'host', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
 
