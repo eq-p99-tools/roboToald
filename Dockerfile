@@ -27,7 +27,7 @@ WORKDIR /app
 COPY requirements.txt /app/
 
 # Copy our wakeup sound
-COPY wakeup.wav /app/
+COPY *.wav /app/
 
 # Copy over wheels
 COPY --from=BUILD_IMAGE /wheels /wheels
