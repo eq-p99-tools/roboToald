@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="900" height="700" viewBox="0 0 900 700">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#000"/>
+    </marker>
+    <style type="text/css">
+      .entity {
+        fill: #f5f5f5;
+        stroke: #333;
+        stroke-width: 2;
+      }
+      .entity-title {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+        font-weight: bold;
+        text-anchor: middle;
+      }
+      .entity-attribute {
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        text-anchor: start;
+      }
+      .primary-key {
+        font-weight: bold;
+      }
+      .foreign-key {
+        font-style: italic;
+      }
+      .relationship {
+        stroke: #333;
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrow);
+      }
+    </style>
+  </defs>
+
+  <!-- PointsAudit -->
+  <rect x="100" y="100" width="200" height="180" rx="5" ry="5" class="entity"/>
+  <line x1="100" y1="130" x2="300" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="200" y="120" class="entity-title">PointsAudit</text>
+  <text x="110" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="110" y="170" class="entity-attribute">user_id: Integer</text>
+  <text x="110" y="190" class="entity-attribute">guild_id: Integer</text>
+  <text x="110" y="210" class="entity-attribute">event: Enum(Event)</text>
+  <text x="110" y="230" class="entity-attribute">time: DateTime</text>
+  <text x="110" y="250" class="entity-attribute">active: Boolean</text>
+  <text x="110" y="270" class="entity-attribute">start_id: Integer</text>
+
+  <!-- PointsEarned -->
+  <rect x="400" y="100" width="200" height="180" rx="5" ry="5" class="entity"/>
+  <line x1="400" y1="130" x2="600" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="500" y="120" class="entity-title">PointsEarned</text>
+  <text x="410" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="410" y="170" class="entity-attribute">user_id: Integer</text>
+  <text x="410" y="190" class="entity-attribute">guild_id: Integer</text>
+  <text x="410" y="210" class="entity-attribute">points: Integer</text>
+  <text x="410" y="230" class="entity-attribute">time: DateTime</text>
+  <text x="410" y="250" class="entity-attribute">notes: Text</text>
+  <text x="410" y="270" class="entity-attribute">adjustor: Integer</text>
+
+  <!-- PointsSpent -->
+  <rect x="700" y="100" width="200" height="140" rx="5" ry="5" class="entity"/>
+  <line x1="700" y1="130" x2="900" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="800" y="120" class="entity-title">PointsSpent</text>
+  <text x="710" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="710" y="170" class="entity-attribute">user_id: Integer</text>
+  <text x="710" y="190" class="entity-attribute">guild_id: Integer</text>
+  <text x="710" y="210" class="entity-attribute">points: Integer</text>
+  <text x="710" y="230" class="entity-attribute">time: DateTime</text>
+
+  <!-- Self-relationship in PointsAudit -->
+  <path d="M150,280 C150,350 50,350 50,280 L100,280" class="relationship" stroke-width="3.5"/>
+  <text x="100" y="350" font-family="Arial, sans-serif" font-size="12" font-weight="bold">start_id → id</text>
+
+  <!-- Legend -->
+  <rect x="350" y="400" width="250" height="140" rx="5" ry="5" fill="#f5f5f5" stroke="#333" stroke-width="1"/>
+  <text x="475" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Legend</text>
+  <line x1="360" y1="430" x2="590" y2="430" stroke="#333" stroke-width="1"/>
+  
+  <text x="370" y="450" font-family="Arial, sans-serif" font-size="12" font-weight="bold">PK</text>
+  <text x="400" y="450" font-family="Arial, sans-serif" font-size="12">Primary Key</text>
+  
+  <text x="370" y="470" font-family="Arial, sans-serif" font-size="12" font-style="italic">FK</text>
+  <text x="400" y="470" font-family="Arial, sans-serif" font-size="12">Foreign Key</text>
+  
+  <line x1="370" y1="490" x2="410" y2="490" stroke="#333" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="420" y="495" font-family="Arial, sans-serif" font-size="12">Relationship</text>
+  
+  <text x="370" y="520" font-family="Arial, sans-serif" font-size="12">Note: All three tables share common</text>
+  <text x="370" y="535" font-family="Arial, sans-serif" font-size="12">fields: user_id, guild_id, and time</text>
+</svg>

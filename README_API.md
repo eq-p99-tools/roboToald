@@ -4,28 +4,14 @@ This extension adds a standalone REST API server for the RoboToald SSO system, a
 
 ## Features
 
-- Runs independently from the Discord bot
 - Provides an authentication endpoint for SSO accounts
 - Uses the same database as the Discord bot
-- Secure password handling
 - Comprehensive audit logging of all authentication attempts
 - Rate limiting to prevent brute force attacks
 
-## Installation
-
-1. Install the additional dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-
-2. Run the API server:
-   ```
-   python api_server.py
-   ```
-
 ## API Usage
 
-The API server runs on port 8000 by default. The following endpoints are available:
+The API server runs can run using TLS or not, depending on configuration. If running without TLS, a reverse-proxy is recommended to ensure secure traffic.
 
 ### Authentication Endpoint
 

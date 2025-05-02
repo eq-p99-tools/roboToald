@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1200" height="1000" viewBox="0 0 1200 1000">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#000"/>
+    </marker>
+    <marker id="diamond" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+      <path d="M0,6 L6,0 L12,6 L6,12 z" fill="#000"/>
+    </marker>
+    <style type="text/css">
+      .entity {
+        fill: #f5f5f5;
+        stroke: #333;
+        stroke-width: 2;
+      }
+      .entity-title {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+        font-weight: bold;
+        text-anchor: middle;
+      }
+      .entity-attribute {
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        text-anchor: start;
+      }
+      .primary-key {
+        font-weight: bold;
+      }
+      .foreign-key {
+        font-style: italic;
+      }
+      .relationship {
+        stroke: #333;
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrow);
+      }
+      .many-to-many {
+        stroke: #333;
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrow);
+        marker-start: url(#diamond);
+      }
+    </style>
+  </defs>
+
+  <!-- SSOAccount -->
+  <rect x="100" y="100" width="200" height="180" rx="5" ry="5" class="entity"/>
+  <line x1="100" y1="130" x2="300" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="200" y="120" class="entity-title">SSOAccount</text>
+  <text x="110" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="110" y="170" class="entity-attribute">guild_id: Integer</text>
+  <text x="110" y="190" class="entity-attribute">real_user: String(255)</text>
+  <text x="110" y="210" class="entity-attribute">real_pass: EncryptedType</text>
+  <text x="110" y="230" class="entity-attribute">last_login: DateTime</text>
+
+  <!-- SSOAccountGroup -->
+  <rect x="900" y="100" width="200" height="140" rx="5" ry="5" class="entity"/>
+  <line x1="900" y1="130" x2="1100" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="1000" y="120" class="entity-title">SSOAccountGroup</text>
+  <text x="910" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="910" y="170" class="entity-attribute">guild_id: Integer</text>
+  <text x="910" y="190" class="entity-attribute">group_name: String(255)</text>
+  <text x="910" y="210" class="entity-attribute">role_id: Integer</text>
+
+  <!-- account_group_mapping -->
+  <rect x="500" y="100" width="200" height="100" rx="5" ry="5" class="entity"/>
+  <line x1="500" y1="130" x2="700" y2="130" stroke="#333" stroke-width="1"/>
+  <text x="600" y="120" class="entity-title">account_group_mapping</text>
+  <text x="510" y="150" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="510" y="170" class="entity-attribute foreign-key">account_id: Integer (FK)</text>
+  <text x="510" y="190" class="entity-attribute foreign-key">group_id: Integer (FK)</text>
+
+  <!-- SSOTag -->
+  <rect x="250" y="400" width="200" height="120" rx="5" ry="5" class="entity"/>
+  <line x1="250" y1="430" x2="450" y2="430" stroke="#333" stroke-width="1"/>
+  <text x="350" y="420" class="entity-title">SSOTag</text>
+  <text x="260" y="450" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="260" y="470" class="entity-attribute">guild_id: Integer</text>
+  <text x="260" y="490" class="entity-attribute">tag: String(255)</text>
+  <text x="260" y="510" class="entity-attribute foreign-key">account_id: Integer (FK)</text>
+
+  <!-- SSOAccountAlias -->
+  <rect x="550" y="400" width="200" height="120" rx="5" ry="5" class="entity"/>
+  <line x1="550" y1="430" x2="750" y2="430" stroke="#333" stroke-width="1"/>
+  <text x="650" y="420" class="entity-title">SSOAccountAlias</text>
+  <text x="560" y="450" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="560" y="470" class="entity-attribute">guild_id: Integer</text>
+  <text x="560" y="490" class="entity-attribute">alias: String(255)</text>
+  <text x="560" y="510" class="entity-attribute foreign-key">account_id: Integer (FK)</text>
+
+  <!-- SSOAccessKey -->
+  <rect x="850" y="400" width="200" height="120" rx="5" ry="5" class="entity"/>
+  <line x1="850" y1="430" x2="1050" y2="430" stroke="#333" stroke-width="1"/>
+  <text x="950" y="420" class="entity-title">SSOAccessKey</text>
+  <text x="860" y="450" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="860" y="470" class="entity-attribute">guild_id: Integer</text>
+  <text x="860" y="490" class="entity-attribute">discord_user_id: Integer</text>
+  <text x="860" y="510" class="entity-attribute">access_key: EncryptedType</text>
+
+  <!-- SSOAuditLog -->
+  <rect x="100" y="650" width="200" height="200" rx="5" ry="5" class="entity"/>
+  <line x1="100" y1="680" x2="300" y2="680" stroke="#333" stroke-width="1"/>
+  <text x="200" y="670" class="entity-title">SSOAuditLog</text>
+  <text x="110" y="700" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="110" y="720" class="entity-attribute">timestamp: DateTime</text>
+  <text x="110" y="740" class="entity-attribute">ip_address: String(45)</text>
+  <text x="110" y="760" class="entity-attribute">username: String(255)</text>
+  <text x="110" y="780" class="entity-attribute">success: Boolean</text>
+  <text x="110" y="800" class="entity-attribute">discord_user_id: Integer</text>
+  <text x="110" y="820" class="entity-attribute foreign-key">account_id: Integer (FK)</text>
+  <text x="110" y="840" class="entity-attribute">guild_id: Integer</text>
+
+  <!-- SSORevocation -->
+  <rect x="400" y="650" width="200" height="160" rx="5" ry="5" class="entity"/>
+  <line x1="400" y1="680" x2="600" y2="680" stroke="#333" stroke-width="1"/>
+  <text x="500" y="670" class="entity-title">SSORevocation</text>
+  <text x="410" y="700" class="entity-attribute primary-key">id: Integer (PK)</text>
+  <text x="410" y="720" class="entity-attribute">timestamp: DateTime</text>
+  <text x="410" y="740" class="entity-attribute">expiry_days: Integer</text>
+  <text x="410" y="760" class="entity-attribute">active: Boolean</text>
+  <text x="410" y="780" class="entity-attribute">discord_user_id: Integer</text>
+  <text x="410" y="800" class="entity-attribute">guild_id: Integer</text>
+  <text x="410" y="820" class="entity-attribute">details: String(255)</text>
+
+  <!-- Relationships -->
+  <!-- SSOAccount to account_group_mapping -->
+  <path d="M300,150 L500,150" class="relationship"/>
+  
+  <!-- account_group_mapping to SSOAccountGroup -->
+  <path d="M700,150 L900,150" class="relationship"/>
+  
+  <!-- SSOAccount to SSOTag -->
+  <path d="M200,280 C200,340 350,340 350,400" class="relationship"/>
+  
+  <!-- SSOAccount to SSOAccountAlias -->
+  <path d="M300,200 C400,200 500,350 650,400" class="relationship"/>
+  
+  <!-- SSOAccount to SSOAuditLog -->
+  <path d="M150,280 C150,350 150,550 150,650" class="relationship"/>
+
+  <!-- Legend -->
+  <rect x="700" y="650" width="250" height="140" rx="5" ry="5" fill="#f5f5f5" stroke="#333" stroke-width="1"/>
+  <text x="825" y="670" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Legend</text>
+  <line x1="710" y1="680" x2="940" y2="680" stroke="#333" stroke-width="1"/>
+  
+  <text x="720" y="700" font-family="Arial, sans-serif" font-size="12" font-weight="bold">PK</text>
+  <text x="750" y="700" font-family="Arial, sans-serif" font-size="12">Primary Key</text>
+  
+  <text x="720" y="720" font-family="Arial, sans-serif" font-size="12" font-style="italic">FK</text>
+  <text x="750" y="720" font-family="Arial, sans-serif" font-size="12">Foreign Key</text>
+  
+  <line x1="720" y1="740" x2="760" y2="740" stroke="#333" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="770" y="745" font-family="Arial, sans-serif" font-size="12">One-to-Many Relationship</text>
+  
+  <line x1="720" y1="770" x2="760" y2="770" stroke="#333" stroke-width="2.5" marker-end="url(#arrow)" marker-start="url(#diamond)"/>
+  <text x="770" y="775" font-family="Arial, sans-serif" font-size="12">Many-to-Many Relationship</text>
+</svg>
