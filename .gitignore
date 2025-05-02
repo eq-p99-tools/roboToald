@@ -1,7 +1,10 @@
 __pycache__
 .idea
 .pyc
-alerts.db
-batphone.ini
+alerts.db*
+batphone.ini*
 .python-version
 certs
+.venv*
+.mypy_cache
+*.csv
