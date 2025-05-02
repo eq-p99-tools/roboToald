@@ -91,7 +91,8 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
     try:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
-        
+        user_is_admin = is_admin(user_roles, inter.guild_id)
+
         # Get all accounts for this guild
         all_accounts = sso_model.list_accounts(inter.guild_id)
         
@@ -100,8 +101,7 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
         for account in all_accounts:
             # Check if account is in a group that the user has access to
             has_access = False
-            if is_admin(user_roles, inter.guild_id):
-                # print("Admin has access to all accounts.")
+            if user_is_admin:
                 has_access = True
             else:
                 for group in account.groups:
@@ -134,6 +134,7 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
     try:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
+        user_is_admin = is_admin(user_roles, inter.guild_id)
         
         # Get all aliases for this guild
         all_aliases = sso_model.list_account_aliases(inter.guild_id)
@@ -143,8 +144,7 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         for alias in all_aliases:
             # Check if the account the alias is for is in a group that the user has access to
             has_access = False
-            if is_admin(user_roles, inter.guild_id):
-                # print("Admin has access to all aliases.")
+            if user_is_admin:
                 has_access = True
             else:
                 for group in alias.account.groups:
@@ -177,6 +177,7 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
     try:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
+        user_is_admin = is_admin(user_roles, inter.guild_id)
         
         # Get all groups for this guild
         all_groups = sso_model.list_account_groups(inter.guild_id)
@@ -186,9 +187,8 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         for group in all_groups:
             # Check if group has role-based access
             has_access = False
-            if is_admin(user_roles, inter.guild_id):
+            if user_is_admin:
                 has_access = True
-                # print("Admin has access to all groups.")
             else:
                 for role in user_roles:
                     if role in group.role_id:
@@ -220,10 +220,10 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
     try:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
+        user_is_admin = is_admin(user_roles, inter.guild_id)
         
         # Get all tags for this guild
         all_tags = sso_model.list_tags(inter.guild_id)
-        print(f"found {len(all_tags)} tags for guild {inter.guild_id}")
         
         # Filter tags based on user's roles and access permissions
         available_tags = []
@@ -250,7 +250,6 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
             if 'add' in inter.options['tag']:
                 tag_add = True
                 tag_username = inter.options['tag']['add']['username']
-        print(f"tag_remove: {tag_remove}, tag_add: {tag_add}, tag_username: {tag_username}")
         for tag in all_tags:
             # Check if tag is on an account that the user has access to
             has_access = False
@@ -264,7 +263,7 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
                 elif tag_add and tag_username == account:
                     valid_tag = False
 
-                if is_admin(user_roles, inter.guild_id):
+                if user_is_admin:
                     has_access = True
                 else:
                     for group in account.groups:
