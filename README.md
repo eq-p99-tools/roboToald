@@ -1,5 +1,7 @@
 # RoboToald Discord Bot
 
+**WARNING:** 95% of the documentation in this README is AI generated (including the ERD SVGs), so only trust it as much as you trust any AI generated documentation.
+
 RoboToald is a Discord bot designed to enhance guild management and gaming experiences with event point tracking, raid alerts, raid-window tracking subscriptions, basic timers, and single sign-on capabilities.
 
 ## Key Features
