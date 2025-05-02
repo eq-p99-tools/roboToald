@@ -223,6 +223,7 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
         
         # Get all tags for this guild
         all_tags = sso_model.list_tags(inter.guild_id)
+        print(f"found {len(all_tags)} tags for guild {inter.guild_id}")
         
         # Filter tags based on user's roles and access permissions
         available_tags = []
@@ -249,7 +250,7 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
             if 'add' in inter.options['tag']:
                 tag_add = True
                 tag_username = inter.options['tag']['add']['username']
-
+        print(f"tag_remove: {tag_remove}, tag_add: {tag_add}, tag_username: {tag_username}")
         for tag in all_tags:
             # Check if tag is on an account that the user has access to
             has_access = False
@@ -292,8 +293,11 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
 
 
 def is_admin(user_roles, guild_id):
-    admin_role = config.GUILD_SETTINGS.get(guild_id, {}).get('sso_admin_role')
-    return admin_role in user_roles
+    admin_roles = config.GUILD_SETTINGS.get(guild_id, {}).get('sso_admin_roles')
+    for admin_role in admin_roles:
+        if admin_role in user_roles:
+            return True
+    return False
 
 
 def only_allow_admin():
