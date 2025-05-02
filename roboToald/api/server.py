@@ -166,15 +166,15 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         details = "Account not found"
         logger.warning(f"Authentication failed: {details}")
         # Create audit log entry before raising exception
-        sso_model.create_audit_log(
-            username=auth_data.username,
-            ip_address=client_ip,
-            success=False,
-            discord_user_id=discord_user_id,
-            account_id=None,
-            guild_id=access_key.guild_id,
-            details=details
-        )
+        # sso_model.create_audit_log(
+        #     username=auth_data.username,
+        #     ip_address=client_ip,
+        #     success=False,
+        #     discord_user_id=discord_user_id,
+        #     account_id=None,
+        #     guild_id=access_key.guild_id,
+        #     details=details
+        # )
         raise_auth_failed()
 
     # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
