@@ -123,7 +123,7 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
             filtered_accounts = [account.real_user for account in available_accounts]
         
         # Return up to 50 choices
-        return filtered_accounts[:50]
+        return filtered_accounts[:25]
     except Exception:
         # In case of error, return an empty list
         return []
@@ -166,7 +166,7 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
             filtered_aliases = [alias.alias for alias in available_aliases]
         
         # Return up to 50 choices
-        return filtered_aliases[:50]
+        return filtered_aliases[:25]
     except Exception:
         # In case of error, return an empty list
         return []
@@ -209,7 +209,7 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
             filtered_groups = [group.group_name for group in available_groups]
         
         # Return up to 50 choices
-        return filtered_groups[:50]
+        return filtered_groups[:25]
     except Exception as e:
         # In case of error, return an empty list
         return []
@@ -285,7 +285,7 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
             filtered_tags = [tag for tag in available_tags]
         
         # Return up to 50 choices
-        return filtered_tags[:50]
+        return filtered_tags[:25]
     except Exception as e:
         # In case of error, return an empty list
         return []
