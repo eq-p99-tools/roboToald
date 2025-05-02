@@ -80,12 +80,13 @@ class SSOAccount(base.Base):
 
     def __init__(self, guild_id, real_user, real_pass, last_login=None):
         self.guild_id = guild_id
-        self.real_user = real_user
+        self.real_user = real_user.lower()
         self.real_pass = real_pass
         self.last_login = last_login or datetime.datetime.min
 
 
 def create_account(guild_id: int, real_user: str, real_pass: str, group: str = None) -> SSOAccount:
+    real_user = real_user.lower()
     with base.get_session() as session:
         account = SSOAccount(guild_id=guild_id, real_user=real_user, real_pass=real_pass)
         if group:
@@ -103,6 +104,7 @@ def create_account(guild_id: int, real_user: str, real_pass: str, group: str = N
 
 
 def get_account(guild_id: int, real_user: str) -> SSOAccount:
+    real_user = real_user.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).options(
@@ -118,6 +120,7 @@ def get_account(guild_id: int, real_user: str) -> SSOAccount:
 
 
 def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount or None:
+    username = username.lower()
     """Find an account by username."""
     with base.get_session() as session:
         # Try to find the account directly by real_user
@@ -173,6 +176,7 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
 
 
 def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
+    real_user = real_user.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -198,6 +202,7 @@ def update_last_login(account_id: int) -> None:
 
 
 def delete_account(guild_id: int, real_user: str) -> None:
+    real_user = real_user.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -298,6 +303,7 @@ def delete_account_group(guild_id: int, group_name: str) -> None:
 
 
 def add_account_to_group(guild_id: int, group_name: str, real_user: str) -> None:
+    real_user = real_user.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -318,6 +324,7 @@ def add_account_to_group(guild_id: int, group_name: str, real_user: str) -> None
 
 
 def remove_account_from_group(guild_id: int, group_name: str, real_user: str) -> None:
+    real_user = real_user.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -457,6 +464,8 @@ class SSOTag(base.Base):
 
 
 def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
+    real_user = real_user.lower()
+    tag = tag.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -481,6 +490,8 @@ def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
 
 
 def untag_account(guild_id: int, real_user: str, tag: str) -> None:
+    real_user = real_user.lower()
+    tag = tag.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -535,6 +546,8 @@ class SSOAccountAlias(base.Base):
 
 
 def create_account_alias(guild_id: int, real_user: str, alias: str) -> SSOAccountAlias:
+    real_user = real_user.lower()
+    alias = alias.lower()
     with base.get_session() as session:
         try:
             account = session.query(SSOAccount).filter(
@@ -550,6 +563,7 @@ def create_account_alias(guild_id: int, real_user: str, alias: str) -> SSOAccoun
 
 
 def get_account_alias(guild_id: int, alias: str) -> SSOAccountAlias:
+    alias = alias.lower()
     with base.get_session() as session:
         try:
             alias = session.query(SSOAccountAlias).filter(
@@ -571,6 +585,7 @@ def list_account_aliases(guild_id: int) -> list[SSOAccountAlias]:
 
 
 def delete_account_alias(guild_id: int, alias: str) -> str:
+    alias = alias.lower()
     with base.get_session() as session:
         try:
             alias = session.query(SSOAccountAlias).filter(
