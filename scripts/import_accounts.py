@@ -114,16 +114,17 @@ def import_accounts(guild_id: int, accounts_file: str) -> None:
         successful_accounts = 0
         
         for row in reader:
-            if row[0] == 'account_name':
-                continue
-            total_accounts += 1
-            
             # Ensure we have at least the required fields
             if len(row) < 3:
                 error_message = "Row has fewer than 3 columns"
                 print(f"Error: {error_message}")
                 error_accounts.append(row + [error_message])
                 continue
+
+            # Skip header row
+            if total_accounts == 0 and row[0].lower().startswith('account'):
+                continue
+            total_accounts += 1
             
             # Extract fields
             account_name = row[0].strip()

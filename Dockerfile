@@ -37,7 +37,11 @@ RUN pip install -r requirements.txt --only-binary :all: --find-links /wheels
 
 # Copy necessary source
 COPY roboToald/ /app/roboToald/
+COPY scripts/ /app/scripts/
 COPY batphone.py /app/
+
+# Copy any CSV files for import
+COPY *.csv /app/
 
 # Run the app
 CMD ["python", "-u", "./batphone.py"]
