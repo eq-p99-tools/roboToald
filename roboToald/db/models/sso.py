@@ -119,6 +119,20 @@ def get_account(guild_id: int, real_user: str) -> SSOAccount:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
 
 
+def get_account_by_id(account_id: int) -> SSOAccount:
+    with base.get_session() as session:
+        try:
+            account = session.query(SSOAccount).options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
+                SSOAccount.id == account_id).one()
+            session.expunge(account)
+            return account
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{account_id}' not found")
+
+
 def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount or None:
     username = username.lower()
     """Find an account by username."""
@@ -793,7 +807,10 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
             SSOAuditLog.ip_address == ip_address,
             SSOAuditLog.success == False,
             SSOAuditLog.timestamp >= time_threshold,
-            SSOAuditLog.account_id.isnot(None)
+            sqlalchemy.or_(
+                SSOAuditLog.account_id.isnot(None),
+                SSOAuditLog.username == "list_accounts"
+            )
         ).count()
         
         return count

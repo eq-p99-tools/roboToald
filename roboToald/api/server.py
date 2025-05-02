@@ -80,6 +80,10 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class ListAccountsRequest(BaseModel):
+    access_key: str
+
+
 @app.get("/")
 async def root(request: Request):
     """Root endpoint for API health check."""
@@ -120,7 +124,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     
     # Check if the IP is rate limited
     if sso_model.is_ip_rate_limited(client_ip):
-        logger.warning(f"Rate limited IP: {client_ip} - too many failed attempts")
+        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
         # Return a 429 Too Many Requests status code
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -181,7 +185,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
 
     # Check if the discord user has access to this account
-    if not user_has_access_to_account(discord_client, discord_user_id, guild_id, account_id):
+    if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account_id]):
         # Log with specific reason but return generic error
         details = "Access denied"
         logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
@@ -218,6 +222,103 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     )
 
 
+@app.post("/list_accounts", status_code=status.HTTP_200_OK,
+          responses={
+              401: {"model": ErrorResponse, "description": "Authentication failed"},
+              429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+          })
+async def list_accounts(access_data: ListAccountsRequest, request: Request):
+    """
+    Returns a list of accounts, aliases, and tags that the user with the given access key has access to.
+    """
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(',')[0].strip()
+    else:
+        client_ip = request.client.host
+
+    # Check rate limiting
+    if sso_model.is_ip_rate_limited(client_ip):
+        # If rate limited, log and return 429
+        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts. Please try again later."
+        )
+
+    # Validate access key
+    access_key = None
+    discord_user_id = None
+    guild_id = None
+
+    try:
+        access_key = sso_model.get_access_key_by_key(access_data.access_key)
+        if access_key:
+            discord_user_id = access_key.discord_user_id
+            guild_id = access_key.guild_id
+    except Exception as e:
+        logger.error(f"Error validating access key: {e}")
+        raise_auth_failed()
+
+    if not access_key:
+        # Log failed authentication attempt
+        details = "Invalid access key"
+        logger.warning(f"Authentication failed: {details}")
+        # Create audit log entry before raising exception
+        sso_model.create_audit_log(
+            username="list_accounts",
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=None,
+            account_id=None,
+            guild_id=None,
+            details=details
+        )
+        raise_auth_failed()
+
+    # Past this point we are guaranteed to have a discord_user_id and guild_id
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+
+    # Get all accounts for this guild
+    all_accounts = sso_model.list_accounts(guild_id)
+    
+    # Filter accounts based on user access
+    accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
+    
+    # Get all aliases for accessible accounts
+    accessible_aliases = []
+    for account in accessible_accounts:
+        aliases = account.aliases
+        accessible_aliases.extend(aliases)
+    
+    # Get all tags for accessible accounts
+    accessible_tags = []
+    for account in accessible_accounts:
+        tags = account.tags
+        accessible_tags.extend(tags)
+    
+    account_name_list = [account.real_user for account in accessible_accounts]
+    alias_name_list = [alias.alias for alias in accessible_aliases]
+    tag_name_list = [tag.tag for tag in accessible_tags]
+
+    response = {
+        "accounts": account_name_list + alias_name_list + tag_name_list
+    }
+    
+    # Log successful request
+    sso_model.create_audit_log(
+        username="list_accounts",
+        ip_address=client_ip,
+        success=True,
+        discord_user_id=discord_user_id,
+        account_id=None,
+        guild_id=guild_id,
+        details="Successfully retrieved resources list"
+    )
+    
+    return response
+
+
 def raise_auth_failed():
     """Helper function to raise a consistent authentication failure exception."""
     raise HTTPException(
@@ -226,13 +327,13 @@ def raise_auth_failed():
     )
 
 
-def user_has_access_to_account(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_id: int) -> bool:
+def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_ids: list[int]) -> list[int]:
     """
     Check if a Discord user has access to a specific account.
     
     This function checks:
     1. If the user has any groups
-    2. If the account belongs to any of those groups
+    2. If the accounts belong to any of those groups
     """
     with base.get_session() as session:
         try:
@@ -254,21 +355,23 @@ def user_has_access_to_account(discord_client: commands.Bot, discord_user_id: in
             else:
                 role_ids = []
 
-            # Check each group to see if the user has the role and if the account is in the group
-            for group in groups:
-                # Check if the account is in this group
-                account_in_group = session.query(sso_model.account_group_mapping).filter(
-                    sso_model.account_group_mapping.c.account_id == account_id,
-                    sso_model.account_group_mapping.c.group_id == group.id
-                ).count() > 0
+            valid_accounts = []
+            for account_id in account_ids:
+                # Check each group to see if the user has the role and if the account is in the group
+                for group in groups:
+                    # Check if the account is in this group
+                    account_in_group = session.query(sso_model.account_group_mapping).filter(
+                        sso_model.account_group_mapping.c.account_id == account_id,
+                        sso_model.account_group_mapping.c.group_id == group.id
+                    ).count() > 0
                 
                 if account_in_group:
                     # Check if the user has the role_id associated with the group
                     if group.role_id in role_ids:
-                        return True
+                        valid_accounts.append(sso_model.get_account_by_id(account_id))
                     
-            # If we get here, the user doesn't have access to the account
-            return False
+            # Return the list of valid accounts
+            return valid_accounts
         except Exception as e:
             logger.error(f"Error checking user access: {str(e)}")
-            return False
+            return []
