@@ -693,7 +693,7 @@ class SSOAuditLog(base.Base):
     __tablename__ = "sso_audit_log"
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
-    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, default=sqlalchemy.sql.func.now())
+    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.now())
     
     # Request information
     ip_address = sqlalchemy.Column(sqlalchemy.String(45), nullable=True)  # IPv6 can be up to 45 chars

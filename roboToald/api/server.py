@@ -302,7 +302,8 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     tag_name_list = [tag.tag for tag in accessible_tags]
 
     response = {
-        "accounts": account_name_list + alias_name_list + tag_name_list
+        "accounts": account_name_list + alias_name_list + tag_name_list,
+        "count": len(account_name_list)
     }
     
     # Log successful request
