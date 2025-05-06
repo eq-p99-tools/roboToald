@@ -97,7 +97,7 @@ async def root(request: Request):
           status_code=status.HTTP_200_OK, 
           responses={
               401: {"model": ErrorResponse, "description": "Authentication failed"},
-              429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
           })
 async def authenticate(auth_data: AuthRequest, request: Request):
     """
@@ -118,7 +118,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     to avoid leaking information about what accounts exist in the system.
     
     Rate limiting:
-    - IP addresses with more than 10 failed attempts in the last hour will be blocked
+    - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
     """
     client_ip = request.client.host
     
@@ -126,10 +126,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     if sso_model.is_ip_rate_limited(client_ip):
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
         # Return a 429 Too Many Requests status code
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed attempts. Please try again later."
-        )
+        # raise HTTPException(
+        #     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        #     detail="Too many failed attempts. Please try again later."
+        # )
+        raise_auth_failed()
     
     # Initialize audit log variables
     account_id = None
@@ -225,7 +226,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
 @app.post("/list_accounts", status_code=status.HTTP_200_OK,
           responses={
               401: {"model": ErrorResponse, "description": "Authentication failed"},
-              429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
           })
 async def list_accounts(access_data: ListAccountsRequest, request: Request):
     """
@@ -241,10 +242,11 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     if sso_model.is_ip_rate_limited(client_ip):
         # If rate limited, log and return 429
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed attempts. Please try again later."
-        )
+        # raise HTTPException(
+        #     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        #     detail="Too many failed attempts. Please try again later."
+        # )
+        raise_auth_failed()
 
     # Validate access key
     access_key = None

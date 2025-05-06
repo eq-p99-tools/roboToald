@@ -740,14 +740,14 @@ class SSOCommands(commands.Cog):
                     
                 ip = log.ip_address if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
-                discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
+                discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
                 
-                formatted_log = f"{discord_timestamp} {status} | 👤 {discord_user} | 🌐 `{ip}` | {details}"
+                formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
                 
             # Create the response message
             response = f"# 📋 Audit Logs for Account: `{username}`\n"
-            response += f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)_\n\n"
+            response += f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)._\n\n"
             response += "\n".join(formatted_logs)
             
             # Send the response
@@ -786,8 +786,9 @@ class SSOCommands(commands.Cog):
                 status = "✅" if log.success else "❌"
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
+                ip = log.ip_address if log.ip_address else "N/A"
                 
-                formatted_log = f"{discord_timestamp} {status} | 🤖 `{username}` | {details}"
+                formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
                 
             # Create the response message
@@ -796,7 +797,7 @@ class SSOCommands(commands.Cog):
             response += "\n".join(formatted_logs)
             
             # Send the response
-            await inter.send(content=response, ephemeral=True)
+            await send_and_split(inter.send, response, ephemeral=True)
             
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
@@ -836,7 +837,7 @@ class SSOCommands(commands.Cog):
             logs = [log for log in logs if log.guild_id == inter.guild_id or log.username in account_names]
             
             if not logs:
-                await inter.send(content=f"📋 **No failed authentication attempts found in the last {hours} hours**", ephemeral=True)
+                await inter.send(content=f"📋 **No unacknowledged failed authentication attempts found in the last {hours} hours.**", ephemeral=True)
                 return
                 
             # Format the logs for display
@@ -849,29 +850,29 @@ class SSOCommands(commands.Cog):
                 username = log.username if log.username else "Unknown"
                 ip = log.ip_address if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
-                discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
+                discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
 
                 # Track IP addresses for potential attack detection
                 if ip != "N/A":
                     ip_counts[ip] = ip_counts.get(ip, 0) + 1
                 
-                formatted_log = f"{discord_timestamp} | 🤖 `{username}` | 🌐 `{ip}` | 👤 {discord_user} | {details}"
+                formatted_log = f"🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
                 
             # Create the response message
             response = f"# 📋 Failed Authentication Attempts\n"
-            response += f"_Showing {len(logs)} failed authentication attempts from the last {hours} hours_\n\n"
+            response += f"_Showing {len(logs)} failed authentication attempts from the last {hours} hours._\n\n"
             
             # Add warning for potential attacks (multiple failures from same IP)
             potential_attacks = [f"`{ip}` ({count} attempts)" for ip, count in ip_counts.items() if count > 2]
             if potential_attacks:
-                response += "⚠️ **Potential attack detected from:**\n"
+                response += "⚠️ **Potential attacks detected from:**\n"
                 response += ", ".join(potential_attacks) + "\n\n"
             
             response += "\n".join(formatted_logs)
             
             # Send the response
-            await inter.send(content=response, ephemeral=True)
+            await send_and_split(inter.send, response, ephemeral=True)
             
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
@@ -923,13 +924,14 @@ class SSOCommands(commands.Cog):
                     status = "✅" if log.success else "❌"
                     username = log.username if log.username else "Unknown"
                     ip = log.ip_address if log.ip_address else "N/A"
+                    discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
                     
-                    response += f"{discord_timestamp} {status} | 🤖 `{username}` | 🌐 `{ip}`\n"
+                    response += f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
             else:
                 response += "_No recent activity_\n"
                 
             # Send the response
-            await inter.send(content=response, ephemeral=True)
+            await send_and_split(inter.send, response, ephemeral=True)
             
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit statistics:** `{str(e)}`", ephemeral=True)
@@ -949,7 +951,6 @@ class SSOCommands(commands.Cog):
                                 default=None,
                                 description="Reason for revoking access.")
                             ):
-        # Implement access revoke logic
         try:
             sso_model.revoke_user_access(inter.guild_id, inter.user.id, expiry_days, details)
             message = f"❌🔑 **Revoked access to user:** <@{user.id}>"
@@ -965,7 +966,6 @@ class SSOCommands(commands.Cog):
                               user: disnake.Member = commands.Param(
                                 description="Member to list access revocations for.",
                                 default=None)):
-        # Implement access list logic
         revocations = sso_model.get_user_access_revocations(guild_id=inter.guild_id, discord_user_id=user.id)
         if not revocations:
             await inter.send(content="ℹ️ **No access revocations found.**", ephemeral=True)
@@ -981,12 +981,24 @@ class SSOCommands(commands.Cog):
     async def revocation_remove(self, inter: disnake.ApplicationCommandInteraction,
                                 user: disnake.Member = commands.Param(
                                 description="Member to remove access revocation.")):
-        # Implement access remove logic
         try:
             sso_model.remove_access_revocation(inter.guild_id, user.id)
             await inter.send(content=f"🔑 **Access revocations disabled for user:** <@{user.id}>", allowed_mentions=disnake.AllowedMentions.none())
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n{e}", ephemeral=True)
+
+    @sso_admin.sub_command(description="Reset rate limit for an IP address", name="reset_rate_limit")
+    async def reset_rate_limit(self, inter: disnake.ApplicationCommandInteraction,
+                                     ip_address: str = commands.Param(
+                                        description="IP address to reset rate limit for.")):
+        try:
+            updated = sso_model.clear_rate_limit(ip_address)
+            if updated > 0:
+                await inter.send(content=f"🔑 **Rate limit reset for IP:** `{ip_address}` *({updated} records found)*")
+            else:
+                await inter.send(content=f"🔑 **No rate limit entries found for IP:** `{ip_address}`", ephemeral=True)
+        except Exception as e:
+            await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n{e}", ephemeral=True)
 
 
 def setup(bot):

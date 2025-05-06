@@ -10,3 +10,4 @@ pynacl
 fastapi
 uvicorn
 pydantic
+alembic

@@ -707,12 +707,14 @@ class SSOAuditLog(base.Base):
     # if account lookup succeeded:
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=True)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="audit_logs")
+    # allow clearing rate limit
+    rate_limit = sqlalchemy.Column(sqlalchemy.Boolean, default=True)
 
     # Additional information
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
     def __init__(self, username, ip_address=None, success=False, discord_user_id=None, 
-                 account_id=None, guild_id=None, details=None):
+                 account_id=None, guild_id=None, details=None, rate_limit=True):
         self.username = username
         self.ip_address = ip_address
         self.success = success
@@ -720,10 +722,11 @@ class SSOAuditLog(base.Base):
         self.account_id = account_id
         self.guild_id = guild_id
         self.details = details
+        self.rate_limit = rate_limit
 
 
 def create_audit_log(username, ip_address=None, success=False, discord_user_id=None, 
-                     account_id=None, guild_id=None, details=None) -> SSOAuditLog:
+                     account_id=None, guild_id=None, details=None, rate_limit=True) -> SSOAuditLog:
     """Create an audit log entry for an SSO authentication attempt."""
     with base.get_session() as session:
         audit_log = SSOAuditLog(
@@ -733,7 +736,8 @@ def create_audit_log(username, ip_address=None, success=False, discord_user_id=N
             discord_user_id=discord_user_id,
             account_id=account_id,
             guild_id=guild_id,
-            details=details
+            details=details,
+            rate_limit=rate_limit
         )
         session.add(audit_log)
         session.commit()
@@ -741,18 +745,21 @@ def create_audit_log(username, ip_address=None, success=False, discord_user_id=N
     return audit_log
 
 
-def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0) -> list[SSOAuditLog]:
+def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0, include_list=False) -> list[SSOAuditLog]:
     """Get audit logs for a specific Discord user ID."""
     with base.get_session() as session:
         logs = session.query(SSOAuditLog).filter(
             SSOAuditLog.discord_user_id == discord_user_id
-        ).order_by(SSOAuditLog.timestamp.desc()).limit(limit).offset(offset).all()
+        )
+        if not include_list:
+            logs = logs.filter(SSOAuditLog.username != "list_accounts")
+        logs = logs.order_by(SSOAuditLog.timestamp.desc()).limit(limit).offset(offset).all()
         session.expunge_all()
     return logs
 
 
 def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=None, 
-                   since=None) -> list[SSOAuditLog]:
+                   since=None, include_list=False) -> list[SSOAuditLog]:
     """
     Get audit logs with optional filtering.
     
@@ -772,7 +779,12 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
             query = query.filter(SSOAuditLog.success == success)
         if since:
             query = query.filter(SSOAuditLog.timestamp >= since)
+        if not include_list:
+            query = query.filter(SSOAuditLog.username != "list_accounts")
             
+        # Don't include acknowledged (rate limit removed) entries
+        query = query.filter(SSOAuditLog.rate_limit != False)
+        
         # Order by timestamp descending (newest first)
         query = query.order_by(SSOAuditLog.timestamp.desc())
         
@@ -810,20 +822,32 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
             sqlalchemy.or_(
                 SSOAuditLog.account_id.isnot(None),
                 SSOAuditLog.username == "list_accounts"
-            )
+            ),
+            SSOAuditLog.rate_limit != False
         ).count()
         
         return count
 
 
-def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 10) -> bool:
+def clear_rate_limit(ip_address: str) -> None:
+    with base.get_session() as session:
+        updated = session.query(SSOAuditLog).filter(
+            SSOAuditLog.ip_address == ip_address,
+            SSOAuditLog.success == False,
+            SSOAuditLog.rate_limit != False
+        ).update({SSOAuditLog.rate_limit: False})
+        session.commit()
+        return updated
+
+
+def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 30) -> bool:
     """
     Check if an IP address should be rate limited based on failed login attempts.
     
     Args:
         ip_address: The IP address to check
-        max_attempts: Maximum number of allowed failed attempts (default: 10)
-        minutes: The number of minutes to look back (default: 60)
+        max_attempts: Maximum number of allowed failed attempts
+        minutes: The number of minutes to look back
         
     Returns:
         True if the IP should be rate limited, False otherwise
