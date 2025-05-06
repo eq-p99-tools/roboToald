@@ -1,17 +1,16 @@
 # RoboToald REST API
 
-This extension adds a standalone REST API server for the RoboToald SSO system, allowing authentication through the existing database.
+This extension adds a REST API server to RoboToald for the P99 Login Proxy SSO system, allowing authentication through the SSO database.
 
 ## Features
 
 - Provides an authentication endpoint for SSO accounts
-- Uses the same database as the Discord bot
 - Comprehensive audit logging of all authentication attempts
 - Rate limiting to prevent brute force attacks
 
 ## API Usage
 
-The API server runs can run using TLS or not, depending on configuration. If running without TLS, a reverse-proxy is recommended to ensure secure traffic.
+The API server can run using TLS or not, depending on configuration. If running without TLS, a reverse-proxy is recommended to ensure secure traffic.
 
 ### Authentication Endpoint
 
@@ -50,6 +49,14 @@ curl -X POST http://localhost:8000/auth \
 
 For security reasons, all authentication failures return the same error code and message regardless of the specific reason (invalid credentials, account not found, or access denied). This prevents information leakage about what accounts exist in the system.
 
+### List Accounts Endpoint
+
+**URL**: `/list_accounts`  
+**Method**: `POST`  
+**Content-Type**: `application/json`
+
+**TODO:** document this
+
 ## Security Considerations
 
 - The API accepts credentials as JSON in the request body
@@ -77,7 +84,6 @@ The audit log can be queried from the database for security monitoring and compl
 
 To protect against brute force attacks, the API implements rate limiting with the following behavior:
 
-- IP addresses with more than 10 failed authentication attempts within the last hour are temporarily blocked
+- IP addresses with more than some number of failed authentication attempts within a rolling time period are temporarily blocked
 - Blocked IPs receive a 429 Too Many Requests response with a message to try again later
 - All rate limiting events are recorded in the audit log
-- The rate limit counter resets automatically after one hour from each failed attempt
