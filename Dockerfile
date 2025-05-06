@@ -36,8 +36,10 @@ COPY --from=BUILD_IMAGE /wheels /wheels
 RUN pip install -r requirements.txt --only-binary :all: --find-links /wheels
 
 # Copy necessary source
-COPY roboToald/ /app/roboToald/
 COPY scripts/ /app/scripts/
+COPY alembic.ini /app/
+COPY migrations/ /app/migrations/
+COPY roboToald/ /app/roboToald/
 COPY batphone.py /app/
 
 # Copy any CSV files for import
