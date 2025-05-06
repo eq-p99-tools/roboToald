@@ -45,7 +45,6 @@ curl -X POST http://localhost:8000/auth \
 #### Error Responses
 
 - **401 Unauthorized**: Authentication failed
-- **429 Too Many Requests**: Too many failed attempts (rate limited)
 
 For security reasons, all authentication failures return the same error code and message regardless of the specific reason (invalid credentials, account not found, or access denied). This prevents information leakage about what accounts exist in the system.
 
@@ -55,7 +54,35 @@ For security reasons, all authentication failures return the same error code and
 **Method**: `POST`  
 **Content-Type**: `application/json`
 
-**TODO:** document this
+Send a JSON object with an access key in the request body. The server will:
+
+1. Validate the access key
+2. Identify the Discord user and guild associated with the key
+3. Return a list of all accounts, aliases, and tags that the user has access to
+
+#### Example Request
+
+```bash
+curl -X POST http://localhost:8000/list_accounts \
+  -H "Content-Type: application/json" \
+  -d '{"access_key": "your_access_key_here"}'
+```
+
+#### Success Response
+
+```json
+{
+  "accounts": ["account1", "account2", "alias1", "tag1"],
+  "count": 2
+}
+```
+
+- `accounts`: Array containing all account names, aliases, and tags the user has access to
+- `count`: Number of actual accounts (excluding aliases and tags)
+
+#### Error Responses
+
+- **401 Unauthorized**: Authentication failed
 
 ## Security Considerations
 
@@ -64,7 +91,7 @@ For security reasons, all authentication failures return the same error code and
 - For production use, configure HTTPS to encrypt credentials in transit
 - Access keys and passwords are stored encrypted in the database
 - All authentication attempts are logged in the audit log
-- Rate limiting blocks IPs with more than 10 failed attempts in the last hour
+- Rate limiting blocks IPs with more than some number of failed attempts within a rolling time period
 
 ## Audit Logging
 
@@ -72,10 +99,10 @@ The system maintains a comprehensive audit log of all authentication attempts wi
 
 - Timestamp of the attempt
 - Username used in the authentication attempt
-- IP address of the client (when available)
+- IP address of the client
 - Success or failure status
-- Associated Discord user ID (when available)
-- Associated account ID and guild ID (when available)
+- Associated Discord user ID and guild ID (when available)
+- Associated account ID (when available)
 - Detailed reason for failures
 
 The audit log can be queried from the database for security monitoring and compliance purposes.
@@ -85,5 +112,5 @@ The audit log can be queried from the database for security monitoring and compl
 To protect against brute force attacks, the API implements rate limiting with the following behavior:
 
 - IP addresses with more than some number of failed authentication attempts within a rolling time period are temporarily blocked
-- Blocked IPs receive a 429 Too Many Requests response with a message to try again later
+- Blocked IPs receive the same 401 Unauthorized response to prevent naive automated IP cycling
 - All rate limiting events are recorded in the audit log
