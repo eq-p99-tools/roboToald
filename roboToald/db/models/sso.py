@@ -156,7 +156,12 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
         ).one_or_none()
 
         if alias:
-            account = alias.account
+            account = session.query(SSOAccount).options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
+                SSOAccount.id == alias.account_id
+            ).one_or_none()
             session.expunge(account)
             return account
 
@@ -170,8 +175,14 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
             accounts = [tagged_account.account for tagged_account in tagged_accounts]
             # Sort accounts by last_login
             accounts.sort(key=lambda account: account.last_login, reverse=False)
-            session.expunge(accounts[0])
-            return accounts[0]
+            account = session.query(SSOAccount).options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
+                SSOAccount.id == accounts[0].id
+            ).one_or_none()
+            session.expunge(account)
+            return account
 
 
 def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSOAccount]:

@@ -172,6 +172,17 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         return []
 
 
+async def account_and_alias_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for account and alias names available to the user."""
+    try:
+        accounts = await account_autocomplete(inter, string)
+        aliases = await alias_autocomplete(inter, string)
+        return (accounts + aliases)[:25]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
 async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
     """Autocomplete function for group names available to the user."""
     try:
@@ -373,11 +384,13 @@ class SSOCommands(commands.Cog):
     async def account_show(self, inter: disnake.ApplicationCommandInteraction,
                            username: str = commands.Param(
                                description="Account username to show details for",
-                               autocomplete=account_autocomplete
+                               autocomplete=account_and_alias_autocomplete
                            )):
         # Implement account show logic
         try:
-            account = sso_model.get_account(inter.guild_id, username)
+            account = sso_model.find_account_by_username(username, inter.guild_id)
+            if not account:
+                raise sso_model.SSOAccountNotFoundError
             group_names = '\n'.join([f'• `{group.group_name}`' for group in account.groups])
             group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
             tag_names = '\n'.join([f'• `{tag.tag}`' for tag in account.tags])
