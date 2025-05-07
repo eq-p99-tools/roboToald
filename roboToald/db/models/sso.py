@@ -617,7 +617,7 @@ class SSORevocation(base.Base):
     __tablename__ = "sso_revocations"
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
-    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.now())
+    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
     
     # Expiry information
     expiry_days = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -629,12 +629,13 @@ class SSORevocation(base.Base):
 
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
-    def __init__(self, guild_id: int, discord_user_id: int, expiry_days: int, active: bool = True, details: str = None):
+    def __init__(self, guild_id: int, discord_user_id: int, expiry_days: int, active: bool = True, details: str = None, timestamp: datetime.datetime = None):
         self.guild_id = guild_id
         self.discord_user_id = discord_user_id
         self.expiry_days = expiry_days
         self.active = active
         self.details = details
+        self.timestamp = timestamp or datetime.datetime.now()
 
 
 def revoke_user_access(guild_id: int, discord_user_id: int, expiry_days: int, details: str = None) -> SSORevocation:
@@ -693,7 +694,7 @@ class SSOAuditLog(base.Base):
     __tablename__ = "sso_audit_log"
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
-    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.now())
+    timestamp = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
     
     # Request information
     ip_address = sqlalchemy.Column(sqlalchemy.String(45), nullable=True)  # IPv6 can be up to 45 chars
@@ -714,7 +715,7 @@ class SSOAuditLog(base.Base):
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
     def __init__(self, username, ip_address=None, success=False, discord_user_id=None, 
-                 account_id=None, guild_id=None, details=None, rate_limit=True):
+                 account_id=None, guild_id=None, details=None, rate_limit=True, timestamp=None):
         self.username = username
         self.ip_address = ip_address
         self.success = success
@@ -723,6 +724,7 @@ class SSOAuditLog(base.Base):
         self.guild_id = guild_id
         self.details = details
         self.rate_limit = rate_limit
+        self.timestamp = timestamp or datetime.datetime.now()
 
 
 def create_audit_log(username, ip_address=None, success=False, discord_user_id=None, 
