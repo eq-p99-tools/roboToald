@@ -150,6 +150,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id)
         if account:
             account_id = account.id
+            real_username = account.real_user
     else:
         # Log failed authentication attempt
         details = "Invalid access key"
@@ -192,7 +193,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
         # Create audit log entry before raising exception
         sso_model.create_audit_log(
-            username=auth_data.username,
+            username=real_username,
             ip_address=client_ip,
             success=False,
             discord_user_id=discord_user_id,
@@ -207,13 +208,13 @@ async def authenticate(auth_data: AuthRequest, request: Request):
 
     # Create successful audit log entry
     sso_model.create_audit_log(
-        username=auth_data.username,
+        username=real_username,
         ip_address=client_ip,
         success=True,
         discord_user_id=discord_user_id,
         account_id=account_id,
         guild_id=guild_id,
-        details="Authentication successful"
+        details="Authentication successful" + f" via tag/alias {auth_data.username}" if auth_data.username != real_username else ""
     )
 
     # Return the real credentials
