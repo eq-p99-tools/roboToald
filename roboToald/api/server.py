@@ -359,7 +359,7 @@ def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: i
             else:
                 role_ids = []
 
-            valid_accounts = []
+            valid_accounts = set()
             for account_id in account_ids:
                 # Check each group to see if the user has the role and if the account is in the group
                 for group in groups:
@@ -369,13 +369,14 @@ def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: i
                         sso_model.account_group_mapping.c.group_id == group.id
                     ).count() > 0
                 
-                if account_in_group:
-                    # Check if the user has the role_id associated with the group
-                    if group.role_id in role_ids:
-                        valid_accounts.append(sso_model.get_account_by_id(account_id))
+                    if account_in_group:
+                        # Check if the user has the role_id associated with the group
+                        if group.role_id in role_ids:
+                            valid_accounts.add(sso_model.get_account_by_id(account_id))
+                            continue
                     
             # Return the list of valid accounts
-            return valid_accounts
+            return list(valid_accounts)
         except Exception as e:
             logger.error(f"Error checking user access: {str(e)}")
             return []
