@@ -288,6 +288,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     # Filter accounts based on user access
     accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
     
+    ### Build v1 response data
     # Get all aliases for accessible accounts
     accessible_aliases = []
     for account in accessible_accounts:
@@ -304,9 +305,25 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     alias_name_list = [alias.alias for alias in accessible_aliases]
     tag_name_list = [tag.tag for tag in accessible_tags]
 
+    ### Build v2 response data
+    account_tree = {
+        account.real_user: {
+            "aliases": [
+                alias.alias for alias in account.aliases
+            ],
+            "tags": [
+                tag.tag for tag in account.tags
+            ]
+        } for account in accessible_accounts
+    }
+
     response = {
+        # Old v1 call data
         "accounts": account_name_list + alias_name_list + tag_name_list,
-        "count": len(account_name_list)
+        "count": len(account_name_list),
+
+        # New v2 call data
+        "account_tree": account_tree,
     }
     
     # Log successful request

@@ -505,6 +505,22 @@ class SSOCommands(commands.Cog):
         formatted = '\n'.join([f"🏷️ **{tag}**" for tag in tags])
         await send_and_split(inter.send, f"**Tags:**\n{formatted}", ephemeral=True)
 
+    @tag.sub_command(description="Show a tag", name="show")
+    async def tag_show(self, inter: disnake.ApplicationCommandInteraction,
+                       tag: str = commands.Param(
+                         description="Tag to show",
+                         autocomplete=tag_autocomplete
+                       )):
+        # Implement tag show logic
+        tags = sso_model.get_tag(inter.guild_id, tag)
+        if not tags:
+            await inter.send(content=f"⚠️ **Tag not found:** `{tag}`", ephemeral=True)
+            return
+        formatted = f"🏷️ **{tag}:**\n"
+        for tag_obj in tags:
+            formatted += f"  →  🤖 `{tag_obj.account.real_user}`\n"
+        await send_and_split(inter.send, formatted, ephemeral=True)
+
     @sso_admin.sub_command_group(description="Tag related commands", name="tag")
     async def admin_tag(self, inter: disnake.ApplicationCommandInteraction):
         pass
@@ -524,6 +540,45 @@ class SSOCommands(commands.Cog):
             await inter.send(content=f"✨🏷️ **Tagged account** `{tag.account.real_user}` with tag `{tag.tag}`")
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🏷️ **Tag already exists** for account `{username}`", ephemeral=True)
+
+    @admin_tag.sub_command(description="Update a tag", name="update")
+    async def tag_update(self, inter: disnake.ApplicationCommandInteraction,
+                         tag: str = commands.Param(
+                               description="Tag to update",
+                               autocomplete=tag_autocomplete
+                         ), new_name: str = commands.Param(
+                               description="New tag name",
+                               default=None
+                         ), new_ui_macro_data: disnake.Attachment = commands.Param(
+                               description="New UI macro data",
+                               default=None
+                         )):
+        if new_ui_macro_data:
+            if new_ui_macro_data.size > 1024 * 1024:
+                await inter.send(content="⚠️ **Attachment too large** (max 1MB)", ephemeral=True)
+                return
+            new_ui_macro_data = await new_ui_macro_data.read()
+        if new_name:
+            new_name = new_name.lower()
+            existing_tags = sso_model.list_tags(inter.guild_id)
+            if new_name in existing_tags:
+                await inter.send(content=f"⚠️ **Tag already exists:** `{new_name}`", ephemeral=True)
+                return
+        if new_name is None and new_ui_macro_data is None:
+            await inter.send(content="⚠️ **No changes specified, no action taken.**", ephemeral=True)
+            return
+
+        try:
+            sso_model.update_tag(inter.guild_id, tag, new_name, new_ui_macro_data)
+            message = f"🏷️ **Updated tag** `{tag}`"
+            if new_name:
+                message += f" to `{new_name}`"
+            if new_ui_macro_data:
+                message += " with new UI macro data"
+            message += "."
+            await inter.send(content=message)
+        except sso_model.SSOAccountTagNotFoundError:
+            await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{tag}`", ephemeral=True)
 
     @admin_tag.sub_command(description="Remove a tag from an account", name="remove")
     async def tag_remove(self, inter: disnake.ApplicationCommandInteraction,

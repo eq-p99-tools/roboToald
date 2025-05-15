@@ -477,15 +477,21 @@ class SSOTag(base.Base):
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"))
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="tags")
 
+    # Foreign key to SSOTagUIMacro
+    ui_macro_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_tag_ui_macro.id"), nullable=True)
+    # Relationship to SSOTagUIMacro - many tags can reference one macro
+    ui_macro = sqlalchemy.orm.relationship("SSOTagUIMacro", back_populates="tags")
+
     __table_args__ = (
         sqlalchemy.UniqueConstraint(
             'tag', 'account_id', name='uq_tag_account_id'),
     )
 
-    def __init__(self, guild_id, tag, account_id):
+    def __init__(self, guild_id, tag, account_id, ui_macro_id=None):
         self.guild_id = guild_id
         self.tag = tag
         self.account_id = account_id
+        self.ui_macro_id = ui_macro_id
 
 
 def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
@@ -547,6 +553,77 @@ def list_tags(guild_id: int) -> dict[str, list[str]]:
                 tag_map[tag.tag] = []
             tag_map[tag.tag].append(tag.account.real_user)
     return tag_map
+
+
+def get_tag(guild_id: int, tag: str) -> list[SSOTag]:
+    tag = tag.lower()   
+    with base.get_session() as session:
+        tag_objs = session.query(SSOTag).options(
+            sqlalchemy.orm.joinedload(SSOTag.account)).filter(
+            SSOTag.tag == tag,
+            SSOTag.guild_id == guild_id).all()
+        session.expunge_all()
+        return tag_objs
+
+
+def update_tag(guild_id: int, tag: str, new_name: str = None, new_ui_macro_data: bytes = None) -> None:
+    tag = tag.lower()   
+    with base.get_session() as session:
+        try:
+            tag_objs = session.query(SSOTag).filter(
+                SSOTag.tag == tag,
+                SSOTag.guild_id == guild_id).all()
+            if not tag_objs:
+                raise sqlalchemy.exc.NoResultFound()
+                
+            if new_name is not None:
+                for tag_obj in tag_objs:
+                    tag_obj.tag = new_name.lower()
+                    
+            if new_ui_macro_data is not None:
+                # Update or create UI macro for this tag
+                macro = session.query(SSOTagUIMacro).filter(
+                    SSOTagUIMacro.tag_name == tag,
+                    SSOTagUIMacro.guild_id == guild_id).one_or_none()
+                
+                if macro:
+                    macro.ui_macro_data = new_ui_macro_data
+                else:
+                    # Create new macro
+                    new_macro = SSOTagUIMacro(guild_id, tag, new_ui_macro_data)
+                    session.add(new_macro)
+                    session.flush()  # Get the ID of the new macro
+                    
+                    # Associate all matching tags with this macro
+                    for tag_obj in tag_objs:
+                        tag_obj.ui_macro_id = new_macro.id
+            
+            session.commit()
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountTagNotFoundError(f"Tag '{tag}' not found in guild {guild_id}")
+
+
+class SSOTagUIMacro(base.Base):
+    __tablename__ = "sso_tag_ui_macro"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+
+    tag_name = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
+    ui_macro_data = sqlalchemy.Column(sqlalchemy.BLOB, nullable=False)
+    
+    # Relationship to SSOTag - one macro can be referenced by many tags
+    tags = sqlalchemy.orm.relationship("SSOTag", back_populates="ui_macro")
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint(
+            'tag_name', 'guild_id', name='uq_tag_name_guild_id'),
+    )
+
+    def __init__(self, guild_id, tag_name, ui_macro_data):
+        self.guild_id = guild_id
+        self.tag_name = tag_name.lower()
+        self.ui_macro_data = ui_macro_data
 
 
 class SSOAccountAlias(base.Base):
