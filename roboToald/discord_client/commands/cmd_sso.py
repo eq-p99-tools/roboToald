@@ -3,6 +3,7 @@ import datetime
 import disnake
 from disnake.ext import commands
 import sqlalchemy.exc
+import io
 
 from roboToald import config
 from roboToald.db.models import sso as sso_model
@@ -318,19 +319,43 @@ def only_allow_admin():
     return commands.check(predicate)
 
 
-async def send_and_split(send_fn, message: str, ephemeral: bool = False):
+async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: list = None):
+    """Send a message, splitting it into chunks if it's too long.
+    
+    Args:
+        send_fn: The function to use for sending (e.g., inter.send)
+        message: The message content to send
+        ephemeral: Whether the message should be ephemeral
+        files: Optional list of disnake.File objects to attach to the last message chunk
+    """
     max_length = 2000
     lines = message.splitlines(keepends=True)
     current_chunk = ''
+    chunks = []
+    
+    # Collect all chunks
     for line in lines:
         if len(current_chunk) + len(line) > max_length:
-            await send_fn(content=current_chunk, ephemeral=ephemeral,
-                          allowed_mentions=disnake.AllowedMentions.none())
+            chunks.append(current_chunk)
             current_chunk = ''
         current_chunk += line
     if current_chunk:
-        await send_fn(content=current_chunk, ephemeral=ephemeral,
+        chunks.append(current_chunk)
+    
+    # Send all chunks except the last one
+    for i in range(len(chunks) - 1):
+        await send_fn(content=chunks[i], ephemeral=ephemeral,
                       allowed_mentions=disnake.AllowedMentions.none())
+    
+    # Send the last chunk with files if provided
+    if chunks:
+        if files:
+            await send_fn(content=chunks[-1], ephemeral=ephemeral,
+                          allowed_mentions=disnake.AllowedMentions.none(),
+                          files=files)
+        else:
+            await send_fn(content=chunks[-1], ephemeral=ephemeral,
+                          allowed_mentions=disnake.AllowedMentions.none())
 
 
 class SSOCommands(commands.Cog):
@@ -516,10 +541,26 @@ class SSOCommands(commands.Cog):
         if not tags:
             await inter.send(content=f"⚠️ **Tag not found:** `{tag}`", ephemeral=True)
             return
+            
         formatted = f"🏷️ **{tag}:**\n"
+        files = []
+        
         for tag_obj in tags:
             formatted += f"  →  🤖 `{tag_obj.account.real_user}`\n"
-        await send_and_split(inter.send, formatted, ephemeral=True)
+            # Check if this tag has a UI macro and we haven't already added it to files
+            if tag_obj.ui_macro and not files:
+                # Create a file object from the binary data
+                macro_file = disnake.File(
+                    fp=io.BytesIO(tag_obj.ui_macro.ui_macro_data),
+                    filename=f"{tag}_macro.ini"
+                )
+                files.append(macro_file)
+
+        if files:
+            formatted += "  →  📄 UI Macro (attached)\n"
+                
+        # Send the response with any attached files
+        await send_and_split(inter.send, formatted, files=files, ephemeral=True)
 
     @sso_admin.sub_command_group(description="Tag related commands", name="tag")
     async def admin_tag(self, inter: disnake.ApplicationCommandInteraction):

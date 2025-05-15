@@ -559,7 +559,8 @@ def get_tag(guild_id: int, tag: str) -> list[SSOTag]:
     tag = tag.lower()   
     with base.get_session() as session:
         tag_objs = session.query(SSOTag).options(
-            sqlalchemy.orm.joinedload(SSOTag.account)).filter(
+            sqlalchemy.orm.joinedload(SSOTag.account),
+            sqlalchemy.orm.joinedload(SSOTag.ui_macro)).filter(
             SSOTag.tag == tag,
             SSOTag.guild_id == guild_id).all()
         session.expunge_all()
