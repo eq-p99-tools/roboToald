@@ -499,7 +499,7 @@ class SSOCommands(commands.Cog):
         # Implement account update logic
         try:
             account = sso_model.update_account(inter.guild_id, username, new_password)
-            await inter.send(content=f"🔑🤖 **Updated password** for account `{account.real_user}`")
+            await inter.send(content=f"🔑🤖 **Updated password** for account `{username}`")
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
