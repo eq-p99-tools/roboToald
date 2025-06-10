@@ -1,7 +1,13 @@
 disnake
 requests
 sqlalchemy
+sqlalchemy-utils
+cryptography
 validators
 tzdata
 python-dateutil
 pynacl
+fastapi
+uvicorn
+pydantic
+alembic

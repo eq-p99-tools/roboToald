@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="600" height="400" viewBox="0 0 600 400">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#000"/>
+    </marker>
+    <style type="text/css">
+      .entity {
+        fill: #f5f5f5;
+        stroke: #333;
+        stroke-width: 2;
+      }
+      .entity-title {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+        font-weight: bold;
+        text-anchor: middle;
+      }
+      .entity-attribute {
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        text-anchor: start;
+      }
+      .primary-key {
+        font-weight: bold;
+      }
+      .foreign-key {
+        font-style: italic;
+      }
+    </style>
+  </defs>
+
+  <!-- Subscription -->
+  <rect x="200" y="50" width="200" height="200" rx="5" ry="5" class="entity"/>
+  <line x1="200" y1="80" x2="400" y2="80" stroke="#333" stroke-width="1"/>
+  <text x="300" y="70" class="entity-title">Subscription</text>
+  <text x="210" y="100" class="entity-attribute primary-key">user_id: Integer (PK)</text>
+  <text x="210" y="120" class="entity-attribute primary-key">target: String(255) (PK)</text>
+  <text x="210" y="140" class="entity-attribute">expiry: Integer</text>
+  <text x="210" y="160" class="entity-attribute">last_notified: Integer</text>
+  <text x="210" y="180" class="entity-attribute">lead_time: Integer</text>
+  <text x="210" y="200" class="entity-attribute">last_window_start: Integer</text>
+  <text x="210" y="220" class="entity-attribute">guild_id: Integer</text>
+
+  <!-- Legend -->
+  <rect x="200" y="300" width="200" height="50" rx="5" ry="5" fill="#f5f5f5" stroke="#333" stroke-width="1"/>
+  <text x="300" y="320" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Legend</text>
+  <line x1="210" y1="330" x2="390" y2="330" stroke="#333" stroke-width="1"/>
+  
+  <text x="220" y="345" font-family="Arial, sans-serif" font-size="12" font-weight="bold">PK</text>
+  <text x="250" y="345" font-family="Arial, sans-serif" font-size="12">Primary Key</text>
+</svg>

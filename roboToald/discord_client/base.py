@@ -9,16 +9,18 @@ from roboToald.discord_client.wakeup import wakeup
 from roboToald import utils
 
 DISCORD_INTENTS = disnake.Intents.default()
+# DISCORD_INTENTS = disnake.Intents.all()
 DISCORD_INTENTS.message_content = True
 DISCORD_INTENTS.guild_messages = True
 DISCORD_INTENTS.members = True
-DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.default()
-DISCORD_SYNC_FLAGS.sync_commands_debug = True
+DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.all()
+# DISCORD_SYNC_FLAGS.sync_commands_debug = True
 DISCORD_CLIENT = commands.Bot(
     command_prefix="!",
     command_sync_flags=DISCORD_SYNC_FLAGS,
     intents=DISCORD_INTENTS
 )
+DISCORD_CLIENT.load_extension("roboToald.discord_client.commands.cmd_sso")
 
 
 def find_match(channel, message):

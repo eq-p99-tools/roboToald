@@ -27,6 +27,15 @@ QUAKE_BONUS = CONF.getint(
 WAKEUP_AUDIOFILE = CONF.get(
     'wakeup', 'audiofile', fallback='wakeup.wav')
 
+ENCRYPTION_KEY = CONF.get(
+    'sso', 'encryption_key')
+API_CERTFILE = CONF.get('sso', 'ssl_certfile', fallback=None)
+API_KEYFILE = CONF.get('sso', 'ssl_keyfile', fallback=None)
+API_PORT = CONF.getint('sso', 'port', fallback=8080)
+API_HOST = CONF.get('sso', 'host', fallback='127.0.0.1')
+FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
+FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
+
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
@@ -41,6 +50,10 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'enable_batphone', fallback=False),
         'enable_raidtarget': CONF.getboolean(
             f"guild.{guild}", 'enable_raidtarget', fallback=False),
+        'enable_sso': CONF.getboolean(
+            f"guild.{guild}", 'enable_sso', fallback=False),
+        'sso_admin_roles': [int(x) for x in CONF.get(
+            f"guild.{guild}", 'sso_admin_roles', fallback="0").split(",")],
         'enable_ds': CONF.getboolean(
             f"guild.{guild}", 'enable_ds', fallback=False),
         'ds_tod_channel': CONF.getint(
@@ -51,17 +64,30 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'ds_admin_role', fallback=0),
         'wakeup_channels': CONF.get(
             f"guild.{guild}", 'wakeup_channels', fallback=None),
+        'wakeup_exclusions': CONF.get(
+            f"guild.{guild}", 'wakeup_exclusions', fallback=None),
     }
     if GUILD_SETTINGS[guild]['wakeup_channels']:
         for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
             text_channel, voice_channel = x.split(':')
             WAKEUP_CHANNELS[int(text_channel)] = int(voice_channel)
+    if GUILD_SETTINGS[guild]['wakeup_exclusions']:
+        GUILD_SETTINGS[guild]['wakeup_exclusions'] = [
+            x.strip().lower()
+            for x in GUILD_SETTINGS[guild]['wakeup_exclusions'].split(',')
+        ]
+    else:
+        GUILD_SETTINGS[guild]['wakeup_exclusions'] = []
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
 
 
 def get_member_role(guild_id: int) -> int:
     return GUILD_SETTINGS[guild_id].get('member_role')
+
+
+def get_wakeup_exclusions(guild_id: int) -> List[str]:
+    return GUILD_SETTINGS[guild_id].get('wakeup_exclusions', [])
 
 
 def guilds_for_command(command_name: str) -> List[int]:

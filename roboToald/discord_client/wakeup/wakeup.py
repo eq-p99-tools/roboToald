@@ -8,6 +8,9 @@ from roboToald import config
 async def process_message(message: disnake.Message) -> None:
     channel_id = message.channel.id
     if channel_id in config.WAKEUP_CHANNELS and message.mention_everyone:
+        for exclusion in config.get_wakeup_exclusions(message.guild.id):
+            if exclusion in message.content.lower():
+                return
         print(f"Playing wakeup in channel {channel_id} for message: "
               f"{message.content}")
         voice_channel_id = config.WAKEUP_CHANNELS[channel_id]
