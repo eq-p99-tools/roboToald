@@ -19,7 +19,7 @@ SOON_THRESHOLD = CONF.getint(
 
 POINTS_PER_MINUTE = CONF.getint(
     'ds', 'points_per_minute', fallback=3)
-CONTESTED_MULTIPLIER = CONF.getint(
+CONTESTED_MULTIPLIER = CONF.getfloat(
     'ds', 'contested_multiplier', fallback=3)
 QUAKE_BONUS = CONF.getint(
     'ds', 'quake_bonus', fallback=150)
