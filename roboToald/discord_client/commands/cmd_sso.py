@@ -806,7 +806,7 @@ class SSOCommands(commands.Cog):
     async def audit_account(self, inter: disnake.ApplicationCommandInteraction, 
                            username: str = commands.Param(
                                description="Account username to audit",
-                               autocomplete=account_autocomplete
+                               autocomplete=account_and_alias_autocomplete
                            ),
                            max_records: int = commands.Param(
                                default=10,
@@ -816,20 +816,19 @@ class SSOCommands(commands.Cog):
                            )):
         """Show audit logs for a specific account."""
         try:
-            account = sso_model.get_account(inter.guild_id, username)
+            account = sso_model.find_account_by_username(username, inter.guild_id)
             if not account:
-                await inter.send(content=f"📋 **Account not found:** `{username}`", ephemeral=True)
-                return
+                raise sso_model.SSOAccountNotFoundError
 
             # Get audit logs for this username
             logs = sso_model.get_audit_logs(
                 limit=max_records,
-                username=username,
+                username=account.real_user,
                 success=None
             )
             
             if not logs:
-                await inter.send(content=f"📋 **No audit logs found for account:** `{username}`", ephemeral=True)
+                await inter.send(content=f"📋 **No audit logs found for account:** `{account.real_user}`", ephemeral=True)
                 return
                 
             # Format the logs for display
@@ -855,7 +854,7 @@ class SSOCommands(commands.Cog):
                 formatted_logs.append(formatted_log)
                 
             # Create the response message
-            response = f"# 📋 Audit Logs for Account: `{username}`\n"
+            response = f"# 📋 Audit Logs for Account: `{account.real_user}`\n"
             response += f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)._\n\n"
             response += "\n".join(formatted_logs)
             
