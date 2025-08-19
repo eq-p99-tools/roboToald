@@ -61,7 +61,7 @@ class SSOAccount(base.Base):
 
     real_user = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
     real_pass = sqlalchemy.Column(sqlalchemy_utils.EncryptedType(
-        sqlalchemy.String(255), config.ENCRYPTION_KEY, cache_ok=False), nullable=False)
+        sqlalchemy.String(255), config.ENCRYPTION_KEY), nullable=False)
 
     last_login = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.min)
 
@@ -379,7 +379,7 @@ class SSOAccessKey(base.Base):
 
     discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     access_key = sqlalchemy.Column(sqlalchemy_utils.EncryptedType(
-        sqlalchemy.String(255), config.ENCRYPTION_KEY, cache_ok=False), unique=True, index=True)
+        sqlalchemy.String(255), config.ENCRYPTION_KEY), unique=True, index=True)
 
     __table_args__ = (
         sqlalchemy.UniqueConstraint(
