@@ -390,12 +390,27 @@ async def tod(
             description="Quake?"
         )
 ):
+    now_time = datetime.datetime.now()
+    stop_time = now_time - datetime.timedelta(minutes=backdate)
+    recent_ds = None
+    time_since_pop = now_time.astimezone() - points_model.get_last_pop_time()
+    if time_since_pop < datetime.timedelta(minutes=5):
+        recent_ds = abs(round(time_since_pop.total_seconds() / 60, 1))
+
+    if recent_ds:
+        # There's already a POP recorded within 5 min, likely duplicate
+        message = (f"Someone just ran the ToD command {recent_ds} "
+                   f"minutes ago. Please try again after 5 minutes. "
+                   f"Deleting this interaction.")
+        await inter.send(message, ephemeral=True)
+        return
+
     message = "DS ToD recorded"
     if backdate > 0:
         message += f" (backdated {backdate} minutes ago)"
-    message += ". Stopped camp time for the following members:\n"
+    # message += ". Stopped camp time for the following members:\n"
+    message += ". Stopped (and restarted) camp time for the following members:\n"
 
-    stop_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
     active_events = points_model.get_active_events(
         inter.guild_id, include_0=True)
     active_members = 0
@@ -408,7 +423,8 @@ async def tod(
             points_model.close_event(event, stop_event)
             continue
         close_event(event, stop_time)
-        message += f"<@{event.user_id}> stopped.\n"
+        # message += f"<@{event.user_id}> stopped.\n"
+        message += f"<@{event.user_id}>\n"
         active_members += 1
 
     if active_members < 1:
@@ -444,20 +460,22 @@ async def tod(
             message += f"<@{event.user_id}>, "
         message = message[:-2] + ".\n"
 
+    ### In current meta, restart previously active members because people don't leave
+    for event in active_events:
+        if event.user_id == 0:
+            ### In the current meta, don't stop comp on ToD (used for quake time)
+            start_event = points_model.PointsAudit(
+                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
+                time=stop_time + datetime.timedelta(seconds=1), active=True)
+            points_model.start_event(start_event)
+            continue
+        start_event = points_model.PointsAudit(
+            user_id=event.user_id, guild_id=inter.guild_id, event=constants.Event.IN,
+            time=stop_time + datetime.timedelta(seconds=1), active=True)
+        points_model.start_event(start_event)
+
+
     await utils.send_and_split(inter, message)
-
-    recent_ds = None
-    time_since_pop = stop_time.astimezone() - points_model.get_last_pop_time()
-    if time_since_pop < datetime.timedelta(minutes=5):
-        recent_ds = abs(round(time_since_pop.total_seconds() / 60, 1))
-
-    if recent_ds and active_members < 1:
-        # There's already a POP recorded within 5 min, likely duplicate
-        message = (f"Someone just ran the ToD command {recent_ds} "
-                   f"minutes ago. Deleting this interaction.")
-        await inter.edit_original_response(content=message)
-        await inter.delete_original_response(delay=5)
-        return
 
     # Record the POP event
     pop_event = points_model.PointsAudit(
