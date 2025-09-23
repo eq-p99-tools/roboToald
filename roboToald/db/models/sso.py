@@ -920,7 +920,7 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
         return count
 
 
-def clear_rate_limit(ip_address: str) -> None:
+def clear_rate_limit(ip_address: str) -> int:
     with base.get_session() as session:
         updated = session.query(SSOAuditLog).filter(
             SSOAuditLog.ip_address == ip_address,

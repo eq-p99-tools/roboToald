@@ -1,4 +1,6 @@
+import base64
 import datetime
+import hashlib
 
 import disnake
 from disnake.ext import commands
@@ -301,6 +303,15 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
     except Exception as e:
         # In case of error, return an empty list
         return []
+
+
+def hash_ip(ip_address: str, length: int = 14) -> str:
+    # Hash the IP address using SHA-256
+    hash_bytes = hashlib.sha256(ip_address.encode('utf-8')).digest()
+    # Encode the hash in URL-safe Base64 and truncate
+    hash_b64 = base64.urlsafe_b64encode(hash_bytes).decode('utf-8')
+    # Return the first 'length' characters
+    return hash_b64[:length]
 
 
 def is_admin(user_roles, guild_id):
@@ -846,7 +857,7 @@ class SSOCommands(commands.Cog):
                     status = "❌"
                     failed_count += 1
                     
-                ip = log.ip_address if log.ip_address else "N/A"
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
                 
@@ -894,7 +905,7 @@ class SSOCommands(commands.Cog):
                 status = "✅" if log.success else "❌"
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
-                ip = log.ip_address if log.ip_address else "N/A"
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 
                 formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
@@ -956,7 +967,7 @@ class SSOCommands(commands.Cog):
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
                 
                 username = log.username if log.username else "Unknown"
-                ip = log.ip_address if log.ip_address else "N/A"
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
 
@@ -1031,7 +1042,7 @@ class SSOCommands(commands.Cog):
                     
                     status = "✅" if log.success else "❌"
                     username = log.username if log.username else "Unknown"
-                    ip = log.ip_address if log.ip_address else "N/A"
+                    ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                     discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
                     
                     response += f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
