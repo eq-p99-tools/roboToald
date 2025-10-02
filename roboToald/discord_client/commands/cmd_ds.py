@@ -396,11 +396,14 @@ async def tod(
             default=0,
             ge=0,
             description="Backdate DS pop by <X> minutes."),
-        quake: bool = commands.Param(
-            default=False,
-            description="Quake?"
-        )
+        # quake: bool = commands.Param(
+        #     default=False,
+        #     description="Quake?"
+        # )
 ):
+    # Quake mode isn't needed presently, but maybe in the future
+    quake = False
+
     now_time = datetime.datetime.now()
     stop_time = now_time - datetime.timedelta(minutes=backdate)
     recent_ds = None
