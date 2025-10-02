@@ -471,6 +471,12 @@ async def tod(
             message += f"<@{event.user_id}>, "
         message = message[:-2] + ".\n"
 
+    # Record the POP event
+    pop_event = points_model.PointsAudit(
+        user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
+        time=stop_time, active=False)
+    points_model.start_event(pop_event)
+
     ### In current meta, restart previously active members because people don't leave
     for event in active_events:
         if event.user_id == 0:
@@ -485,14 +491,7 @@ async def tod(
             time=stop_time + datetime.timedelta(seconds=1), active=True)
         points_model.start_event(start_event)
 
-
     await utils.send_and_split(inter, message)
-
-    # Record the POP event
-    pop_event = points_model.PointsAudit(
-        user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
-        time=stop_time, active=False)
-    points_model.start_event(pop_event)
 
     # Restart the ToD Timer
     timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get('ds_tod_channel')
