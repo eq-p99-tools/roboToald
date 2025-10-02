@@ -15,7 +15,10 @@ async def process_message(message: disnake.Message) -> None:
               f"{message.content}")
         voice_channel_id = config.WAKEUP_CHANNELS[channel_id]
         voice_channel = message.guild.get_channel(voice_channel_id)
-        await wakeup(voice_channel)
+        try:
+            await wakeup(voice_channel)
+        except disnake.errors.ClientException:
+            print(f"Already connected to a voice channel, likely a duplicate trigger.")
 
 
 async def wakeup(channel: disnake.VoiceChannel) -> None:
