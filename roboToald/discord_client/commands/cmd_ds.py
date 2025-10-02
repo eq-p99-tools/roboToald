@@ -75,11 +75,11 @@ async def start(
     if player is None:
         player = inter.user
     last = points_model.get_last_event(player.id, guild_id=inter.guild_id)
-    if last and last.active:
+    if last and last.active and not backdate:
         await inter.send("Player already active at camp.", ephemeral=True)
         return
     start_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
-    if last and start_time < last.time:
+    if last and (last.event != constants.Event.IN or not last.active) and start_time < last.time:
         await inter.send("Cannot backdate prior to the player's latest entry.",
                          ephemeral=True)
         return
@@ -88,14 +88,24 @@ async def start(
         await inter.send("Cannot backdate prior to the last ToD.",
                          ephemeral=True)
         return
-    start_event = points_model.PointsAudit(
-        user_id=player.id, guild_id=inter.guild_id, event=constants.Event.IN,
-        time=start_time, active=True)
-    points_model.start_event(start_event)
+
     discord_ent_time = int(time.mktime(start_time.timetuple()))
     backdate_message = f", backdated {backdate} minutes" if backdate > 0 else ""
-    start_message = (f"<@{player.id}> entered camp at <t:{discord_ent_time}> "
-                     f"(<t:{discord_ent_time}:R>{backdate_message}).")
+
+    if last and last.active:
+        start_event = last
+        last.time = start_time
+        points_model.update_event(start_event)
+        start_message = (f"Previous start time for <@{player.id}> updated to <t:{discord_ent_time}> "
+                         f"(<t:{discord_ent_time}:R>{backdate_message}).")
+    else:
+        start_event = points_model.PointsAudit(
+            user_id=player.id, guild_id=inter.guild_id, event=constants.Event.IN,
+            time=start_time, active=True)
+        points_model.start_event(start_event)
+        start_message = (f"<@{player.id}> entered camp at <t:{discord_ent_time}> "
+                         f"(<t:{discord_ent_time}:R>{backdate_message}).")
+
     await inter.send(start_message,
                      allowed_mentions=disnake.AllowedMentions(users=False))
 
@@ -217,8 +227,9 @@ async def stop(
         last.time = stop_time
         points_model.update_event(last)
         discord_exit_time = int(time.mktime(last.time.timetuple()))
+        backdate_message = f", backdated {backdate} minutes"
         await inter.send(f"Previous stop time for <@{player.id}> updated to"
-                         f" <t:{discord_exit_time}>.",
+                         f" <t:{discord_exit_time}> (<t:{discord_exit_time}:R>{backdate_message}).",
                          allowed_mentions=disnake.AllowedMentions(users=False))
         return
     if not last or not last.active:
