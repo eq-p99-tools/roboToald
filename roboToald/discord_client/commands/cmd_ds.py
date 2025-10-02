@@ -42,7 +42,7 @@ async def quake(
             await inter.send("Quake mode is already active.", ephemeral=True)
             return
         start_event = points_model.PointsAudit(
-            user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_START,
+            user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
             time=event_time, active=True)
         points_model.start_event(start_event)
     else:
@@ -51,7 +51,7 @@ async def quake(
             return
         last.active = False
         stop_event = points_model.PointsAudit(
-            user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_END,
+            user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
             time=event_time, active=False, start_id=last.id)
         points_model.close_event(last, stop_event)
 
@@ -459,7 +459,7 @@ async def tod(
         if event.user_id == 0:
             event.active = False
             stop_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_END,
+                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
                 time=stop_time, active=False, start_id=event.id)
             points_model.close_event(event, stop_event)
             continue
@@ -512,7 +512,7 @@ async def tod(
         if event.user_id == 0:
             ### In the current meta, don't stop comp on ToD (used for quake time)
             start_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_START,
+                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
                 time=stop_time + datetime.timedelta(seconds=1), active=True)
             points_model.start_event(start_event)
             continue
