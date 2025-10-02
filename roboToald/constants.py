@@ -26,6 +26,6 @@ TIMEZONES = {
 class Event(enum.Enum):
     IN = 'IN'
     OUT = 'OUT'
-    COMP_START = "COMP_START"
-    COMP_END = "COMP_END"
+    QUAKE_START = "COMP_START"
+    QUAKE_END = "COMP_END"
     POP = "POP"

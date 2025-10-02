@@ -151,7 +151,7 @@ def get_event_pairs_since_last_pop(
     return event_pairs
 
 
-def get_competitive_windows(
+def get_quake_windows(
         guild_id: int, start_time: datetime.datetime,
         end_time: datetime.datetime
 ) -> List[Tuple[datetime.datetime, datetime.datetime]]:

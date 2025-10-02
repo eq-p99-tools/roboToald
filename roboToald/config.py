@@ -1,5 +1,6 @@
 import configparser
 from typing import List
+import zoneinfo
 
 CONFIG_FILENAME = 'batphone.ini'
 
@@ -19,10 +20,18 @@ SOON_THRESHOLD = CONF.getint(
 
 POINTS_PER_MINUTE = CONF.getint(
     'ds', 'points_per_minute', fallback=3)
-CONTESTED_MULTIPLIER = CONF.getfloat(
-    'ds', 'contested_multiplier', fallback=3)
+OFFHOURS_MULTIPLIER = CONF.getfloat(
+    'ds', 'offhours_multiplier', fallback=2)
+QUAKE_MULTIPLIER = CONF.getfloat(
+    'ds', 'quake_multiplier', fallback=3)
 QUAKE_BONUS = CONF.getint(
     'ds', 'quake_bonus', fallback=150)
+OFFHOURS_START = CONF.getint(
+    'ds', 'offhours_start', fallback=1 * 60)  # Default 1am ET
+OFFHOURS_END = CONF.getint(
+    'ds', 'offhours_end', fallback=8 * 60)  # Default 8am ET
+OFFHOURS_ZONE = zoneinfo.ZoneInfo(
+    CONF.get('ds', 'offhours_zone', fallback='America/New_York'))
 
 WAKEUP_AUDIOFILE = CONF.get(
     'wakeup', 'audiofile', fallback='wakeup.wav')

@@ -17,8 +17,6 @@ from roboToald.discord_client.commands import cmd_timer
 from roboToald import utils
 
 DS_GUILDS = config.guilds_for_command('ds')
-CONTESTED = False
-
 
 @base.DISCORD_CLIENT.slash_command(
     description="DS Camp Time Auditing",
@@ -27,11 +25,11 @@ async def ds(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-@ds.sub_command(description="Set camp status as competitive or not.")
-async def competitive(
+@ds.sub_command(description="Enable/disable quake mode.")
+async def quake(
         inter: disnake.ApplicationCommandInteraction,
-        contested: bool = commands.Param(
-            description="Is the camp contested?"),
+        enabled: bool = commands.Param(
+            description="Is the camp in quake mode?"),
         backdate: int = commands.Param(
             default=0,
             ge=0,
@@ -39,26 +37,26 @@ async def competitive(
 ):
     last = points_model.get_last_event(0, inter.guild_id)
     event_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
-    if contested:
+    if enabled:
         if last and last.active:
-            await inter.send("Camp already competitive.", ephemeral=True)
+            await inter.send("Quake mode is already active.", ephemeral=True)
             return
         start_event = points_model.PointsAudit(
-            user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
+            user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_START,
             time=event_time, active=True)
         points_model.start_event(start_event)
     else:
         if not last or not last.active:
-            await inter.send("Camp is already noncompetitive.", ephemeral=True)
+            await inter.send("Quake mode is already inactive.", ephemeral=True)
             return
         last.active = False
         stop_event = points_model.PointsAudit(
-            user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
+            user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_END,
             time=event_time, active=False, start_id=last.id)
         points_model.close_event(last, stop_event)
 
     discord_time = int(time.mktime(event_time.timetuple()))
-    await inter.send(f"`Competitive -> {contested}` at <t:{discord_time}>.")
+    await inter.send(f"`Quake Mode -> {enabled}` at <t:{discord_time}>.")
 
 
 @ds.sub_command(description="Start recording time in camp.")
@@ -137,11 +135,11 @@ def calculate_points_for_session(
     # end up with:
     # {member1: [(start1, stop1), (start2, stop2)], member2: []}
 
-    # Normalize contested windows to start_time = 0
-    contested_windows = points_model.get_competitive_windows(
+    # Normalize quake windows to start_time = 0
+    quake_windows = points_model.get_quake_windows(
         guild_id, start_time, stop_time)
     normalized_windows = []
-    for start_window, stop_window in contested_windows:
+    for start_window, stop_window in quake_windows:
         norm_start = round((start_window - start_time).total_seconds() / 60)
         norm_stop = round((stop_window - start_time).total_seconds() / 60)
         normalized_windows.append((
@@ -149,16 +147,45 @@ def calculate_points_for_session(
             min(standard_minutes, norm_stop)
         ))
 
+    # Normalize offhours to start_time = 0
+    # This is likely not the most efficient way to do this (I'm VERY tired)
+    today_midnight_eastern = start_time.replace(
+        hour=0, minute=0, second=0, microsecond=0,
+        tzinfo=config.OFFHOURS_ZONE
+        # Subtract 1 day just to be safe, we will add days later if needed
+    ) - datetime.timedelta(days=1)
+
+    # Find the offhours start and end time
+    offhours_start = today_midnight_eastern + datetime.timedelta(
+        minutes=config.OFFHOURS_START)
+    offhours_end = today_midnight_eastern + datetime.timedelta(
+        minutes=config.OFFHOURS_END)
+
+    # To be the current window, the end time has to be AFTER this start time
+    while offhours_end < start_time:
+        offhours_end = offhours_end + datetime.timedelta(days=1)
+        offhours_start = offhours_start + datetime.timedelta(days=1)
+
+    # Now normalize the same way we did for the windows
+    norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
+    norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
+
     points_earned_by_rate = {}
     for minute in range(standard_minutes):
         # Start with a standard value for one minute of time
         point_value = config.POINTS_PER_MINUTE
+        quake_minute = False
 
-        # Check if contested
+        # Check if quake mode
         for c_start_window, c_stop_window in normalized_windows:
             if c_start_window <= minute <= c_stop_window:
-                point_value *= config.CONTESTED_MULTIPLIER
+                point_value *= config.QUAKE_MULTIPLIER
+                quake_minute = True
                 break
+
+        # Check if offhours (only if not in quake mode)
+        if not quake_minute and norm_oh_start <= (minute % (24*60)) <= norm_oh_stop:
+            point_value *= config.OFFHOURS_MULTIPLIER
 
         # Iterate through event pairs and find active ones
         active_players = []
@@ -257,15 +284,15 @@ async def status(
     active_events = points_model.get_active_events(inter.guild_id)
     last_window = points_model.get_last_event(
         user_id=0, guild_id=inter.guild_id)
-    is_comp = last_window and last_window.active
+    is_quake = last_window and last_window.active
     now = datetime.datetime.now().replace(second=0)
 
     points_for_session = calculate_points_for_session(
         guild_id=inter.guild_id, stop_time=now)
     points_per_member = sum_points_by_member(points_for_session)
     current_rate = config.POINTS_PER_MINUTE
-    if is_comp:
-        current_rate *= config.CONTESTED_MULTIPLIER
+    if is_quake:
+        current_rate *= config.QUAKE_MULTIPLIER
     # TODO: Make sure active_events can't be more than active_members below
     # and if it can, clean this up so the rate is based on active_members, or
     # so that the code below doesn't create an extra random Set for no reason
@@ -275,7 +302,7 @@ async def status(
     else:
         current_rate = f"0 of {current_rate}"
 
-    message = f"Current camp status: `{'' if is_comp else 'non'}competitive` ({current_rate} SKP/min)\n"
+    message = f"Current camp status: `{'quake' if is_quake else 'normal'} mode` ({current_rate} SKP/min)\n"
     active_members = set()
     if active_events:
         message += "\nMembers in camp:\n"
@@ -432,7 +459,7 @@ async def tod(
         if event.user_id == 0:
             event.active = False
             stop_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
+                user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_END,
                 time=stop_time, active=False, start_id=event.id)
             points_model.close_event(event, stop_event)
             continue
@@ -485,7 +512,7 @@ async def tod(
         if event.user_id == 0:
             ### In the current meta, don't stop comp on ToD (used for quake time)
             start_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
+                user_id=0, guild_id=inter.guild_id, event=constants.Event.QUAKE_START,
                 time=stop_time + datetime.timedelta(seconds=1), active=True)
             points_model.start_event(start_event)
             continue
