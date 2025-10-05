@@ -496,6 +496,8 @@ class SSOCommands(commands.Cog):
             await inter.send(content=f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}")
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group}`", ephemeral=True)
 
 
     @admin_account.sub_command(description="Update account password", name="update")
