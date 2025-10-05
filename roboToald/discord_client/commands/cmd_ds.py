@@ -828,7 +828,7 @@ Please only add an emoji if you're definitely going to be there.
 🇬 <t:{midnight_timestamp + 3600 * 6}:f> - <t:{midnight_timestamp + 3600 * 7}:t>
 🇭 <t:{midnight_timestamp + 3600 * 7}:f> - <t:{midnight_timestamp + 3600 * 8}:t>
 🇮 <t:{midnight_timestamp + 3600 * 8}:f> - <t:{midnight_timestamp + 3600 * 9}:t>
-@everyone"""
+"""
 
     message_object = await channel.send(
         message, allowed_mentions=disnake.AllowedMentions(everyone=True))
