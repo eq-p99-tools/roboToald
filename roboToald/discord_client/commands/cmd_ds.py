@@ -450,9 +450,12 @@ async def points(
     await inter.response.defer(ephemeral=player is not None)
 
     if player is None:
-        message = f"**Point Balances{'' if show_all else ' (for players active in the last 14 days)'}:**\n"
-        earned_points = points_model.get_points_earned(
-            inter.guild_id, days=None if show_all else 14)
+        if show_all:
+            message = "**Point Balances:**\n"
+            earned_points = points_model.get_points_earned(inter.guild_id)
+        else:
+            message = "**Point Balances (for players active in the last 14 days):**\n"
+            earned_points = points_model.get_points_earned_recently(inter.guild_id, days=14)
         member_totals = []
         for member in earned_points:
             spent_events = points_model.get_points_spent_by_member(

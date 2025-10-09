@@ -222,21 +222,40 @@ class PointsEarned(base.Base, base.MyBase):
         self.adjustor = adjustor
 
 
-def get_points_earned(guild_id: int, days: int = None) -> List[sqlalchemy.engine.row.Row]:
+def get_points_earned(guild_id: int) -> List[sqlalchemy.engine.row.Row]:
     with base.get_session() as session:
         earned = session.query(
             PointsEarned.user_id,
             sqlalchemy.func.sum(PointsEarned.points).label('points')
         )
-        if days:
-            start = datetime.datetime.now() - datetime.timedelta(days=days)
-            earned = earned.filter(PointsEarned.time >= start)
         earned = earned.group_by(PointsEarned.user_id)
         earned = earned.filter_by(guild_id=guild_id)
         earned = earned.filter(PointsEarned.user_id != 0)
         earned = earned.order_by(sqlalchemy.desc(PointsEarned.points))
         earned = earned.all()
     return earned
+
+
+def get_points_earned_recently(guild_id: int, days: int = 14) -> List[sqlalchemy.engine.row.Row]:
+    with base.get_session() as session:
+        start = datetime.datetime.now() - datetime.timedelta(days=days)
+        users = session.query(PointsEarned.user_id)
+        users = users.filter_by(guild_id=guild_id)
+        users = users.filter(PointsEarned.time >= start)
+        users = users.filter(PointsEarned.user_id != 0)
+        users = users.distinct().all()
+
+        earned = session.query(
+            PointsEarned.user_id,
+            sqlalchemy.func.sum(PointsEarned.points).label('points')
+        )
+        earned = earned.group_by(PointsEarned.user_id)
+        earned = earned.filter_by(guild_id=guild_id)
+        earned = earned.filter(PointsEarned.user_id.in_([x[0] for x in users]))
+        earned = earned.order_by(sqlalchemy.desc(PointsEarned.points))
+        earned = earned.all()
+    return earned
+
 
 
 def get_points_earned_by_member(user_id: int, guild_id: int) -> list[PointsEarned]:
