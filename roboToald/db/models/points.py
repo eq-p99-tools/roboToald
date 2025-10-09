@@ -222,12 +222,15 @@ class PointsEarned(base.Base, base.MyBase):
         self.adjustor = adjustor
 
 
-def get_points_earned(guild_id: int) -> List[sqlalchemy.engine.row.Row]:
+def get_points_earned(guild_id: int, days: int = None) -> List[sqlalchemy.engine.row.Row]:
     with base.get_session() as session:
         earned = session.query(
             PointsEarned.user_id,
             sqlalchemy.func.sum(PointsEarned.points).label('points')
         )
+        if days:
+            start = datetime.datetime.now() - datetime.timedelta(days=days)
+            earned = earned.filter(PointsEarned.time >= start)
         earned = earned.group_by(PointsEarned.user_id)
         earned = earned.filter_by(guild_id=guild_id)
         earned = earned.filter(PointsEarned.user_id != 0)

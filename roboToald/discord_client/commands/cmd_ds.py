@@ -441,20 +441,18 @@ async def points(
         inter: disnake.ApplicationCommandInteraction,
         player: disnake.Member = commands.Param(
             default=None,
-            description="Member for balance check (default: current member)."),
+            description="Member for balance check (default: all players)."),
         show_all: bool = commands.Param(
-            default=True,
-            description="Show points for ALL users (default: true).")
+            default=False,
+            description="Show points for ALL users (default: false).")
 ):
-    if player is not None:
-        show_all = False
-
     # Defer the response to avoid timeouts
-    await inter.response.defer(ephemeral=not show_all)
+    await inter.response.defer(ephemeral=player is not None)
 
-    if show_all:
-        message = "Point Balances:\n"
-        earned_points = points_model.get_points_earned(inter.guild_id)
+    if player is None:
+        message = f"**Point Balances{'' if show_all else ' (for players active in the last 14 days)'}:**\n"
+        earned_points = points_model.get_points_earned(
+            inter.guild_id, days=None if show_all else 14)
         member_totals = []
         for member in earned_points:
             spent_events = points_model.get_points_spent_by_member(
@@ -471,11 +469,11 @@ async def points(
                 f"<@{user_id}>: {current_points} "
                 f"(Earned {current_points + spent_points},"
                 f" Spent {spent_points})\n")
+        if not sorted_totals:
+            message += f"No points earned{'' if show_all else ' in the last 14 days'}."
         await utils.send_and_split(inter, message)
         return
 
-    if player is None:
-        player = inter.user
     earned, spent = get_point_data_for_member(player.id, inter.guild_id)
     await inter.send(
         f"<@{player.id}> has {earned - spent} points "
