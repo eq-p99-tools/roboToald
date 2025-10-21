@@ -487,10 +487,10 @@ async def points(
 @ds.sub_command(description="Run this when DS dies to stop all tracking.")
 async def tod(
         inter: disnake.ApplicationCommandInteraction,
-        backdate: int = commands.Param(
-            default=0,
-            ge=0,
-            description="Backdate DS pop by <X> minutes."),
+        # backdate: int = commands.Param(
+        #     default=0,
+        #     ge=0,
+        #     description="Backdate DS pop by <X> minutes."),
         # quake: bool = commands.Param(
         #     default=False,
         #     description="Quake?"
@@ -498,6 +498,8 @@ async def tod(
 ):
     # Quake mode isn't needed presently, but maybe in the future
     quake = False
+    # Disable backdating for now since it seems to break things
+    backdate=0
 
     now_time = datetime.datetime.now()
     stop_time = now_time - datetime.timedelta(minutes=backdate)
