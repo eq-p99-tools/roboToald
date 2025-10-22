@@ -142,7 +142,8 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
             sqlalchemy.orm.joinedload(SSOAccount.groups),
             sqlalchemy.orm.joinedload(SSOAccount.tags),
             sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
-            SSOAccount.real_user == username
+            SSOAccount.real_user == username,
+            SSOAccount.guild_id == guild_id
         ).one_or_none()
 
         if account:
@@ -152,7 +153,8 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
         # If not found, try to find by alias
         alias = session.query(SSOAccountAlias).options(
             sqlalchemy.orm.joinedload(SSOAccountAlias.account)).filter(
-            SSOAccountAlias.alias == username
+            SSOAccountAlias.alias == username,
+            SSOAccountAlias.guild_id == guild_id
         ).one_or_none()
 
         if alias:
