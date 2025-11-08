@@ -852,7 +852,7 @@ def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0, includ
 
 
 def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=None, 
-                   since=None, include_list=False) -> list[SSOAuditLog]:
+                   since=None, include_list=False, until=None) -> list[SSOAuditLog]:
     """
     Get audit logs with optional filtering.
     
@@ -872,6 +872,8 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
             query = query.filter(SSOAuditLog.success == success)
         if since:
             query = query.filter(SSOAuditLog.timestamp >= since)
+        if until:
+            query = query.filter(SSOAuditLog.timestamp <= until)
         if not include_list:
             query = query.filter(SSOAuditLog.username != "list_accounts")
             

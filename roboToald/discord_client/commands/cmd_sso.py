@@ -1,6 +1,7 @@
 import base64
 import datetime
 import hashlib
+import re
 
 import disnake
 from disnake.ext import commands
@@ -1121,6 +1122,109 @@ class SSOCommands(commands.Cog):
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n{e}", ephemeral=True)
 
+#     @sso.sub_command(description="write out debug data", name="debug")
+#     async def debug(self, inter: disnake.ApplicationCommandInteraction):
+#         message = "hello world"
+#
+#         embed = disnake.Embed(title="Raid Status")
+#         embed.add_field(name="Attendees", value="""```diff
+# + Abored
+# + Banannie (on Lookunto)
+# + Cylance
+# + Embassy (on quickener)
+# + Hoopla
+# + Mccreary
+# + Pasi
+# + Paulycoth
+# + Pullee
+# + Pyroboooze
+# + Status (on abored/paulycoth)
+# ```""", inline=False)
+#         embed.add_field(name="Trackers", value="""```diff
+# + Dalsavis (Tank, Zlandicar)
+# + Keipo (Cother, Zlandicar) on Christmastime
+# + Swisscheese (Shaman, Zlandicar)
+# + aegys (Cleric, Zlandicar)
+# ```""", inline=False)
+#         embed.add_field(name="Event Review", value="""```diff
+# + Zlandicar added at 2025-11-07 09:11 PM (15 hours and 34 minutes ago)
+# + Total Attendees: 11
+# + DKP: 8 (Not killed)
+# + DKP Spent: 0
+# + Event ID: 92
+# ```""", inline=False)
+#
+#         await inter.channel.send(embed=embed)
+#         await inter.send(content="Sent debug data", ephemeral=True)
+
+    @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
+    async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
+        # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
+        channel_matcher = re.compile(r'.?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$')
+        if not channel_matcher.match(inter.channel.name):
+            await inter.send(content="Reconcile can only be used in an event channel.", ephemeral=True)
+            return
+
+        # Get the latest Status message in this channel
+        status_embed = None
+        async for message in inter.channel.history(limit=10):
+            if message.embeds and message.embeds[0].title == "Raid Status":
+                status_embed = message.embeds[0]
+                break
+
+        if not status_embed:
+            await inter.send(content="No Raid Status message found in this channel.", ephemeral=True)
+            return
+
+        # # Parse the attendee list out of the status message
+        # attendee_field = ([f for f in status_embed.fields if f.name == "Attendees"] or [None])[0]
+        # if not attendee_field:
+        #     await inter.send(content="Could not find Attendees field in Raid Status message.", ephemeral=True)
+        #     return
+        # attendee_list = attendee_field.value.splitlines()[1:-1]
+        # attendee_list = [x.split(" ")[1] for x in attendee_list]
+
+        # Parse the exact event time out of the status message (the line containing " added at ")
+        event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
+        if not event_field:
+            await inter.send(content="Could not find Event Review field in Raid Status message.", ephemeral=True)
+            return
+        event_header = event_field.value.splitlines()[1]
+        event_time = event_header.split(' added at ')[1]
+        event_time = " ".join(event_time.split(" ")[:3])
+
+        # Convert the event time to a datetime object
+        try:
+            event_time = datetime.datetime.strptime(event_time, '%Y-%m-%d %I:%M %p')
+        except ValueError:
+            await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)
+            return
+
+        if not event_time:
+            await inter.send(content="Could not find event time in Raid Status message.", ephemeral=True)
+            return
+
+        # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
+        start_time = event_time - datetime.timedelta(minutes=30)
+        end_time = event_time + datetime.timedelta(hours=1)
+        logs = sso_model.get_audit_logs(guild_id=inter.guild_id, success=True, since=start_time, until=end_time)
+        logins = sorted(
+            [f"{log.username:<14}: <t:{int(log.timestamp.timestamp())}:f> by <@{log.discord_user_id}>"
+             for log in logs])
+
+        # example data
+        # logins = [
+        #     f"`Realchad      `: <t:1666964800:f> by <@192477577951182848>",
+        #     f"`Gooberina     `: <t:1666964800:f> by <@192477577951182848>",
+        #     f"`Pasi          `: <t:1666964800:f> by <@192477577951182848>",
+        # ]
+
+        # Format response message
+        embed = disnake.Embed(title="SSO Reconciliation")
+        embed.add_field(name="Event Time", value=f"<t:{int(event_time.timestamp())}:F>", inline=False)
+        embed.add_field(name="SSO Logs", value="\n".join(logins) or "No logs found for this period", inline=False)
+
+        await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
 
 def setup(bot):
     bot.add_cog(SSOCommands(bot))
