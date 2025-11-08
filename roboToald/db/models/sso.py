@@ -861,7 +861,7 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
     """
     with base.get_session() as session:
         query = session.query(SSOAuditLog).options(
-            sqlalchemy.orm.joinedload(SSOAuditLog.account))
+            sqlalchemy.orm.joinedload(SSOAuditLog.account).joinedload(SSOAccount.aliases))
         
         # Apply filters if provided
         if guild_id:
