@@ -1213,15 +1213,8 @@ class SSOCommands(commands.Cog):
             username = log.username
             if "via tag/alias" in log.details:
                 username = log.details.split("via tag/alias ")[1]
-            logins.append(f"`{username:<14}`: <t:{int(log.timestamp.timestamp())}:T> by <@{log.discord_user_id}>")
+            logins.append(f"`{username:<14} / {log.username:<14}`: <t:{int(log.timestamp.timestamp())}:T> by <@{log.discord_user_id}>")
         logins.sort()
-
-        # example data
-        # logins = [
-        #     f"`Realchad      `: <t:1666964800:f> by <@192477577951182848>",
-        #     f"`Gooberina     `: <t:1666964800:f> by <@192477577951182848>",
-        #     f"`Pasi          `: <t:1666964800:f> by <@192477577951182848>",
-        # ]
 
         def split_fields(lines, maxlen=1024):
             chunks = []
