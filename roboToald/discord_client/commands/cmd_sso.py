@@ -1219,10 +1219,35 @@ class SSOCommands(commands.Cog):
         #     f"`Pasi          `: <t:1666964800:f> by <@192477577951182848>",
         # ]
 
+        def split_fields(lines, maxlen=1024):
+            chunks = []
+            current = []
+            current_len = 0
+            for line in lines:
+                # +1 for the newline character
+                add_len = len(line) + 1
+                if current_len + add_len > maxlen:
+                    chunks.append("\n".join(current))
+                    current = [line]
+                    current_len = add_len
+                else:
+                    current.append(line)
+                    current_len += add_len
+            if current:
+                chunks.append("\n".join(current))
+            return chunks
+
         # Format response message
         embed = disnake.Embed(title="SSO Reconciliation")
         embed.add_field(name="Event Time", value=f"<t:{int(event_time.timestamp())}:F>", inline=False)
-        embed.add_field(name="SSO Logs", value="\n".join(logins) or "No logs found for this period", inline=False)
+        # embed.add_field(name="SSO Logs", value="\n".join(logins) or "No logs found for this period", inline=False)
+        login_chunks = split_fields(logins)
+        for i, chunk in enumerate(login_chunks, 1):
+            embed.add_field(
+                name=f"SSO Logs {i}" if len(login_chunks) > 1 else "SSO Logs",
+                value=chunk,
+                inline=False
+            )
 
         await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
 
