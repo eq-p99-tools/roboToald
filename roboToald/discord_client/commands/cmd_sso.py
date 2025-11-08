@@ -1160,7 +1160,7 @@ class SSOCommands(commands.Cog):
     @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
     async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
         # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
-        channel_matcher = re.compile(r'.?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$')
+        channel_matcher = re.compile(r'.*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$')
         if not channel_matcher.match(inter.channel.name):
             await inter.send(content="Reconcile can only be used in an event channel.", ephemeral=True)
             return
