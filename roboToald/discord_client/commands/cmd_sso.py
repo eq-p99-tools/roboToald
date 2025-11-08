@@ -1208,9 +1208,13 @@ class SSOCommands(commands.Cog):
         start_time = event_time - datetime.timedelta(minutes=30)
         end_time = event_time + datetime.timedelta(hours=1)
         logs = sso_model.get_audit_logs(guild_id=inter.guild_id, success=True, since=start_time, until=end_time)
-        logins = sorted(
-            [f"{log.username:<14}: <t:{int(log.timestamp.timestamp())}:f> by <@{log.discord_user_id}>"
-             for log in logs])
+        logins = []
+        for log in logs:
+            username = log.username
+            if "via tag/alias" in log.details:
+                username = log.details.split("via tag/alias ")[1]
+            logins.append(f"`{username:<14}`: <t:{int(log.timestamp.timestamp())}:f> by <@{log.discord_user_id}>")
+        logins.sort()
 
         # example data
         # logins = [
