@@ -1187,7 +1187,7 @@ class SSOCommands(commands.Cog):
         # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
         start_time = event_time - datetime.timedelta(minutes=30)
         end_time = event_time + datetime.timedelta(hours=1)
-        logs = sso_model.get_audit_logs(guild_id=channel.guild_id, success=True, since=start_time, until=end_time)
+        logs = sso_model.get_audit_logs(guild_id=channel.guild.id, success=True, since=start_time, until=end_time)
         logins = []
         for log in logs:
             username = log.username
@@ -1255,7 +1255,7 @@ class SSOCommands(commands.Cog):
             embed = await self._get_reconcile_embed_response(channel=channel)
             if embed:
                 print(f"Reconciling new event channel: {channel.name} in {channel.guild.name}")
-                time.sleep(2)
+                time.sleep(5)
                 await channel.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
             else:
                 print(f"Failed to reconcile on new event channel: {channel.name} in {channel.guild.name}")
