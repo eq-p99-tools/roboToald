@@ -2,6 +2,7 @@ import base64
 import datetime
 import hashlib
 import re
+import time
 
 import disnake
 from disnake.ext import commands
@@ -88,6 +89,10 @@ Review access and changes to the SSO system.
 - `/sso_admin audit statistics` - View overall usage statistics
 - `/sso_admin audit failed` - View recent failed authentication attempts
 """
+
+
+EVENT_CHANNEL_MATCHER = re.compile(r'.*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$')
+
 
 # Autocomplete function for account names
 async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
@@ -1122,61 +1127,33 @@ class SSOCommands(commands.Cog):
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n{e}", ephemeral=True)
 
-#     @sso.sub_command(description="write out debug data", name="debug")
-#     async def debug(self, inter: disnake.ApplicationCommandInteraction):
-#         message = "hello world"
-#
-#         embed = disnake.Embed(title="Raid Status")
-#         embed.add_field(name="Attendees", value="""```diff
-# + Abored
-# + Banannie (on Lookunto)
-# + Cylance
-# + Embassy (on quickener)
-# + Hoopla
-# + Mccreary
-# + Pasi
-# + Paulycoth
-# + Pullee
-# + Pyroboooze
-# + Status (on abored/paulycoth)
-# ```""", inline=False)
-#         embed.add_field(name="Trackers", value="""```diff
-# + Dalsavis (Tank, Zlandicar)
-# + Keipo (Cother, Zlandicar) on Christmastime
-# + Swisscheese (Shaman, Zlandicar)
-# + aegys (Cleric, Zlandicar)
-# ```""", inline=False)
-#         embed.add_field(name="Event Review", value="""```diff
-# + Zlandicar added at 2025-11-07 09:11 PM (15 hours and 34 minutes ago)
-# + Total Attendees: 11
-# + DKP: 8 (Not killed)
-# + DKP Spent: 0
-# + Event ID: 92
-# ```""", inline=False)
-#
-#         await inter.channel.send(embed=embed)
-#         await inter.send(content="Sent debug data", ephemeral=True)
-
-    @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
-    async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
-        # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
-        channel_matcher = re.compile(r'.*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$')
-        if not channel_matcher.match(inter.channel.name):
-            await inter.send(content="Reconcile can only be used in an event channel.", ephemeral=True)
-            return
-
+    @staticmethod
+    async def _get_reconcile_embed_response(
+            channel: disnake.TextChannel,
+            inter: disnake.ApplicationCommandInteraction = None) -> disnake.Embed | None:
         # Get the latest Status message in this channel
         status_embed = None
-        async for message in inter.channel.history(limit=10):
+        async for message in channel.history(limit=50):
             if message.embeds and message.embeds[0].title == "Raid Status":
                 status_embed = message.embeds[0]
                 break
+        if not status_embed:
+            await channel.send(content="$status")
+        retries = 10
+        while not status_embed and retries > 0:
+            time.sleep(1)
+            retries -= 1
+            async for message in channel.history(limit=5):
+                if message.embeds and message.embeds[0].title == "Raid Status":
+                    status_embed = message.embeds[0]
+                    break
 
         if not status_embed:
-            await inter.send(content="No Raid Status message found in this channel.", ephemeral=True)
+            if inter:
+                await inter.send(content="No Raid Status message found in this channel.", ephemeral=True)
             return
 
-        # # Parse the attendee list out of the status message
+        # Parse the attendee list out of the status message
         # attendee_field = ([f for f in status_embed.fields if f.name == "Attendees"] or [None])[0]
         # if not attendee_field:
         #     await inter.send(content="Could not find Attendees field in Raid Status message.", ephemeral=True)
@@ -1187,7 +1164,8 @@ class SSOCommands(commands.Cog):
         # Parse the exact event time out of the status message (the line containing " added at ")
         event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
         if not event_field:
-            await inter.send(content="Could not find Event Review field in Raid Status message.", ephemeral=True)
+            if inter:
+                await inter.send(content="Could not find Event Review field in Raid Status message.", ephemeral=True)
             return
         event_header = event_field.value.splitlines()[1]
         event_time = event_header.split(' added at ')[1]
@@ -1197,17 +1175,19 @@ class SSOCommands(commands.Cog):
         try:
             event_time = datetime.datetime.strptime(event_time, '%Y-%m-%d %I:%M %p')
         except ValueError:
-            await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)
+            if inter:
+                await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)
             return
 
         if not event_time:
-            await inter.send(content="Could not find event time in Raid Status message.", ephemeral=True)
+            if inter:
+                await inter.send(content="Could not find event time in Raid Status message.", ephemeral=True)
             return
 
         # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
         start_time = event_time - datetime.timedelta(minutes=30)
         end_time = event_time + datetime.timedelta(hours=1)
-        logs = sso_model.get_audit_logs(guild_id=inter.guild_id, success=True, since=start_time, until=end_time)
+        logs = sso_model.get_audit_logs(guild_id=channel.guild_id, success=True, since=start_time, until=end_time)
         logins = []
         for log in logs:
             username = log.username
@@ -1239,7 +1219,6 @@ class SSOCommands(commands.Cog):
         # Format response message
         embed = disnake.Embed(title="SSO Reconciliation")
         embed.add_field(name="Event Time", value=f"<t:{int(event_time.timestamp())}:F>", inline=False)
-        # embed.add_field(name="SSO Logs", value="\n".join(logins) or "No logs found for this period", inline=False)
         login_chunks = split_fields(logins)
         for i, chunk in enumerate(login_chunks, 1):
             embed.add_field(
@@ -1247,8 +1226,40 @@ class SSOCommands(commands.Cog):
                 value=chunk,
                 inline=False
             )
+        if not login_chunks:
+            embed.add_field(
+                name="SSO Logs",
+                value=f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>.",
+                inline=False
+            )
+        return embed
 
-        await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+    @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
+    async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
+        # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
+
+        if not EVENT_CHANNEL_MATCHER.match(inter.channel.name):
+            await inter.send(content="Reconcile can only be used in an event channel.", ephemeral=True)
+            return
+
+        await inter.response.defer()
+        embed = await self._get_reconcile_embed_response(channel=inter.channel, inter=inter)
+
+        if embed:
+            await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel):
+        if EVENT_CHANNEL_MATCHER.match(channel.name):
+            # Run our own reconcile slash command
+            embed = await self._get_reconcile_embed_response(channel=channel)
+            if embed:
+                print(f"Reconciling new event channel: {channel.name} in {channel.guild.name}")
+                time.sleep(2)
+                await channel.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+            else:
+                print(f"Failed to reconcile on new event channel: {channel.name} in {channel.guild.name}")
+
 
 def setup(bot):
     bot.add_cog(SSOCommands(bot))
