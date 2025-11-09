@@ -1248,17 +1248,17 @@ class SSOCommands(commands.Cog):
         if embed:
             await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
 
-    @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel):
-        if EVENT_CHANNEL_MATCHER.match(channel.name):
-            # Run our own reconcile slash command
-            embed = await self._get_reconcile_embed_response(channel=channel)
-            if embed:
-                print(f"Reconciling new event channel: {channel.name} in {channel.guild.name}")
-                time.sleep(5)
-                await channel.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
-            else:
-                print(f"Failed to reconcile on new event channel: {channel.name} in {channel.guild.name}")
+    # @commands.Cog.listener()
+    # async def on_guild_channel_create(self, channel):
+    #     if EVENT_CHANNEL_MATCHER.match(channel.name):
+    #         # Run our own reconcile slash command
+    #         embed = await self._get_reconcile_embed_response(channel=channel)
+    #         if embed:
+    #             print(f"Reconciling new event channel: {channel.name} in {channel.guild.name}")
+    #             time.sleep(5)
+    #             await channel.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+    #         else:
+    #             print(f"Failed to reconcile on new event channel: {channel.name} in {channel.guild.name}")
 
 
 def setup(bot):
