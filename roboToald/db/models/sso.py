@@ -4,6 +4,7 @@ import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm
 import sqlalchemy_utils
+import enum
 
 from roboToald import config
 from roboToald.db import base
@@ -36,6 +37,10 @@ class SSOAccessKeyNotFoundError(SSOEntityNotFoundError):  # unused?
 
 class SSORevocationNotFoundError(SSOEntityNotFoundError):  # unused?
     """Raised when an SSORevocation is not found"""
+    pass
+
+class SSOCharacterAlreadyExistsError(Exception):
+    """Raised when an SSOCharacter already exists"""
     pass
 
 
@@ -72,6 +77,8 @@ class SSOAccount(base.Base):
                                        cascade="all, delete-orphan")
     aliases = sqlalchemy.orm.relationship("SSOAccountAlias", back_populates="account",
                                           cascade="all, delete-orphan")
+    characters = sqlalchemy.orm.relationship("SSOAccountCharacter", back_populates="account",
+                                             cascade="all, delete-orphan")
 
     __table_args__ = (
         sqlalchemy.UniqueConstraint(
@@ -109,6 +116,7 @@ def get_account(guild_id: int, real_user: str) -> SSOAccount:
         try:
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
                 SSOAccount.guild_id == guild_id,
@@ -195,6 +203,7 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
         if tag:
             query = query.join(SSOAccount.tags).filter(SSOTag.tag == tag)
         query = query.options(sqlalchemy.orm.joinedload(SSOAccount.groups),
+                              sqlalchemy.orm.joinedload(SSOAccount.characters),
                               sqlalchemy.orm.joinedload(SSOAccount.tags),
                               sqlalchemy.orm.joinedload(SSOAccount.aliases))
         accounts = query.all()
@@ -952,3 +961,123 @@ def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 3
         
     failed_attempts = count_failed_attempts(ip_address, minutes)
     return failed_attempts >= max_attempts
+
+
+class CharacterClass(enum.Enum):
+    Bard = "Bard"
+    Cleric = "Cleric"
+    Druid = "Druid"
+    Enchanter = "Enchanter"
+    Magician = "Magician"
+    Monk = "Monk"
+    Necromancer = "Necromancer"
+    Paladin = "Paladin"
+    Ranger = "Ranger"
+    Rogue = "Rogue"
+    ShadowKnight = "Shadow Knight"
+    Shaman = "Shaman"
+    Warrior = "Warrior"
+    Wizard = "Wizard"
+
+
+class SSOAccountCharacter(base.Base):
+    """Maps character name/class pairs to SSO accounts."""
+    __tablename__ = "sso_account_character"
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+
+    character_name = sqlalchemy.Column(sqlalchemy.String(64), nullable=False)
+    character_class = sqlalchemy.Column(sqlalchemy.Enum(CharacterClass), nullable=False)
+
+    bind_location = sqlalchemy.Column(sqlalchemy.String(64), nullable=True)
+    park_location = sqlalchemy.Column(sqlalchemy.String(64), nullable=True)
+
+    account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
+    account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint("character_name", "guild_id", name="uq_character_guild"),
+    )
+
+
+def add_account_character(guild_id: int, real_user: str, character_name: str, character_class: CharacterClass) -> SSOAccountCharacter:
+    """Add a character/class to an account."""
+    account = find_account_by_username(real_user, guild_id)
+    if not account:
+        raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+    with base.get_session() as session:
+        try:
+            character = SSOAccountCharacter(
+                account_id=account.id,
+                character_name=character_name,
+                character_class=character_class,
+                guild_id=guild_id,
+            )
+            session.add(character)
+            session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            raise SSOCharacterAlreadyExistsError(f"Character '{character_name}' already exists in guild {guild_id}")
+
+        character = session.query(SSOAccountCharacter).filter(
+            SSOAccountCharacter.id == character.id).one()
+
+        session.expunge_all()
+    return character
+
+
+def list_account_characters(guild_id: int, real_user: str = None) -> [SSOAccountCharacter]:
+    with base.get_session() as session:
+        characters = session.query(SSOAccountCharacter).filter_by(guild_id=guild_id)
+        if real_user:
+            account = find_account_by_username(real_user, guild_id)
+            if not account:
+                raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+            characters = characters.filter_by(account_id=account.id)
+        characters = characters.all()
+        session.expunge_all()
+    return characters
+
+
+def remove_account_character(guild_id: int, character_name: str) -> bool:
+    """Remove a character/class from an account."""
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(
+            character_name=character_name, guild_id=guild_id
+        ).first()
+        if not character:
+            return False
+        session.delete(character)
+        session.commit()
+    return True
+
+
+def update_account_character(guild_id: int, character_name: str, character_class: CharacterClass = None,
+                             bind_location: str = None, park_location: str = None) -> bool:
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(
+            character_name=character_name, guild_id=guild_id
+        ).first()
+        if not character:
+            return False
+        if character_class:
+            character.character_class = character_class
+        if bind_location:
+            character.bind_location = bind_location
+        if park_location:
+            character.park_location = park_location
+        session.commit()
+    return True
+
+
+def find_account_by_character(guild_id: int, character_name: str) -> SSOAccount | None:
+    with base.get_session() as session:
+        try:
+            character = session.query(SSOAccountCharacter).filter_by(
+                character_name=character_name, guild_id=guild_id
+            ).options(sqlalchemy.orm.joinedload(SSOAccountCharacter.account)).one()
+        except sqlalchemy.exc.NoResultFound:
+            return None
+        except sqlalchemy.exc.MultipleResultsFound:
+            return None
+        session.expunge_all()
+    return character.account

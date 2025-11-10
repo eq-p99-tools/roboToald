@@ -138,6 +138,55 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
         return []
 
 
+async def character_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for character names available to the user."""
+    try:
+        # Get the user's roles
+        user_roles = [role.id for role in inter.author.roles]
+        user_is_admin = is_admin(user_roles, inter.guild_id)
+
+        # Get all accounts for this guild
+        all_accounts = sso_model.list_accounts(inter.guild_id)
+
+        # Filter accounts based on user's roles and access permissions
+        available_accounts = []
+        for account in all_accounts:
+            # Check if account is in a group that the user has access to
+            has_access = False
+            if user_is_admin:
+                has_access = True
+            else:
+                for group in account.groups:
+                    if group.role_id in user_roles:
+                        has_access = True
+                        break
+
+            # If no groups or has access, add to available accounts
+            if has_access:
+                available_accounts.append(account)
+
+        # Get all the character names from the accounts
+        character_names = []
+        for account in available_accounts:
+            for character in account.characters:
+                character_names.append(character.character_name)
+
+        # Filter by the input string if provided
+        if string:
+            filtered_characters = [
+                name for name in character_names
+                if string.lower() in name.lower()
+            ]
+        else:
+            filtered_characters = character_names
+
+        # Return up to 50 choices
+        return filtered_characters[:25]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
 async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
     """Autocomplete function for alias names available to the user."""
     try:
@@ -1247,6 +1296,98 @@ class SSOCommands(commands.Cog):
 
         if embed:
             await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+
+    @sso.sub_command_group(description="Character commands", name="character")
+    async def character(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @sso_admin.sub_command_group(description="Admin character commands", name="character")
+    async def character_admin(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @character_admin.sub_command(description="Add a character to an account", name="add")
+    async def character_add(self, inter: disnake.ApplicationCommandInteraction,
+                            username: str = commands.Param(
+                                description="Account username to add character for",
+                                autocomplete=account_autocomplete
+                            ), character_name: str = commands.Param(
+                                description="Character to add to the account",
+                            ), character_class: sso_model.CharacterClass = commands.Param(
+                                description="Class of the character",
+                            )):
+        try:
+            char = sso_model.add_account_character(
+                guild_id=inter.guild_id,
+                real_user=username,
+                character_name=character_name,
+                character_class=character_class
+            )
+            message = f"✨🧍**Added character** `{char.character_name}` *({char.character_class.value})* added for 🤖`{username}`."
+        except sso_model.SSOAccountNotFoundError:
+            message = f"⚠️🤖**Account not found:** `{username}`"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except sso_model.SSOCharacterAlreadyExistsError:
+            message = f"⚠️🧍**Character already exists:** `{character_name}`"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except Exception as e:
+            message = f"❌🧍**Error:** {e}"
+            await inter.send(content=message, ephemeral=True)
+            return
+
+        await inter.send(content=message)
+
+    @character_admin.sub_command(description="Remove a character from an account", name="remove")
+    async def character_remove(self, inter: disnake.ApplicationCommandInteraction,
+                              character_name: str = commands.Param(
+                                  description="Character name to remove from the account",
+                                  autocomplete=character_autocomplete
+                              )):
+        try:
+            removed = sso_model.remove_account_character(
+                guild_id=inter.guild_id,
+                character_name=character_name
+            )
+            if removed:
+                message = f"🗑️🧍**Deleted character:** `{character_name}`"
+            else:
+                message = f"⚠️🧍**Character not found:** `{character_name}`"
+                await inter.send(content=message, ephemeral=True)
+                return
+        except Exception as e:
+            message = f"Error: {e}"
+            await inter.send(content=message, ephemeral=True)
+            return
+        await inter.send(content=message)
+
+    @character.sub_command(description="List all characters for an account", name="list")
+    async def character_list(self, inter: disnake.ApplicationCommandInteraction,
+                            username: str = commands.Param(
+                                description="Account username to list characters for",
+                                autocomplete=account_autocomplete,
+                                default=None
+                            )):
+        try:
+            characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
+            if characters:
+                desc = " * " + "\n * ".join(f"`{c.character_name}` ({c.character_class.value})" for c in characters)
+            else:
+                desc = "\nNo characters found in this server."
+            if username:
+                message = f"**🧍Characters for `{username}`:**{desc}"
+            else:
+                message = f"**🧍Characters:**\n{desc}"
+        except sso_model.SSOAccountNotFoundError:
+            message = f"⚠️🤖**Account not found:**`{username}"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except Exception as e:
+            message = f"❌🧍**Error:** {e}"
+            await inter.send(content=message, ephemeral=True)
+            return
+        await inter.send(content=message)
+
 
     # @commands.Cog.listener()
     # async def on_guild_channel_create(self, channel):

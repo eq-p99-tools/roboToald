@@ -84,6 +84,13 @@ class ListAccountsRequest(BaseModel):
     access_key: str
 
 
+class UpdateLocationRequest(BaseModel):
+    access_key: str
+    character_name: str
+    bind_location: str | None = None
+    park_location: str | None = None
+
+
 @app.get("/")
 async def root(request: Request):
     """Root endpoint for API health check."""
@@ -224,15 +231,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     )
 
 
-@app.post("/list_accounts", status_code=status.HTTP_200_OK,
-          responses={
-              401: {"model": ErrorResponse, "description": "Authentication failed"},
-              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
-          })
-async def list_accounts(access_data: ListAccountsRequest, request: Request):
-    """
-    Returns a list of accounts, aliases, and tags that the user with the given access key has access to.
-    """
+def _check_auth(request: Request, access_key_in: str, query_type: str):
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         client_ip = forwarded_for.split(',')[0].strip()
@@ -241,12 +240,8 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
 
     # Check rate limiting
     if sso_model.is_ip_rate_limited(client_ip):
-        # If rate limited, log and return 429
+        # If rate limited, log and return 401
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-        # raise HTTPException(
-        #     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #     detail="Too many failed attempts. Please try again later."
-        # )
         raise_auth_failed()
 
     # Validate access key
@@ -255,7 +250,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     guild_id = None
 
     try:
-        access_key = sso_model.get_access_key_by_key(access_data.access_key)
+        access_key = sso_model.get_access_key_by_key(access_key_in)
         if access_key:
             discord_user_id = access_key.discord_user_id
             guild_id = access_key.guild_id
@@ -269,7 +264,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
         logger.warning(f"Authentication failed: {details}")
         # Create audit log entry before raising exception
         sso_model.create_audit_log(
-            username="list_accounts",
+            username=query_type,
             ip_address=client_ip,
             success=False,
             discord_user_id=None,
@@ -281,6 +276,20 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
 
     # Past this point we are guaranteed to have a discord_user_id and guild_id
     discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    return discord_client, discord_user_id, guild_id, client_ip
+
+
+@app.post("/list_accounts", status_code=status.HTTP_200_OK,
+          responses={
+              401: {"model": ErrorResponse, "description": "Authentication failed"},
+              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+          })
+async def list_accounts(access_data: ListAccountsRequest, request: Request):
+    """
+    Returns a list of accounts, aliases, and tags that the user with the given access key has access to.
+    """
+    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
+        request, access_data.access_key, "list_accounts")
 
     # Get all accounts for this guild
     all_accounts = sso_model.list_accounts(guild_id)
@@ -340,11 +349,81 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     return response
 
 
+@app.post("/update_location", status_code=status.HTTP_200_OK,
+          responses={
+              400: {"model": ErrorResponse, "description": "Character not found"},
+              401: {"model": ErrorResponse, "description": "Authentication failed"},
+          })
+async def update_location(location_data: UpdateLocationRequest, request: Request):
+    """
+    Update the bind/park location of a character assuming the access key has access to it.
+    """
+    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
+        request, location_data.access_key, "update_location")
+
+    # Get the account for the character
+    account = sso_model.find_account_by_character(guild_id, location_data.character_name)
+    if not account:
+        raise_invalid_character()
+
+    # Check if the discord user has access to this account
+    if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id]):
+        # Log with specific reason but return generic error
+        details = "Access denied"
+        logger.warning(f"Authentication failed: {details} for user {discord_user_id} "
+                       f"to character {location_data.character_name}")
+        # Create audit log entry before raising exception
+        sso_model.create_audit_log(
+            username=location_data.character_name,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=account.id,
+            guild_id=guild_id,
+            details=details
+        )
+        raise_auth_failed()
+
+    # Authentication successful - update account's last_login timestamp because why not, it's still online
+    sso_model.update_last_login(account.id)
+
+    # Update location
+    sso_model.update_account_character(
+        guild_id=guild_id,
+        character_name=location_data.character_name,
+        bind_location=location_data.bind_location,
+        park_location=location_data.park_location
+    )
+
+    # Log successful request
+    sso_model.create_audit_log(
+        username=location_data.character_name,
+        ip_address=client_ip,
+        success=True,
+        discord_user_id=discord_user_id,
+        account_id=account.id,
+        guild_id=guild_id,
+        details=f"Successfully updated location: "
+                f"bind = {location_data.bind_location is not None}, "
+                f"park = {location_data.park_location is not None}"
+    )
+
+    return {'status': 'success'}
+
+
 def raise_auth_failed():
     """Helper function to raise a consistent authentication failure exception."""
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication failed"
+    )
+
+
+def raise_invalid_character():
+    """Helper function to raise a consistent authentication failure exception."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Character not found"
     )
 
 
