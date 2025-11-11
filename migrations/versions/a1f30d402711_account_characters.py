@@ -24,8 +24,8 @@ def upgrade() -> None:
     op.create_table('sso_account_character',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('guild_id', sa.Integer(), nullable=False),
-    sa.Column('character_name', sa.String(length=64), nullable=False),
-    sa.Column('character_class',
+    sa.Column('name', sa.String(length=64), nullable=False),
+    sa.Column('class',
               sa.Enum('Bard', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin',
                       'Ranger', 'Rogue', 'ShadowKnight', 'Shaman', 'Warrior', 'Wizard', name='characterclass'),
               nullable=False),
@@ -34,7 +34,7 @@ def upgrade() -> None:
     sa.Column('account_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['account_id'], ['sso_account.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('character_name', 'guild_id', name='uq_character_guild')
+    sa.UniqueConstraint('name', 'guild_id', name='uq_name_guild')
     )
     # ### end Alembic commands ###
 

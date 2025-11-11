@@ -169,7 +169,7 @@ async def character_autocomplete(inter: disnake.ApplicationCommandInteraction, s
         character_names = []
         for account in available_accounts:
             for character in account.characters:
-                character_names.append(character.character_name)
+                character_names.append(character.name)
 
         # Filter by the input string if provided
         if string:
@@ -1319,10 +1319,10 @@ class SSOCommands(commands.Cog):
             char = sso_model.add_account_character(
                 guild_id=inter.guild_id,
                 real_user=username,
-                character_name=character_name,
-                character_class=character_class
+                name=character_name,
+                klass=character_class
             )
-            message = f"✨🧍**Added character** `{char.character_name}` *({char.character_class.value})* added for 🤖`{username}`."
+            message = f"✨🧍**Added character** `{char.name}` *({char.klass.value})* added for 🤖`{username}`."
         except sso_model.SSOAccountNotFoundError:
             message = f"⚠️🤖**Account not found:** `{username}`"
             await inter.send(content=message, ephemeral=True)
@@ -1347,7 +1347,7 @@ class SSOCommands(commands.Cog):
         try:
             removed = sso_model.remove_account_character(
                 guild_id=inter.guild_id,
-                character_name=character_name
+                name=character_name
             )
             if removed:
                 message = f"🗑️🧍**Deleted character:** `{character_name}`"
@@ -1371,7 +1371,7 @@ class SSOCommands(commands.Cog):
         try:
             characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
             if characters:
-                desc = " * " + "\n * ".join(f"`{c.character_name}` ({c.character_class.value})" for c in characters)
+                desc = " * " + "\n * ".join(f"`{c.name}` ({c.klass.value})" for c in characters)
             else:
                 desc = "\nNo characters found in this server."
             if username:

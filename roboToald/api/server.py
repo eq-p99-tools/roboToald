@@ -328,16 +328,20 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
             ],
             "tags": [
                 tag.tag for tag in account.tags
-            ]
+            ],
+            "characters": {
+                character.name: {
+                    "class": character.klass,
+                    "bind": character.bind_location,
+                    "park": character.park_location
+                } for character in account.characters
+            },
+            "last_login": account.last_login,
         } for account in accessible_accounts
     }
 
     response = {
-        # Old v1 call data
-        "accounts": account_name_list + alias_name_list + tag_name_list,
-        "count": len(account_name_list),
-
-        # New v2 call data
+        # v2 call data
         "account_tree": account_tree,
     }
     
@@ -396,7 +400,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
     # Update location
     sso_model.update_account_character(
         guild_id=guild_id,
-        character_name=location_data.character_name,
+        name=location_data.character_name,
         bind_location=location_data.bind_location,
         park_location=location_data.park_location
     )
