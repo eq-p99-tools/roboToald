@@ -108,7 +108,9 @@ async def root(request: Request):
 @app.post("/auth", response_model=Union[SSOResponse, ErrorResponse], 
           status_code=status.HTTP_200_OK, 
           responses={
+              400: {"model": ErrorResponse, "description": "Character not found"},
               401: {"model": ErrorResponse, "description": "Authentication failed"},
+              410: {"model": ErrorResponse, "description": "Tag temporarily empty"},
               #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
           })
 async def authenticate(auth_data: AuthRequest, request: Request):
@@ -159,7 +161,10 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     if access_key:
         discord_user_id = access_key.discord_user_id
         guild_id = access_key.guild_id
-        account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id)
+        try:
+            account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id, inactive_only=True)
+        except sso_model.SSOTagTemporarilyEmptyError:
+            raise_tag_temporarily_empty()
         if account:
             account_id = account.id
             real_username = account.real_user
@@ -180,7 +185,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         raise_auth_failed()
 
     if not account_id:
-        # Log with specific reason but return generic error
+        # Log account missing
         details = "Account not found"
         logger.warning(f"Authentication failed: {details}")
         # Create audit log entry before raising exception
@@ -193,7 +198,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         #     guild_id=access_key.guild_id,
         #     details=details
         # )
-        raise_auth_failed()
+        raise_invalid_character()
 
     # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
     discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
@@ -302,22 +307,13 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     
     # Filter accounts based on user access
     accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
-    
-    ### Build v1 response data
-    # Get all aliases for accessible accounts
-    accessible_aliases = []
-    for account in accessible_accounts:
-        aliases = account.aliases
-        accessible_aliases.extend(aliases)
-    
+
     # Get all tags for accessible accounts
     accessible_tags = []
     for account in accessible_accounts:
         tags = account.tags
         accessible_tags.extend(tags)
     
-    account_name_list = [account.real_user for account in accessible_accounts]
-    alias_name_list = [alias.alias for alias in accessible_aliases]
     tag_name_list = [tag.tag for tag in accessible_tags]
 
     ### Build v2 response data
@@ -455,6 +451,14 @@ def raise_invalid_character():
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Character not found"
+    )
+
+
+def raise_tag_temporarily_empty():
+    """Helper function to raise a consistent authentication failure exception."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Tag temporarily empty due to activity requirements"
     )
 
 

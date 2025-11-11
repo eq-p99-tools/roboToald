@@ -43,6 +43,10 @@ class SSOCharacterAlreadyExistsError(Exception):
     """Raised when an SSOCharacter already exists"""
     pass
 
+class SSOTagTemporarilyEmptyError(Exception):
+    """Raised when an SSOAccountTag is temporarily empty due to activity"""
+    pass
+
 
 account_group_mapping = sqlalchemy.Table(
     "sso_account_group_mapping",
@@ -142,7 +146,7 @@ def get_account_by_id(account_id: int) -> SSOAccount:
             raise SSOAccountNotFoundError(f"Account '{account_id}' not found")
 
 
-def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount or None:
+def find_account_by_username(username: str, guild_id: int = None, inactive_only: bool = False) -> SSOAccount or None:
     username = username.lower()
     """Find an account by username."""
     with base.get_session() as session:
@@ -183,8 +187,15 @@ def find_account_by_username(username: str, guild_id: int = None) -> SSOAccount 
         ).all()
 
         if tagged_accounts:
-            accounts = [tagged_account.account for tagged_account in tagged_accounts]
+            if inactive_only:
+                thirty_seconds_ago = datetime.datetime.now() - datetime.timedelta(seconds=30)
+                accounts = [tagged_account.account for tagged_account in tagged_accounts
+                            if tagged_account.account.last_login < thirty_seconds_ago]
+            else:
+                accounts = [tagged_account.account for tagged_account in tagged_accounts]
             # Sort accounts by last_login
+            if not accounts:
+                raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
             accounts.sort(key=lambda account: account.last_login, reverse=False)
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
