@@ -885,7 +885,9 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
             query = query.filter(SSOAuditLog.timestamp <= until)
         if not include_list:
             query = query.filter(SSOAuditLog.username != "list_accounts")
-            
+            query = query.filter(SSOAuditLog.username != "update_location")
+            query = query.filter(SSOAuditLog.username != "heartbeat")
+
         # Don't include acknowledged (rate limit removed) entries
         query = query.filter(SSOAuditLog.rate_limit != False)
         

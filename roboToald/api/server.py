@@ -91,6 +91,11 @@ class UpdateLocationRequest(BaseModel):
     park_location: str | None = None
 
 
+class HeartbeatRequest(BaseModel):
+    access_key: str
+    character_name: str
+
+
 @app.get("/")
 async def root(request: Request):
     """Root endpoint for API health check."""
@@ -231,7 +236,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     )
 
 
-def _check_auth(request: Request, access_key_in: str, query_type: str):
+def _check_auth(request: Request, access_key_in: str, query_type: str | None):
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         client_ip = forwarded_for.split(',')[0].strip()
@@ -263,15 +268,16 @@ def _check_auth(request: Request, access_key_in: str, query_type: str):
         details = "Invalid access key"
         logger.warning(f"Authentication failed: {details}")
         # Create audit log entry before raising exception
-        sso_model.create_audit_log(
-            username=query_type,
-            ip_address=client_ip,
-            success=False,
-            discord_user_id=None,
-            account_id=None,
-            guild_id=None,
-            details=details
-        )
+        if query_type:
+            sso_model.create_audit_log(
+                username=query_type,
+                ip_address=client_ip,
+                success=False,
+                discord_user_id=None,
+                account_id=None,
+                guild_id=None,
+                details=details
+            )
         raise_auth_failed()
 
     # Past this point we are guaranteed to have a discord_user_id and guild_id
@@ -407,6 +413,27 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
                 f"bind = {location_data.bind_location is not None}, "
                 f"park = {location_data.park_location is not None}"
     )
+
+    return {'status': 'success'}
+
+
+@app.post("/heartbeat", status_code=status.HTTP_200_OK,
+          responses={
+              400: {"model": ErrorResponse, "description": "Character not found"},
+              401: {"model": ErrorResponse, "description": "Authentication failed"},
+          })
+async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
+    """
+    Authenticates and updates last_login for the character's account.
+    """
+    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
+        request, heartbeat_data.access_key, None)
+
+    account = sso_model.find_account_by_character(guild_id, heartbeat_data.character_name)
+    if not account:
+        raise_invalid_character()
+
+    sso_model.update_last_login(account.id)
 
     return {'status': 'success'}
 
