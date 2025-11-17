@@ -1324,7 +1324,7 @@ class SSOCommands(commands.Cog):
                 name=character_name,
                 klass=character_class
             )
-            message = f"✨🧍**Added character** `{char.name}` *({char.klass.value})* added for 🤖`{username}`."
+            message = f"✨🧍**Added character** `{char.name}` *({char.klass.value})* on account 🤖`{username}`."
         except sso_model.SSOAccountNotFoundError:
             message = f"⚠️🤖**Account not found:** `{username}`"
             await inter.send(content=message, ephemeral=True)
