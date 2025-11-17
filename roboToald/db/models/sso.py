@@ -206,9 +206,9 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
 
         if tagged_accounts:
             if inactive_only:
-                thirty_seconds_ago = datetime.datetime.now() - datetime.timedelta(seconds=30)
+                inactivity_time = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
                 accounts = [tagged_account.account for tagged_account in tagged_accounts
-                            if tagged_account.account.last_login < thirty_seconds_ago]
+                            if tagged_account.account.last_login < inactivity_time]
             else:
                 accounts = [tagged_account.account for tagged_account in tagged_accounts]
             # Sort accounts by last_login
@@ -1158,8 +1158,8 @@ def list_account_characters_by_class_zone(guild_id: int, klass: CharacterClass =
         # Join with accounts
         characters = characters.join(SSOAccount, SSOAccount.id == SSOAccountCharacter.account_id)
         #  exclude accounts with a recent last_login
-        thirty_seconds_ago = datetime.datetime.now() - datetime.timedelta(seconds=30)
-        characters = characters.filter(SSOAccount.last_login < thirty_seconds_ago)
+        inactivity_time = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+        characters = characters.filter(SSOAccount.last_login < inactivity_time)
         characters = characters.all()
         session.expunge_all()
     return characters
