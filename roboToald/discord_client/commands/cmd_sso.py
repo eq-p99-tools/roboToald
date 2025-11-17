@@ -3,6 +3,7 @@ import datetime
 import hashlib
 import re
 import time
+import zoneinfo
 
 import disnake
 from disnake.ext import commands
@@ -1223,6 +1224,7 @@ class SSOCommands(commands.Cog):
         # Convert the event time to a datetime object
         try:
             event_time = datetime.datetime.strptime(event_time, '%Y-%m-%d %I:%M %p')
+            event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo('America/New_York'))
         except ValueError:
             if inter:
                 await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)

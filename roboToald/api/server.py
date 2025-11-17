@@ -308,15 +308,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     # Filter accounts based on user access
     accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
 
-    # Get all tags for accessible accounts
-    accessible_tags = []
-    for account in accessible_accounts:
-        tags = account.tags
-        accessible_tags.extend(tags)
-    
-    tag_name_list = [tag.tag for tag in accessible_tags]
-
-    ### Build v2 response data
+    ### Build v2/v3 response data
     account_tree = {
         account.real_user: {
             "aliases": [
@@ -325,6 +317,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
             "tags": [
                 tag.tag for tag in account.tags
             ],
+            # Added in v3
             "characters": {
                 character.name: {
                     "class": character.klass,
@@ -332,13 +325,18 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
                     "park": character.park_location
                 } for character in account.characters
             },
+            # Added in v3
             "last_login": account.last_login,
         } for account in accessible_accounts
     }
 
+    dynamic_tag_zones, dynamic_tag_classes = sso_model.get_dynamic_tags()
     response = {
         # v2 call data
         "account_tree": account_tree,
+        # v3 call data
+        "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
+        "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
     }
     
     # Log successful request
@@ -458,7 +456,7 @@ def raise_tag_temporarily_empty():
     """Helper function to raise a consistent authentication failure exception."""
     raise HTTPException(
         status_code=status.HTTP_410_GONE,
-        detail="Tag temporarily empty due to activity requirements"
+        detail="Tag is empty (possibly temporarily, due to inactivity requirements)"
     )
 
 

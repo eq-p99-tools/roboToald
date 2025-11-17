@@ -1,4 +1,5 @@
 import datetime
+import itertools
 
 import sqlalchemy
 import sqlalchemy.exc
@@ -46,6 +47,22 @@ class SSOCharacterAlreadyExistsError(Exception):
 class SSOTagTemporarilyEmptyError(Exception):
     """Raised when an SSOAccountTag is temporarily empty due to activity"""
     pass
+
+class CharacterClass(enum.Enum):
+    Bard = "Bard"
+    Cleric = "Cleric"
+    Druid = "Druid"
+    Enchanter = "Enchanter"
+    Magician = "Magician"
+    Monk = "Monk"
+    Necromancer = "Necromancer"
+    Paladin = "Paladin"
+    Ranger = "Ranger"
+    Rogue = "Rogue"
+    ShadowKnight = "Shadow Knight"
+    Shaman = "Shaman"
+    Warrior = "Warrior"
+    Wizard = "Wizard"
 
 
 account_group_mapping = sqlalchemy.Table(
@@ -180,6 +197,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             session.expunge(account)
             return account
 
+        # If not found, try to find by traditional tag
         tagged_accounts = session.query(SSOTag).options(
             sqlalchemy.orm.joinedload(SSOTag.account)).filter(
             SSOTag.tag == username,
@@ -206,6 +224,37 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             session.expunge(account)
             return account
 
+        # If not found, try to find by dynamic tag
+        if username in get_dynamic_tag_list():
+            dynamic_tags_tuple = get_dynamic_tags()
+            dynamic_tag_zones: dict[str, list[str]] = dynamic_tags_tuple[0]
+            dynamic_tag_classes: dict[str, CharacterClass] = dynamic_tags_tuple[1]
+
+            # Figure out which zone/class the username is
+            zones = None
+            klass = None
+            for dt_zone, dt_zones in dynamic_tag_zones.items():
+                if username.startswith(dt_zone):
+                    zones = dt_zones
+                    break
+            for dt_class, dt_classes in dynamic_tag_classes.items():
+                if username.endswith(dt_class):
+                    klass = dt_classes
+                    break
+            if not zones or not klass:
+                raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
+
+            # Get the account
+            characters = list_account_characters_by_class_zone(guild_id, klass, zones)
+            if not characters:
+                raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
+            # Get a unique list of accounts from characters and sort by last_login
+            accounts = list(set([character.account for character in characters]))
+            accounts.sort(key=lambda account: account.last_login, reverse=False)
+            if not accounts:
+                raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
+            return accounts[0]
+
 
 def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSOAccount]:
     with base.get_session() as session:
@@ -221,6 +270,66 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
         accounts = query.all()
         session.expunge_all()
     return accounts
+
+
+def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
+    dynamic_tag_zones = {
+        "vp": ["Veeshan's Peak", "Skyfire Mountains"],
+        "st": ["Sleepers Tomb", "Eastern Wastelands"],
+        "tov": ["Temple of Veeshan", "Western Wastes"],
+        "dn": ["Dragon Necropolis", "Western Wastes"],
+        "kael": ["Kael Drakkel", "The Wakening Lands"],
+        "pog": ["Plane of Growth", "The Wakening Lands"],
+        "thurg": ["City of Thurgadin", "Icewell Keep"],
+        "ss": ["Skyshrine"],
+        "fear": ["Plane of Fear", "The Feerrott"]
+    }
+    dynamic_tag_classes = {
+        'bar': CharacterClass.Bard,
+        'brd': CharacterClass.Bard,
+        'bard': CharacterClass.Bard,
+        'clr': CharacterClass.Cleric,
+        'cle': CharacterClass.Cleric,
+        'cleric': CharacterClass.Cleric,
+        'dru': CharacterClass.Druid,
+        'druid': CharacterClass.Druid,
+        'enc': CharacterClass.Enchanter,
+        'enchanter': CharacterClass.Enchanter,
+        'mag': CharacterClass.Magician,
+        'mage': CharacterClass.Magician,
+        'magician': CharacterClass.Magician,
+        'mnk': CharacterClass.Monk,
+        'mon': CharacterClass.Monk,
+        'monk': CharacterClass.Monk,
+        'nec': CharacterClass.Necromancer,
+        'necro': CharacterClass.Necromancer,
+        'necromancer': CharacterClass.Necromancer,
+        'pal': CharacterClass.Paladin,
+        'pld': CharacterClass.Paladin,
+        'paladin': CharacterClass.Paladin,
+        'ran': CharacterClass.Ranger,
+        'rng': CharacterClass.Ranger,
+        'ranger': CharacterClass.Ranger,
+        'rog': CharacterClass.Rogue,
+        'rogue': CharacterClass.Rogue,
+        'sk': CharacterClass.ShadowKnight,
+        'shadowknight': CharacterClass.ShadowKnight,
+        'sha': CharacterClass.Shaman,
+        'shm': CharacterClass.Shaman,
+        'sham': CharacterClass.Shaman,
+        'shaman': CharacterClass.Shaman,
+        'war': CharacterClass.Warrior,
+        'warrior': CharacterClass.Warrior,
+        'wiz': CharacterClass.Wizard,
+        'wizard': CharacterClass.Wizard,
+    }
+    return dynamic_tag_zones, dynamic_tag_classes
+
+
+def get_dynamic_tag_list():
+    dt_zones, dt_classes = get_dynamic_tags()
+    dt_list = ["{}{}".format(a, b) for a, b in itertools.product(list(dt_zones), list(dt_classes))]
+    return dt_list
 
 
 def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
@@ -977,23 +1086,6 @@ def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 3
     return failed_attempts >= max_attempts
 
 
-class CharacterClass(enum.Enum):
-    Bard = "Bard"
-    Cleric = "Cleric"
-    Druid = "Druid"
-    Enchanter = "Enchanter"
-    Magician = "Magician"
-    Monk = "Monk"
-    Necromancer = "Necromancer"
-    Paladin = "Paladin"
-    Ranger = "Ranger"
-    Rogue = "Rogue"
-    ShadowKnight = "Shadow Knight"
-    Shaman = "Shaman"
-    Warrior = "Warrior"
-    Wizard = "Wizard"
-
-
 class SSOAccountCharacter(base.Base):
     """Maps character name/class pairs to SSO accounts."""
     __tablename__ = "sso_account_character"
@@ -1051,6 +1143,26 @@ def list_account_characters(guild_id: int, real_user: str = None) -> [SSOAccount
         session.expunge_all()
     return characters
 
+
+def list_account_characters_by_class_zone(guild_id: int, klass: CharacterClass = None, zone: str = None) -> [SSOAccountCharacter]:
+    with base.get_session() as session:
+        characters = session.query(SSOAccountCharacter).filter_by(guild_id=guild_id).options(
+            sqlalchemy.orm.joinedload(SSOAccountCharacter.account)
+        )
+        if klass:
+            characters = characters.filter_by(klass=klass)
+        if zone:
+            characters = characters.filter(
+                sqlalchemy.or_(SSOAccountCharacter.bind_location.in_(zone),
+                               SSOAccountCharacter.park_location.in_(zone)))
+        # Join with accounts
+        characters = characters.join(SSOAccount, SSOAccount.id == SSOAccountCharacter.account_id)
+        #  exclude accounts with a recent last_login
+        thirty_seconds_ago = datetime.datetime.now() - datetime.timedelta(seconds=30)
+        characters = characters.filter(SSOAccount.last_login < thirty_seconds_ago)
+        characters = characters.all()
+        session.expunge_all()
+    return characters
 
 def remove_account_character(guild_id: int, name: str) -> bool:
     """Remove a character/class from an account."""
