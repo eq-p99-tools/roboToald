@@ -273,16 +273,27 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
 
 
 def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
+    # dynamic_tag_zones = {
+    #     "vp": ["Veeshan's Peak", "Skyfire Mountains"],
+    #     "st": ["Sleepers Tomb", "Eastern Wastelands"],
+    #     "tov": ["Temple of Veeshan", "Western Wastes"],
+    #     "dn": ["Dragon Necropolis", "Western Wastes"],
+    #     "kael": ["Kael Drakkel", "The Wakening Lands"],
+    #     "pog": ["Plane of Growth", "The Wakening Lands"],
+    #     "thurg": ["City of Thurgadin", "Icewell Keep"],
+    #     "ss": ["Skyshrine"],
+    #     "fear": ["Plane of Fear", "The Feerrott"]
+    # }
     dynamic_tag_zones = {
-        "vp": ["Veeshan's Peak", "Skyfire Mountains"],
-        "st": ["Sleepers Tomb", "Eastern Wastelands"],
-        "tov": ["Temple of Veeshan", "Western Wastes"],
-        "dn": ["Dragon Necropolis", "Western Wastes"],
-        "kael": ["Kael Drakkel", "The Wakening Lands"],
-        "pog": ["Plane of Growth", "The Wakening Lands"],
-        "thurg": ["City of Thurgadin", "Icewell Keep"],
-        "ss": ["Skyshrine"],
-        "fear": ["Plane of Fear", "The Feerrott"]
+        "vp": ["veeshan", "skyfire"],
+        "st": ["sleeper", "eastwastes"],
+        "tov": ["templeveeshan", "westwastes"],
+        "dn": ["necropolis", "westwastes"],
+        "kael": ["kael", "wakening"],
+        "pog": ["growthplane", "wakening"],
+        "thurg": ["thurgadina", "thurgadinb"],
+        "ss": ["skyshrine"],
+        "fear": ["fearplane", "feerrott"]
     }
     dynamic_tag_classes = {
         'bar': CharacterClass.Bard,
