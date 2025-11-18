@@ -44,7 +44,7 @@ API_PORT = CONF.getint('sso', 'port', fallback=8080)
 API_HOST = CONF.get('sso', 'host', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
-SSO_INACTIVITY_SECONDS = CONF.get('sso', 'inactivity_seconds', fallback='62')
+SSO_INACTIVITY_SECONDS = CONF.getint('sso', 'inactivity_seconds', fallback='62')
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
