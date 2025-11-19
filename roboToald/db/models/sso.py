@@ -293,8 +293,16 @@ def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
         "pog": ["growthplane", "wakening"],
         "thurg": ["thurgadina", "thurgadinb"],
         "ss": ["skyshrine"],
-        "fear": ["fearplane", "feerrott"]
+        "fear": ["fearplane", "feerrott"],
+        "vox": ["everfrost", "permafrost"],
+        "naggy": ["lavastorm", "soldungb"],
     }
+    dynamic_tag_zones.update({
+        "dain": dynamic_tag_zones['thurg'],
+        "yeli": dynamic_tag_zones['ss'],
+        "zlandi": dynamic_tag_zones['dn'],
+    })
+
     dynamic_tag_classes = {
         'bar': CharacterClass.Bard,
         'brd': CharacterClass.Bard,
@@ -1150,6 +1158,7 @@ def list_account_characters(guild_id: int, real_user: str = None) -> [SSOAccount
             if not account:
                 raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
             characters = characters.filter_by(account_id=account.id)
+        characters = characters.options(sqlalchemy.orm.joinedload(SSOAccountCharacter.account))
         characters = characters.all()
         session.expunge_all()
     return characters
