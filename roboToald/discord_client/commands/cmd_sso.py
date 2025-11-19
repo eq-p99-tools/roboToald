@@ -533,6 +533,21 @@ class SSOCommands(commands.Cog):
     async def admin_account(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
+    @admin_account.sub_command(description="List accounts with no characters", name="list_no_characters")
+    async def account_list_no_characters(self, inter: disnake.ApplicationCommandInteraction):
+        accounts = sso_model.list_accounts(inter.guild_id)
+        accounts_no_characters = []
+        for account in accounts:
+            # Defensive: check for 'characters' attribute and that it's empty
+            chars = getattr(account, 'characters', None)
+            if chars is None or len(chars) == 0:
+                accounts_no_characters.append(account)
+        if not accounts_no_characters:
+            await inter.send(content="✅ **All accounts have at least one character.**", ephemeral=True)
+            return
+        formatted = '\n'.join([f" * `{account.real_user}`{": " + ", ".join(a.alias for a in account.aliases) if account.aliases else ""}" for account in accounts_no_characters])
+        await send_and_split(inter.send, f"**🤖 Accounts with NO characters:**\n{formatted}", ephemeral=True)
+
     @admin_account.sub_command(description="Create a new account", name="create")
     async def account_create(self, inter: disnake.ApplicationCommandInteraction,
                              username: str = commands.Param(
@@ -1318,6 +1333,7 @@ class SSOCommands(commands.Cog):
                                 description="Class of the character",
                             )):
         try:
+            character_name = character_name.lower().capitalize()
             char = sso_model.add_account_character(
                 guild_id=inter.guild_id,
                 real_user=username,
@@ -1334,7 +1350,7 @@ class SSOCommands(commands.Cog):
             await inter.send(content=message, ephemeral=True)
             return
         except Exception as e:
-            message = f"❌🧍**Error:** {e}"
+            message = f"❌🧍**Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
 
@@ -1347,6 +1363,7 @@ class SSOCommands(commands.Cog):
                                   autocomplete=character_autocomplete
                               )):
         try:
+            character_name = character_name.lower().capitalize()
             removed = sso_model.remove_account_character(
                 guild_id=inter.guild_id,
                 name=character_name
@@ -1358,7 +1375,7 @@ class SSOCommands(commands.Cog):
                 await inter.send(content=message, ephemeral=True)
                 return
         except Exception as e:
-            message = f"Error: {e}"
+            message = f"**Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
         await inter.send(content=message)
@@ -1373,23 +1390,22 @@ class SSOCommands(commands.Cog):
         try:
             characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
             if characters:
-                desc = " * " + "\n * ".join(f"`{c.name}` ({c.klass.value})" for c in characters)
+                desc = "\n".join(f" * `{c.name}` ({c.klass.value}){"" if username else f" on `{c.account.real_user}`" }" for c in characters)
             else:
                 desc = "\nNo characters found in this server."
             if username:
-                message = f"**🧍Characters for `{username}`:**{desc}"
+                message = f"**🧍Characters for `{username}`:**\n{desc}"
             else:
                 message = f"**🧍Characters:**\n{desc}"
         except sso_model.SSOAccountNotFoundError:
-            message = f"⚠️🤖**Account not found:**`{username}"
+            message = f"⚠️🤖**Account not found:** `{username}`"
             await inter.send(content=message, ephemeral=True)
             return
         except Exception as e:
-            message = f"❌🧍**Error:** {e}"
+            message = f"❌🧍**Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
-        await inter.send(content=message)
-
+        await send_and_split(inter.send, message, True)
 
     # @commands.Cog.listener()
     # async def on_guild_channel_create(self, channel):
