@@ -59,7 +59,7 @@ class CharacterClass(enum.Enum):
     Paladin = "Paladin"
     Ranger = "Ranger"
     Rogue = "Rogue"
-    ShadowKnight = "Shadow Knight"
+    ShadowKnight = "ShadowKnight"
     Shaman = "Shaman"
     Warrior = "Warrior"
     Wizard = "Wizard"
