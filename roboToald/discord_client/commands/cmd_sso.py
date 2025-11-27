@@ -1303,9 +1303,11 @@ class SSOCommands(commands.Cog):
         current_embed.add_field(name=event_time_field[0], value=event_time_field[1], inline=False)
         current_size += len(event_time_field[0]) + len(event_time_field[1])
         current_fields += 1
+        # Chunk logins into field-sized groups
+        login_chunks = split_fields(logins)
         # Add login_chunks fields
-        for i, chunk in enumerate(logins, 1):
-            field_name = f"SSO Logs {i}" if len(logins) > 1 else "SSO Logs"
+        for i, chunk in enumerate(login_chunks, 1):
+            field_name = f"SSO Logs {i}" if len(login_chunks) > 1 else "SSO Logs"
             field_value = chunk
             field_size = len(field_name) + len(field_value)
             # 6000 char limit per embed and 25 fields per embed
@@ -1317,7 +1319,7 @@ class SSOCommands(commands.Cog):
             current_embed.add_field(name=field_name, value=field_value, inline=False)
             current_size += field_size
             current_fields += 1
-        if not logins:
+        if not login_chunks:
             no_logs_value = f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
             if current_size + len("SSO Logs") + len(no_logs_value) > 6000 or current_fields >= 25:
                 embeds.append(current_embed)
