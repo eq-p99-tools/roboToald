@@ -1271,7 +1271,7 @@ class SSOCommands(commands.Cog):
             if "via tag/alias" in log.details:
                 username = log.details.split("via tag/alias ")[1]
             # logins.append(f"`{username:<14}` | `{log.username:<14}`: <t:{int(log.timestamp.timestamp())}:T> by <@{log.discord_user_id}>")
-            logins.append(f"<t:{int(log.timestamp.timestamp())}:T> <@{log.discord_user_id}>: `{', '.join(aliases)}` | `{username}` | `{log.username}`")
+            logins.append(f"<t:{int(log.timestamp.timestamp())}:T> <@{log.discord_user_id}>: `{', '.join(aliases) if aliases else "No Aliases"}` | `{username}` | `{log.username}`")
         logins.sort()
 
         def split_fields(lines, maxlen=1024):
