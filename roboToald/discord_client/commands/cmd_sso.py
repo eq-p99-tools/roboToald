@@ -979,7 +979,7 @@ class SSOCommands(commands.Cog):
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
-                
+
                 formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
                 
@@ -1195,7 +1195,7 @@ class SSOCommands(commands.Cog):
     @staticmethod
     async def _get_reconcile_embed_response(
             channel: disnake.TextChannel,
-            inter: disnake.ApplicationCommandInteraction = None) -> disnake.Embed | None:
+            inter: disnake.ApplicationCommandInteraction = None) -> list[disnake.Embed] | None:
         # Get the latest Status message in this channel
         status_embed = None
         async for message in channel.history(limit=50):
@@ -1293,22 +1293,38 @@ class SSOCommands(commands.Cog):
             return chunks
 
         # Format response message
-        embed = disnake.Embed(title="SSO Reconciliation")
-        embed.add_field(name="Event Time", value=f"<t:{int(event_time.timestamp())}:F>", inline=False)
-        login_chunks = split_fields(logins)
-        for i, chunk in enumerate(login_chunks, 1):
-            embed.add_field(
-                name=f"SSO Logs {i}" if len(login_chunks) > 1 else "SSO Logs",
-                value=chunk,
-                inline=False
-            )
-        if not login_chunks:
-            embed.add_field(
-                name="SSO Logs",
-                value=f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>.",
-                inline=False
-            )
-        return embed
+        embed_title = "SSO Reconciliation"
+        embeds = []
+        current_embed = disnake.Embed(title=embed_title)
+        current_size = len(embed_title)
+        # Add Event Time field first
+        event_time_field = ("Event Time", f"<t:{int(event_time.timestamp())}:F>")
+        current_embed.add_field(name=event_time_field[0], value=event_time_field[1], inline=False)
+        current_size += len(event_time_field[0]) + len(event_time_field[1])
+        # Add login_chunks fields
+        for i, chunk in enumerate(logins, 1):
+            field_name = f"SSO Logs {i}" if len(logins) > 1 else "SSO Logs"
+            field_value = chunk
+            field_size = len(field_name) + len(field_value)
+            # 6000 char limit per embed
+            if current_size + field_size > 6000:
+                embeds.append(current_embed)
+                current_embed = disnake.Embed(title=embed_title)
+                current_size = len(embed_title)
+            current_embed.add_field(name=field_name, value=field_value, inline=False)
+            current_size += field_size
+        if not logins:
+            no_logs_value = f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
+            if current_size + len("SSO Logs") + len(no_logs_value) > 6000:
+                embeds.append(current_embed)
+                current_embed = disnake.Embed(title=embed_title)
+                current_size = len(embed_title)
+            current_embed.add_field(name="SSO Logs", value=no_logs_value, inline=False)
+            current_size += len("SSO Logs") + len(no_logs_value)
+        # Append last embed if it has fields
+        if len(current_embed.fields) > 0:
+            embeds.append(current_embed)
+        return embeds
 
     @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
     async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
@@ -1319,10 +1335,11 @@ class SSOCommands(commands.Cog):
             return
 
         await inter.response.defer()
-        embed = await self._get_reconcile_embed_response(channel=inter.channel, inter=inter)
+        embeds = await self._get_reconcile_embed_response(channel=inter.channel, inter=inter)
 
-        if embed:
-            await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+        if embeds:
+            for embed in embeds:
+                await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
 
     @sso.sub_command_group(description="Character commands", name="character")
     async def character(self, inter: disnake.ApplicationCommandInteraction):
