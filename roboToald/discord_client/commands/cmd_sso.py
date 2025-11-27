@@ -1297,30 +1297,36 @@ class SSOCommands(commands.Cog):
         embeds = []
         current_embed = disnake.Embed(title=embed_title)
         current_size = len(embed_title)
+        current_fields = 0
         # Add Event Time field first
         event_time_field = ("Event Time", f"<t:{int(event_time.timestamp())}:F>")
         current_embed.add_field(name=event_time_field[0], value=event_time_field[1], inline=False)
         current_size += len(event_time_field[0]) + len(event_time_field[1])
+        current_fields += 1
         # Add login_chunks fields
         for i, chunk in enumerate(logins, 1):
             field_name = f"SSO Logs {i}" if len(logins) > 1 else "SSO Logs"
             field_value = chunk
             field_size = len(field_name) + len(field_value)
-            # 6000 char limit per embed
-            if current_size + field_size > 6000:
+            # 6000 char limit per embed and 25 fields per embed
+            if current_size + field_size > 6000 or current_fields >= 25:
                 embeds.append(current_embed)
                 current_embed = disnake.Embed(title=embed_title)
                 current_size = len(embed_title)
+                current_fields = 0
             current_embed.add_field(name=field_name, value=field_value, inline=False)
             current_size += field_size
+            current_fields += 1
         if not logins:
             no_logs_value = f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
-            if current_size + len("SSO Logs") + len(no_logs_value) > 6000:
+            if current_size + len("SSO Logs") + len(no_logs_value) > 6000 or current_fields >= 25:
                 embeds.append(current_embed)
                 current_embed = disnake.Embed(title=embed_title)
                 current_size = len(embed_title)
+                current_fields = 0
             current_embed.add_field(name="SSO Logs", value=no_logs_value, inline=False)
             current_size += len("SSO Logs") + len(no_logs_value)
+            current_fields += 1
         # Append last embed if it has fields
         if len(current_embed.fields) > 0:
             embeds.append(current_embed)
