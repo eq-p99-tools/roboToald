@@ -180,6 +180,23 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             session.expunge(account)
             return account
 
+        # If not found, try to find by character name
+        character = session.query(SSOAccountCharacter).options(
+            sqlalchemy.orm.joinedload(SSOAccountCharacter.account)).filter(
+            SSOAccountCharacter.name == username,
+            SSOAccountCharacter.guild_id == guild_id
+        ).one_or_none()
+
+        if character:
+            account = session.query(SSOAccount).options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
+                SSOAccount.id == character.account_id
+            ).one_or_none()
+            session.expunge(account)
+            return account
+
         # If not found, try to find by alias
         alias = session.query(SSOAccountAlias).options(
             sqlalchemy.orm.joinedload(SSOAccountAlias.account)).filter(

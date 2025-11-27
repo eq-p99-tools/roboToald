@@ -368,6 +368,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
     # Get the account for the character
     account = sso_model.find_account_by_character(guild_id, location_data.character_name)
     if not account:
+        logger.warning(f"Character {location_data.character_name} not found")
         raise_invalid_character()
 
     # Check if the discord user has access to this account
