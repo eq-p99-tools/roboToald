@@ -1240,8 +1240,8 @@ class SSOCommands(commands.Cog):
         try:
             event_time = datetime.datetime.strptime(event_time, '%Y-%m-%d %I:%M %p')
             print(f"Got original event time: {event_time}")
-            event_time_with_tz = event_time.replace(tzinfo=zoneinfo.ZoneInfo('America/New_York'))
-            print(f"Replaced timezone on event time: {event_time_with_tz}")
+            event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+            print(f"Replaced timezone on event time: {event_time}")
         except ValueError:
             if inter:
                 await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)
@@ -1255,15 +1255,15 @@ class SSOCommands(commands.Cog):
         # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
         start_time = event_time - datetime.timedelta(minutes=30)
         end_time = event_time + datetime.timedelta(hours=1)
-        start_time_with_tz = event_time_with_tz - datetime.timedelta(minutes=30)
-        end_time_with_tz = event_time_with_tz + datetime.timedelta(hours=1)
         print(f"RECONCILE Start: {start_time}")
         print(f"RECONCILE End: {end_time}")
 
+        local_tz = datetime.datetime.now().astimezone().tzinfo
+
         logs = sso_model.get_audit_logs(
             guild_id=channel.guild.id, success=True,
-            since=start_time,
-            until=end_time)
+            since=start_time.astimezone(local_tz).replace(tzinfo=None),
+            until=end_time.astimezone(local_tz).replace(tzinfo=None))
         logins = []
         for log in logs:
             username = log.username
@@ -1305,7 +1305,7 @@ class SSOCommands(commands.Cog):
         if not login_chunks:
             embed.add_field(
                 name="SSO Logs",
-                value=f"No SSO activity for period <t:{int(start_time_with_tz.timestamp())}:T> to <t:{int(end_time_with_tz.timestamp())}:T>.",
+                value=f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>.",
                 inline=False
             )
         return embed
