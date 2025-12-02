@@ -225,6 +225,10 @@ def calculate_points_for_session(
         elif offhours_minute:
             point_value *= config.OFFHOURS_MULTIPLIER
 
+        # Round off point_value only if it is within 0.1 of an integer
+        if abs(point_value - round(point_value)) < 0.1:
+            point_value = round(point_value)
+
         # Iterate through event pairs and find active ones
         active_players = []
         for member, m_norm_windows in normalized_member_windows.items():
