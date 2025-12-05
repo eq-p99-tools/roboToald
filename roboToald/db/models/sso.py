@@ -3,6 +3,7 @@ import itertools
 
 import sqlalchemy
 import sqlalchemy.exc
+from sqlalchemy import func as sqlalchemy_func
 import sqlalchemy.orm
 import sqlalchemy_utils
 import enum
@@ -183,7 +184,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
         # If not found, try to find by character name
         character = session.query(SSOAccountCharacter).options(
             sqlalchemy.orm.joinedload(SSOAccountCharacter.account)).filter(
-            SSOAccountCharacter.name == username,
+            sqlalchemy_func.lower(SSOAccountCharacter.name) == username.lower(),
             SSOAccountCharacter.guild_id == guild_id
         ).one_or_none()
 
