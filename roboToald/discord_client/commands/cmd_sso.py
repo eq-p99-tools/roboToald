@@ -236,7 +236,8 @@ async def account_and_alias_autocomplete(inter: disnake.ApplicationCommandIntera
     try:
         accounts = await account_autocomplete(inter, string)
         aliases = await alias_autocomplete(inter, string)
-        return (accounts + aliases)[:25]
+        characters = await character_autocomplete(inter, string)
+        return (accounts + aliases + characters)[:25]
     except Exception:
         # In case of error, return an empty list
         return []
