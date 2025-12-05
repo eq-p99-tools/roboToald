@@ -172,6 +172,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
         account = session.query(SSOAccount).options(
             sqlalchemy.orm.joinedload(SSOAccount.groups),
             sqlalchemy.orm.joinedload(SSOAccount.tags),
+            sqlalchemy.orm.joinedload(SSOAccount.characters),
             sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
             SSOAccount.real_user == username,
             SSOAccount.guild_id == guild_id
@@ -192,6 +193,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
                 SSOAccount.id == character.account_id
             ).one_or_none()
@@ -209,6 +211,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
                 SSOAccount.id == alias.account_id
             ).one_or_none()
@@ -236,6 +239,7 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases)).filter(
                 SSOAccount.id == accounts[0].id
             ).one_or_none()
