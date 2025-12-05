@@ -489,7 +489,7 @@ class SSOCommands(commands.Cog):
             tag_string = f"\n🏷️ Tags:\n{tag_names}" if tag_names else ""
             alias_names = '\n'.join([f'• `{alias.alias}`' for alias in account.aliases])
             alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
-            character_names = '\n'.join([f'• `{character.name}` ({character.class_})' for character in account.characters])
+            character_names = '\n'.join([f'• `{character.name}` ({character.klass})' for character in account.characters])
             character_string = f"\n🧍 Characters:\n{character_names}" if character_names else ""
             await inter.send(
                 content=f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}{character_string}",
