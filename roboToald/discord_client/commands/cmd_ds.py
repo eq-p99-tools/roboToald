@@ -373,6 +373,10 @@ async def status(
     else:
         current_rate = f"0 of {current_rate}"
 
+    # Round off point_value only if it is within 0.1 of an integer
+    if abs(current_rate - round(current_rate)) < 0.1:
+        current_rate = round(current_rate)
+
     message = f"Current camp status: `{mode_message} mode` ({current_rate} SKP/min)\n"
     active_members = set()
     if active_events:
