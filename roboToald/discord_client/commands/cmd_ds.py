@@ -246,7 +246,7 @@ def calculate_points_for_session(
 
         # Point value is the minute-rate divided by active members, lowest=1
         if active_players:
-            point_value = max(1.0, point_value / len(active_players))
+            point_value = round(max(1.0, point_value / len(active_players)), 1)
 
         # Ensure member exists and add points
         for member in active_players:
@@ -388,7 +388,7 @@ async def status(
     # so that the code below doesn't create an extra random Set for no reason
     if len(active_events) > 0:
         # Point value is the minute-rate divided by active members, lowest=1
-        current_rate_str = str(max(1.0, current_rate / len(active_events)))
+        current_rate_str = str(max(1.0, round(current_rate / len(active_events), 1)))
     else:
         current_rate_str = f"0 of {current_rate}"
 
