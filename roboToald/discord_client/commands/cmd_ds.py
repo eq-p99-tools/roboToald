@@ -364,6 +364,10 @@ async def status(
         current_rate *= config.OFFHOURS_MULTIPLIER
         mode_message = "offhours"
 
+    # Round off point_value only if it is within 0.1 of an integer
+    if abs(current_rate - round(current_rate)) < 0.1:
+        current_rate = round(current_rate)
+
     # TODO: Make sure active_events can't be more than active_members below
     # and if it can, clean this up so the rate is based on active_members, or
     # so that the code below doesn't create an extra random Set for no reason
@@ -372,10 +376,6 @@ async def status(
         current_rate = max(1, current_rate / len(active_events))
     else:
         current_rate = f"0 of {current_rate}"
-
-    # Round off point_value only if it is within 0.1 of an integer
-    if abs(current_rate - round(current_rate)) < 0.1:
-        current_rate = round(current_rate)
 
     message = f"Current camp status: `{mode_message} mode` ({current_rate} SKP/min)\n"
     active_members = set()
