@@ -170,16 +170,16 @@ def calculate_points_for_session(
     # {member1: [(start1, stop1), (start2, stop2)], member2: []}
 
     # Normalize quake windows to start_time = 0
-    quake_windows = points_model.get_quake_windows(
-        guild_id, start_time, stop_time)
-    normalized_windows = []
-    for start_window, stop_window in quake_windows:
-        norm_start = round((start_window - start_time).total_seconds() / 60)
-        norm_stop = round((stop_window - start_time).total_seconds() / 60)
-        normalized_windows.append((
-            max(0, norm_start),
-            min(standard_minutes, norm_stop)
-        ))
+    # quake_windows = points_model.get_quake_windows(
+    #     guild_id, start_time, stop_time)
+    # normalized_windows = []
+    # for start_window, stop_window in quake_windows:
+    #     norm_start = round((start_window - start_time).total_seconds() / 60)
+    #     norm_stop = round((stop_window - start_time).total_seconds() / 60)
+    #     normalized_windows.append((
+    #         max(0, norm_start),
+    #         min(standard_minutes, norm_stop)
+    #     ))
 
     # Normalize offhours to start_time = 0
     # This is likely not the most efficient way to do this (I'm VERY tired)
@@ -190,44 +190,52 @@ def calculate_points_for_session(
     ) - datetime.timedelta(days=1)
 
     # Find the offhours start and end time
-    offhours_start = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_START)
-    offhours_end = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_END)
+    # offhours_start = today_midnight_eastern + datetime.timedelta(
+    #     minutes=config.OFFHOURS_START)
+    # offhours_end = today_midnight_eastern + datetime.timedelta(
+    #     minutes=config.OFFHOURS_END)
 
     # To be the current window, the end time has to be AFTER this start time
-    while offhours_end < start_time:
-        offhours_end = offhours_end + datetime.timedelta(days=1)
-        offhours_start = offhours_start + datetime.timedelta(days=1)
+    # while offhours_end < start_time:
+    #     offhours_end = offhours_end + datetime.timedelta(days=1)
+    #     offhours_start = offhours_start + datetime.timedelta(days=1)
 
     # Now normalize the same way we did for the windows
-    norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
-    norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
+    # norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
+    # norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
 
     points_earned_by_rate = {}
     for minute in range(standard_minutes):
+        ### THE OLD WAY
         # Start with a standard value for one minute of time
-        point_value = config.POINTS_PER_MINUTE
-        quake_minute = False
-        offhours_minute = norm_oh_start <= (minute % (24*60)) <= norm_oh_stop
+        # point_value = config.POINTS_PER_MINUTE
+        # quake_minute = False
+        # offhours_minute = norm_oh_start <= (minute % (24*60)) <= norm_oh_stop
 
         # Check if quake mode
-        for c_start_window, c_stop_window in normalized_windows:
-            if c_start_window <= minute <= c_stop_window:
-                quake_minute = True
-                break
+        # for c_start_window, c_stop_window in normalized_windows:
+        #     if c_start_window <= minute <= c_stop_window:
+        #         quake_minute = True
+        #         break
 
         # Adjust points for offhours / quake
-        if quake_minute and offhours_minute:
-            point_value *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
-        elif quake_minute:
-            point_value *= config.QUAKE_MULTIPLIER
-        elif offhours_minute:
-            point_value *= config.OFFHOURS_MULTIPLIER
+        # if quake_minute and offhours_minute:
+        #     point_value *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
+        # elif quake_minute:
+        #     point_value *= config.QUAKE_MULTIPLIER
+        # elif offhours_minute:
+        #     point_value *= config.OFFHOURS_MULTIPLIER
+
+        ### THE NEW WAY
+        SKPb: int = config.SKP_BASELINE
+        SKPm: int = config.SKP_MINIMUM
+        SKPp: int = config.SKP_PLATEAU_MINUTE
+
+        point_value: float = round(SKPm + (SKPb - SKPm) * min(1.0, (minute % (24*60)) / SKPp), 1)
 
         # Round off point_value only if it is within 0.1 of an integer
-        if abs(point_value - round(point_value)) < 0.1:
-            point_value = round(point_value)
+        # if abs(point_value - round(point_value)) < 0.1:
+        #     point_value = round(point_value)
 
         # Iterate through event pairs and find active ones
         active_players = []
@@ -238,7 +246,7 @@ def calculate_points_for_session(
 
         # Point value is the minute-rate divided by active members, lowest=1
         if active_players:
-            point_value = max(1, point_value / len(active_players))
+            point_value = max(1.0, point_value / len(active_players))
 
         # Ensure member exists and add points
         for member in active_players:
@@ -324,60 +332,67 @@ async def status(
             description="Show detailed point data.")):
     await inter.response.defer()
     active_events = points_model.get_active_events(inter.guild_id)
-    last_window = points_model.get_last_event(
-        user_id=0, guild_id=inter.guild_id)
-    is_quake = last_window and last_window.active
-    is_offhours = False
+    # last_window = points_model.get_last_event(
+    #     user_id=0, guild_id=inter.guild_id)
+    # is_quake = last_window and last_window.active
+    # is_offhours = False
     now = datetime.datetime.now().replace(second=0)
-    tznow = now.astimezone(config.OFFHOURS_ZONE)
+    # tznow = now.astimezone(config.OFFHOURS_ZONE)
 
     points_for_session = calculate_points_for_session(
         guild_id=inter.guild_id, stop_time=now)
     points_per_member = sum_points_by_member(points_for_session)
 
     # Find the offhours start and end time
-    today_midnight_eastern = tznow.replace(
-        hour=0, minute=0, second=0, microsecond=0
-        # Subtract 1 day just to be safe, we will add days later if needed
-    ) - datetime.timedelta(days=1)
+    # today_midnight_eastern = tznow.replace(
+    #     hour=0, minute=0, second=0, microsecond=0
+    #     # Subtract 1 day just to be safe, we will add days later if needed
+    # ) - datetime.timedelta(days=1)
 
-    offhours_start = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_START)
-    offhours_end = today_midnight_eastern + datetime.timedelta(
-        minutes=config.OFFHOURS_END)
-    day_diff = (tznow - offhours_start).days
-    offhours_start += datetime.timedelta(days=day_diff)
-    offhours_end += datetime.timedelta(days=day_diff)
-    if offhours_start < tznow < offhours_end:
-        is_offhours = True
+    # offhours_start = today_midnight_eastern + datetime.timedelta(
+    #     minutes=config.OFFHOURS_START)
+    # offhours_end = today_midnight_eastern + datetime.timedelta(
+    #     minutes=config.OFFHOURS_END)
+    # day_diff = (tznow - offhours_start).days
+    # offhours_start += datetime.timedelta(days=day_diff)
+    # offhours_end += datetime.timedelta(days=day_diff)
+    # if offhours_start < tznow < offhours_end:
+    #     is_offhours = True
 
+    SKPb: int = config.SKP_BASELINE
+    SKPm: int = config.SKP_MINIMUM
+    SKPp: int = config.SKP_PLATEAU_MINUTE
 
-    current_rate = config.POINTS_PER_MINUTE
-    mode_message = "normal"
-    if is_quake and is_offhours:
-        current_rate *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
-        mode_message = "offhours quake"
-    elif is_quake:
-        current_rate *= config.QUAKE_MULTIPLIER
-        mode_message = "quake"
-    elif is_offhours:
-        current_rate *= config.OFFHOURS_MULTIPLIER
-        mode_message = "offhours"
+    start_time = points_model.get_last_pop_time()
+    time_at_camp = datetime.datetime.now().astimezone() - start_time
+    minute = math.ceil(time_at_camp.total_seconds() / 60)
+    current_rate: float = round(SKPm + (SKPb - SKPm) * min(1.0, (minute % (24*60)) / SKPp), 1)
+    # current_rate = config.POINTS_PER_MINUTE
+    # mode_message = "normal"
+    # if is_quake and is_offhours:
+    #     current_rate *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
+    #     mode_message = "offhours quake"
+    # elif is_quake:
+    #     current_rate *= config.QUAKE_MULTIPLIER
+    #     mode_message = "quake"
+    # elif is_offhours:
+    #     current_rate *= config.OFFHOURS_MULTIPLIER
+    #     mode_message = "offhours"
 
     # Round off point_value only if it is within 0.1 of an integer
-    if abs(current_rate - round(current_rate)) < 0.1:
-        current_rate = round(current_rate)
+    # if abs(current_rate - round(current_rate)) < 0.1:
+    #     current_rate = round(current_rate)
 
     # TODO: Make sure active_events can't be more than active_members below
     # and if it can, clean this up so the rate is based on active_members, or
     # so that the code below doesn't create an extra random Set for no reason
     if len(active_events) > 0:
         # Point value is the minute-rate divided by active members, lowest=1
-        current_rate = max(1, current_rate / len(active_events))
+        current_rate_str = str(max(1.0, current_rate / len(active_events)))
     else:
-        current_rate = f"0 of {current_rate}"
+        current_rate_str = f"0 of {current_rate}"
 
-    message = f"Current camp status: `{mode_message} mode` ({current_rate} SKP/min)\n"
+    message = f"Current camp status: `{1440 - minute} minutes to spawn` ({current_rate_str} SKP/min)\n"
     active_members = set()
     if active_events:
         message += "\nMembers in camp:\n"
@@ -499,13 +514,11 @@ async def tod(
         #     default=0,
         #     ge=0,
         #     description="Backdate DS pop by <X> minutes."),
-        # quake: bool = commands.Param(
-        #     default=False,
-        #     description="Quake?"
-        # )
+        is_quake: bool = commands.Param(
+            default=False,
+            description="Quake?"
+        )
 ):
-    # Quake mode isn't needed presently, but maybe in the future
-    quake = False
     # Disable backdating for now since it seems to break things
     backdate=0
 
@@ -566,7 +579,7 @@ async def tod(
         message += f"<@{member}>: {session_points[0]}\n"
 
     # Grant adjustment to active members for quake bonus
-    if quake and active_members > 0:
+    if is_quake and active_members > 0:
         message += f"\nQuake Bonus of {config.QUAKE_BONUS} granted to active members: "
         for event in active_events:
             if event.user_id == 0:
@@ -586,18 +599,18 @@ async def tod(
     points_model.start_event(pop_event)
 
     ### In current meta, restart previously active members because people don't leave
-    for event in active_events:
-        if event.user_id == 0:
-            ### In the current meta, don't stop comp on ToD (used for quake time)
-            start_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
-                time=stop_time + datetime.timedelta(seconds=1), active=True)
-            points_model.start_event(start_event)
-            continue
-        start_event = points_model.PointsAudit(
-            user_id=event.user_id, guild_id=inter.guild_id, event=constants.Event.IN,
-            time=stop_time + datetime.timedelta(seconds=1), active=True)
-        points_model.start_event(start_event)
+    # for event in active_events:
+    #     if event.user_id == 0:
+    #         ### In the current meta, don't stop comp on ToD (used for quake time)
+    #         start_event = points_model.PointsAudit(
+    #             user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
+    #             time=stop_time + datetime.timedelta(seconds=1), active=True)
+    #         points_model.start_event(start_event)
+    #         continue
+    #     start_event = points_model.PointsAudit(
+    #         user_id=event.user_id, guild_id=inter.guild_id, event=constants.Event.IN,
+    #         time=stop_time + datetime.timedelta(seconds=1), active=True)
+    #     points_model.start_event(start_event)
 
     await utils.send_and_split(inter, message)
 
