@@ -429,8 +429,7 @@ async def status(
                     message += f"; rates: {session_rates}"
                 message += f")\n"
 
-    await inter.send(
-        message, allowed_mentions=disnake.AllowedMentions(users=False))
+    await utils.send_and_split(inter, message)
 
 
 def sum_points_by_member(

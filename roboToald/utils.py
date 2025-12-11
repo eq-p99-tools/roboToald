@@ -49,19 +49,20 @@ def send_alert(alert, message):
 
 
 async def send_and_split(
-        inter: disnake.ApplicationCommandInteraction, long_message: str):
+        inter: disnake.ApplicationCommandInteraction, long_message: str,
+        allowed_mentions = disnake.AllowedMentions(users=False)):
     # Messages can only be 2000 chars so break it up if necessary
     if len(long_message) < 2000:
         await inter.send(
             content=long_message,
-            allowed_mentions=disnake.AllowedMentions(users=False)
+            allowed_mentions=allowed_mentions
         )
     else:
         messages = split_message(long_message)
         for message in messages:
             await inter.send(
                 content=message,
-                allowed_mentions=disnake.AllowedMentions(users=False)
+                allowed_mentions=allowed_mentions
             )
 
 
