@@ -569,7 +569,9 @@ class SSOCommands(commands.Cog):
         # Implement account creation logic
         try:
             account = sso_model.create_account(inter.guild_id, username, password, group)
-            await inter.send(content=f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}")
+            message = f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}"
+            await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
+            await inter.channel.send(f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none())
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
         except sso_model.SSOAccountGroupNotFoundError:
@@ -587,8 +589,10 @@ class SSOCommands(commands.Cog):
                              )):
         # Implement account update logic
         try:
-            account = sso_model.update_account(inter.guild_id, username, new_password)
-            await inter.send(content=f"🔑🤖 **Updated password** for account `{username}`")
+            sso_model.update_account(inter.guild_id, username, new_password)
+            message = f"🔑🤖 **Updated password** for account `{username}`"
+            await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
+            await inter.channel.send(f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none())
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
