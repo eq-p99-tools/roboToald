@@ -142,6 +142,20 @@ async def start(
                      allowed_mentions=disnake.AllowedMentions(users=False))
 
 
+def get_point_value(minute: int) -> float:
+    SKPs: int = config.SKP_STARTTIME
+    SKPb: int = config.SKP_BASELINE
+    SKPm: int = config.SKP_MINIMUM
+    SKPp: int = config.SKP_PLATEAU_MINUTE
+
+    if minute < SKPs:
+        return float(SKPm)
+    elif minute >= SKPp:
+        return float(SKPb)
+    else:
+        return round(SKPm + (SKPb - SKPm) * (minute - SKPs) / (SKPp - SKPs), 1)
+
+
 def calculate_points_for_session(
         guild_id: int, stop_time: datetime.datetime
 ) -> dict[int, dict[int, int]]:
@@ -227,11 +241,7 @@ def calculate_points_for_session(
         #     point_value *= config.OFFHOURS_MULTIPLIER
 
         ### THE NEW WAY
-        SKPb: int = config.SKP_BASELINE
-        SKPm: int = config.SKP_MINIMUM
-        SKPp: int = config.SKP_PLATEAU_MINUTE
-
-        point_value: float = round(SKPm + (SKPb - SKPm) * min(1.0, (minute % (24*60)) / SKPp), 1)
+        point_value = get_point_value(minute)
 
         # Round off point_value only if it is within 0.1 of an integer
         # if abs(point_value - round(point_value)) < 0.1:
@@ -359,14 +369,11 @@ async def status(
     # if offhours_start < tznow < offhours_end:
     #     is_offhours = True
 
-    SKPb: int = config.SKP_BASELINE
-    SKPm: int = config.SKP_MINIMUM
-    SKPp: int = config.SKP_PLATEAU_MINUTE
-
     start_time = points_model.get_last_pop_time()
     time_at_camp = datetime.datetime.now().astimezone() - start_time
     minute = math.ceil(time_at_camp.total_seconds() / 60)
-    current_rate: float = round(SKPm + (SKPb - SKPm) * min(1.0, (minute % (24*60)) / SKPp), 1)
+    current_rate = get_point_value(minute)
+
     # current_rate = config.POINTS_PER_MINUTE
     # mode_message = "normal"
     # if is_quake and is_offhours:

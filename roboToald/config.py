@@ -18,12 +18,14 @@ SOON_THRESHOLD = CONF.getint(
     'raidtargets', 'soon_threshold',
     fallback=48 * 60 * 60)  # Default: 48 hours
 
+SKP_STARTTIME = CONF.getint(
+    'ds', 'skp_starttime', fallback=8 * 60)
 SKP_BASELINE = CONF.getint(
-    'ds', 'skp_baseline', fallback=30)
+    'ds', 'skp_baseline', fallback=46)
 SKP_MINIMUM = CONF.getint(
-    'ds', 'skp_minimum', fallback=6)
+    'ds', 'skp_minimum', fallback=1)
 SKP_PLATEAU_MINUTE = CONF.getint(
-    'ds', 'skp_plateau_minute', fallback=1080)
+    'ds', 'skp_plateau_minute', fallback=20 * 60)
 
 # OFFHOURS_MULTIPLIER = CONF.getfloat(
 #     'ds', 'offhours_multiplier', fallback=2)
