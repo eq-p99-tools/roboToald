@@ -197,11 +197,11 @@ def calculate_points_for_session(
 
     # Normalize offhours to start_time = 0
     # This is likely not the most efficient way to do this (I'm VERY tired)
-    today_midnight_eastern = start_time.replace(
-        hour=0, minute=0, second=0, microsecond=0,
-        tzinfo=config.OFFHOURS_ZONE
-        # Subtract 1 day just to be safe, we will add days later if needed
-    ) - datetime.timedelta(days=1)
+    # today_midnight_eastern = start_time.replace(
+    #     hour=0, minute=0, second=0, microsecond=0,
+    #     tzinfo=config.OFFHOURS_ZONE
+    #     # Subtract 1 day just to be safe, we will add days later if needed
+    # ) - datetime.timedelta(days=1)
 
     # Find the offhours start and end time
     # offhours_start = today_midnight_eastern + datetime.timedelta(
@@ -241,7 +241,7 @@ def calculate_points_for_session(
         #     point_value *= config.OFFHOURS_MULTIPLIER
 
         ### THE NEW WAY
-        point_value = get_point_value(minute)
+        point_value = get_point_value(minute % (24 * 60))
 
         # Round off point_value only if it is within 0.1 of an integer
         # if abs(point_value - round(point_value)) < 0.1:
@@ -371,7 +371,7 @@ async def status(
 
     start_time = points_model.get_last_pop_time()
     time_at_camp = datetime.datetime.now().astimezone() - start_time
-    minute = math.ceil(time_at_camp.total_seconds() / 60)
+    minute = math.ceil(time_at_camp.total_seconds() / 60) % (60 * 24)
     current_rate = get_point_value(minute)
 
     # current_rate = config.POINTS_PER_MINUTE
