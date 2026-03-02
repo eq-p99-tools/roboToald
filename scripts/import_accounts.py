@@ -9,7 +9,7 @@ Format of the accounts file (CSV):
     account_name,account_password,group_name,aliases,tags
 
 Where:
-    - aliases and tags are pipe-delimited lists
+    - aliases, tags, and characters are pipe-delimited lists
     - characters and their class are separated by semicolons
     - Example: account1,password1,group1,alias1|alias2,tag1|tag2,character1;class1|character2;class2
 """
