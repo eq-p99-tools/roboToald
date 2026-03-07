@@ -1166,7 +1166,7 @@ class SSOCommands(commands.Cog):
                                 description="Reason for revoking access.")
                             ):
         try:
-            sso_model.revoke_user_access(inter.guild_id, inter.user.id, expiry_days, details)
+            sso_model.revoke_user_access(inter.guild_id, user.id, expiry_days, details)
             message = f"❌🔑 **Revoked access to user:** <@{user.id}>"
             message += f"\n* **Days:** {expiry_days if expiry_days > 0 else 'Permanent'}"
             if details:
