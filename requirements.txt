@@ -9,5 +9,6 @@ python-dateutil
 pynacl
 fastapi
 uvicorn
+websockets
 pydantic
 alembic

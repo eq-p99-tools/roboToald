@@ -1,16 +1,19 @@
 """REST API server implementation for RoboToald."""
+import asyncio
+import json
 import logging
 from typing import Union
 import threading
 
 from disnake.ext import commands
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import uvicorn
 
 from roboToald import config
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
+from roboToald.api.websocket import manager as ws_manager, ClientConnection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +25,11 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 # Expose a function to run the API server in a thread with injected discord_client
 
 
+@app.on_event("startup")
+async def _on_startup():
+    ws_manager.set_event_loop(asyncio.get_running_loop())
+
+
 def run_api_server(discord_client, certfile, keyfile, host, port):
     """
     Start the API server in a background thread, injecting the Discord client.
@@ -29,6 +37,7 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
     Otherwise, it will run without TLS (HTTP).
     """
     app.state.discord_client = discord_client
+    ws_manager.set_discord_client(discord_client)
 
     # Check if both certfile and keyfile are provided
     use_ssl = certfile and keyfile
@@ -222,6 +231,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
 
     # Authentication successful - update account's last_login timestamp
     sso_model.update_last_login(account_id)
+    ws_manager.notify_guild(guild_id)
 
     # Create successful audit log entry
     sso_model.create_audit_log(
@@ -435,6 +445,160 @@ async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
     sso_model.update_last_login(account.id)
 
     return {'status': 'success'}
+
+
+WS_PING_INTERVAL = 30
+
+
+@app.websocket("/ws/accounts")
+async def websocket_accounts(websocket: WebSocket):
+    """WebSocket endpoint for real-time account data streaming.
+
+    Protocol:
+        1. Client sends: {"type": "auth", "access_key": "..."}
+        2. Server validates and sends full_state
+        3. Server pushes delta messages on changes
+        4. Client may send heartbeat / update_location messages
+    """
+    await websocket.accept()
+
+    # --- Phase 1: authenticate ---
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=15)
+        msg = json.loads(raw)
+    except (asyncio.TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+        await _ws_close(websocket, 4001, "Auth timeout or bad payload")
+        return
+
+    if msg.get("type") != "auth" or not msg.get("access_key"):
+        await _ws_close(websocket, 4002, "Expected auth message")
+        return
+
+    access_key = sso_model.get_access_key_by_key(msg["access_key"])
+    if not access_key:
+        await _ws_close(websocket, 4003, "Invalid access key")
+        return
+
+    guild_id = access_key.guild_id
+    discord_user_id = access_key.discord_user_id
+
+    # --- Phase 2: send full state ---
+    account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
+    dynamic_tag_zones, dynamic_tag_classes = sso_model.get_dynamic_tags()
+
+    conn = ClientConnection(
+        websocket=websocket,
+        guild_id=guild_id,
+        discord_user_id=discord_user_id,
+        last_sent_state=account_tree,
+    )
+    ws_manager.register(conn)
+
+    try:
+        await websocket.send_json({
+            "type": "full_state",
+            "account_tree": account_tree,
+            "count": len(account_tree),
+            "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
+            "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
+        })
+
+        # --- Phase 3: listen for client messages + send keepalive pings ---
+        await _ws_message_loop(websocket, conn)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception(
+            "WebSocket error for guild=%s user=%s", guild_id, discord_user_id
+        )
+    finally:
+        ws_manager.unregister(websocket)
+
+
+async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
+    """Process inbound messages and send periodic pings."""
+    ping_task = asyncio.create_task(_ws_ping_loop(websocket))
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = msg.get("type")
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+
+            elif msg_type == "heartbeat":
+                await _ws_handle_heartbeat(conn, msg)
+
+            elif msg_type == "update_location":
+                await _ws_handle_update_location(conn, msg)
+    finally:
+        ping_task.cancel()
+        try:
+            await ping_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
+    """Process a heartbeat message: update last_login, then push delta."""
+    character_name = msg.get("character_name")
+    if not character_name:
+        return
+    account = sso_model.find_account_by_character(conn.guild_id, character_name)
+    if not account:
+        return
+    sso_model.update_last_login(account.id)
+    await ws_manager.notify_guild_async(conn.guild_id)
+
+
+async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
+    """Process an update_location message: update character, then push delta."""
+    character_name = msg.get("character_name")
+    if not character_name:
+        return
+    account = sso_model.find_account_by_character(conn.guild_id, character_name)
+    if not account:
+        return
+
+    if not user_has_access_to_accounts(
+        ws_manager._discord_client, conn.discord_user_id,
+        conn.guild_id, [account.id]
+    ):
+        return
+
+    sso_model.update_last_login(account.id)
+    sso_model.update_account_character(
+        guild_id=conn.guild_id,
+        name=character_name,
+        bind_location=msg.get("bind_location"),
+        park_location=msg.get("park_location"),
+    )
+    await ws_manager.notify_guild_async(conn.guild_id)
+
+
+async def _ws_ping_loop(websocket: WebSocket):
+    """Send application-level pings at a regular interval."""
+    try:
+        while True:
+            await asyncio.sleep(WS_PING_INTERVAL)
+            await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    except Exception:
+        pass
+
+
+async def _ws_close(websocket: WebSocket, code: int, reason: str):
+    """Send an error message and close the WebSocket."""
+    try:
+        await websocket.send_json({"type": "error", "detail": reason})
+        await websocket.close(code=code, reason=reason)
+    except Exception:
+        pass
 
 
 def raise_auth_failed():

@@ -11,6 +11,7 @@ import sqlalchemy.exc
 import io
 
 from roboToald import config
+from roboToald.api.websocket import manager as ws_manager
 from roboToald.db.models import sso as sso_model
 
 SSO_GUILDS = config.guilds_for_command('sso')
@@ -572,6 +573,7 @@ class SSOCommands(commands.Cog):
             message = f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}"
             await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
             await inter.channel.send(f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
         except sso_model.SSOAccountGroupNotFoundError:
@@ -593,6 +595,7 @@ class SSOCommands(commands.Cog):
             message = f"🔑🤖 **Updated password** for account `{username}`"
             await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
             await inter.channel.send(f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
@@ -606,6 +609,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.delete_account(inter.guild_id, username)
             await inter.send(content=f"🗑️🤖 **Deleted account** `{username}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.NoResultFound:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
@@ -672,6 +676,7 @@ class SSOCommands(commands.Cog):
         try:
             tag = sso_model.tag_account(inter.guild_id, username, tag)
             await inter.send(content=f"✨🏷️ **Tagged account** `{tag.account.real_user}` with tag `{tag.tag}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🏷️ **Tag already exists** for account `{username}`", ephemeral=True)
 
@@ -711,6 +716,7 @@ class SSOCommands(commands.Cog):
                 message += " with new UI macro data"
             message += "."
             await inter.send(content=message)
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountTagNotFoundError:
             await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{tag}`", ephemeral=True)
 
@@ -727,6 +733,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.untag_account(inter.guild_id, username, tag)
             await inter.send(content=f"🗑️🏷️ **Untagged account** `{username}` from tag `{tag}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🏷️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sso_model.SSOAccountTagNotFoundError:
@@ -784,6 +791,7 @@ class SSOCommands(commands.Cog):
             account_group = sso_model.create_account_group(inter.guild_id, name, role.id)
             await inter.send(content=f"✨🗂️ **Created group** `{account_group.group_name}` accessible by role <@&{role.id}>.",
                              allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🗂️ **Group already exists:** `{name}`", ephemeral=True)
 
@@ -801,6 +809,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.add_account_to_group(inter.guild_id, group_name, username)
             await inter.send(content=f"✨🤖🗂️ **Added user** `{username}` to group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
@@ -822,6 +831,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.remove_account_from_group(inter.guild_id, group_name, username)
             await inter.send(content=f"🗑️🤖🗂️ **Removed user** `{username}` from group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
@@ -839,6 +849,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.delete_account_group(inter.guild_id, name)
             await inter.send(content=f"🗑️🗂️ **Deleted group** `{name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
 
@@ -873,6 +884,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.create_account_alias(inter.guild_id, username, alias)
             await inter.send(content=f"✨🔗 **Created alias** `{alias}` for account `{username}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🔗 **Alias already exists:** `{alias}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
@@ -888,6 +900,7 @@ class SSOCommands(commands.Cog):
         try:
             account_name = sso_model.delete_account_alias(inter.guild_id, alias)
             await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{account_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountAliasNotFoundError:
             await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
 
@@ -1159,6 +1172,7 @@ class SSOCommands(commands.Cog):
             if details:
                 message += f"\n* **Reason:** {details}"
             await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n{e}", ephemeral=True)
 
@@ -1185,6 +1199,7 @@ class SSOCommands(commands.Cog):
         try:
             sso_model.remove_access_revocation(inter.guild_id, user.id)
             await inter.send(content=f"🔑 **Access revocations disabled for user:** <@{user.id}>", allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n{e}", ephemeral=True)
 
@@ -1399,6 +1414,7 @@ class SSOCommands(commands.Cog):
             return
 
         await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id)
 
     @character_admin.sub_command(description="Remove a character from an account", name="remove")
     async def character_remove(self, inter: disnake.ApplicationCommandInteraction,
@@ -1423,6 +1439,7 @@ class SSOCommands(commands.Cog):
             await inter.send(content=message, ephemeral=True)
             return
         await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id)
 
     @character.sub_command(description="List all characters for an account", name="list")
     async def character_list(self, inter: disnake.ApplicationCommandInteraction,
