@@ -12,6 +12,10 @@ from roboToald import config
 from roboToald.db import base
 from roboToald import words
 
+
+class CachedEncryptedType(sqlalchemy_utils.EncryptedType):
+    cache_ok = True
+
 # Custom exceptions for different entity types
 class SSOEntityNotFoundError(sqlalchemy.exc.NoResultFound):
     """Base exception for SSO entities not found"""
@@ -87,7 +91,7 @@ class SSOAccount(base.Base):
     guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
 
     real_user = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
-    real_pass = sqlalchemy.Column(sqlalchemy_utils.EncryptedType(
+    real_pass = sqlalchemy.Column(CachedEncryptedType(
         sqlalchemy.String(255), config.ENCRYPTION_KEY), nullable=False)
 
     last_login = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.min)
@@ -578,7 +582,7 @@ class SSOAccessKey(base.Base):
     guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
 
     discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    access_key = sqlalchemy.Column(sqlalchemy_utils.EncryptedType(
+    access_key = sqlalchemy.Column(CachedEncryptedType(
         sqlalchemy.String(255), config.ENCRYPTION_KEY), unique=True, index=True)
 
     __table_args__ = (
