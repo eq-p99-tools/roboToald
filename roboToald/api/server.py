@@ -19,6 +19,21 @@ from roboToald.api.websocket import manager as ws_manager, ClientConnection
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+class _SuppressBareWsLifecycle(logging.Filter):
+    """Drop uvicorn's generic 'connection open'/'connection closed' messages.
+
+    Our application-level WebSocket logs include guild, user, and IP context,
+    making these redundant.
+    """
+    _suppressed = frozenset({"connection open", "connection closed"})
+
+    def filter(self, record):
+        return record.getMessage() not in self._suppressed
+
+
+logging.getLogger("uvicorn.error").addFilter(_SuppressBareWsLifecycle())
+
 # Create FastAPI app
 app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services")
 
@@ -28,6 +43,11 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 @app.on_event("startup")
 async def _on_startup():
     ws_manager.set_event_loop(asyncio.get_running_loop())
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    for name in ("roboToald", "roboToald.api"):
+        lg = logging.getLogger(name)
+        lg.handlers = uvicorn_logger.handlers
+        lg.setLevel(uvicorn_logger.level)
 
 
 def run_api_server(discord_client, certfile, keyfile, host, port):
@@ -42,7 +62,6 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
     # Check if both certfile and keyfile are provided
     use_ssl = certfile and keyfile
     def _run():
-        # Common parameters for both HTTP and HTTPS
         uvicorn_params = {
             "app": "roboToald.api.server:app",
             "host": host,
@@ -485,6 +504,20 @@ async def websocket_accounts(websocket: WebSocket):
 
     guild_id = access_key.guild_id
     discord_user_id = access_key.discord_user_id
+    client_host = websocket.client.host if websocket.client else "unknown"
+    ws_label = f"guild={guild_id} user={discord_user_id} ip={client_host}"
+
+    # --- Wait for Discord cache to be ready ---
+    discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
+    if discord_client and not discord_client.is_ready():
+        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
+        for _ in range(30):
+            await asyncio.sleep(1)
+            if discord_client.is_ready():
+                break
+        else:
+            await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
+            return
 
     # --- Phase 2: send full state ---
     account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
@@ -506,15 +539,14 @@ async def websocket_accounts(websocket: WebSocket):
             "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
             "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
         })
+        logger.info("WebSocket connected: %s (%d accounts)", ws_label, len(account_tree))
 
         # --- Phase 3: listen for client messages + send keepalive pings ---
         await _ws_message_loop(websocket, conn)
     except WebSocketDisconnect:
-        pass
+        logger.info("WebSocket disconnected: %s", ws_label)
     except Exception:
-        logger.exception(
-            "WebSocket error for guild=%s user=%s", guild_id, discord_user_id
-        )
+        logger.exception("WebSocket error: %s", ws_label)
     finally:
         ws_manager.unregister(websocket)
 
@@ -645,15 +677,11 @@ def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: i
                 sso_model.SSOAccountGroup.guild_id == guild_id
             ).all()
 
-            # Check if discord is available
-            try:
-                guild = discord_client.get_guild(guild_id)
-                verify_discord_role = True
-            except Exception:
-                verify_discord_role = False
+            # Check if discord is available and guild/member are cached
+            guild = discord_client.get_guild(guild_id) if discord_client else None
+            member = guild.get_member(discord_user_id) if guild else None
 
-            if verify_discord_role:
-                member = guild.get_member(discord_user_id)
+            if member is not None:
                 role_ids = [role.id for role in member.roles]
             else:
                 role_ids = []

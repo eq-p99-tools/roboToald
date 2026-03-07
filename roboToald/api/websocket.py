@@ -150,17 +150,12 @@ class ConnectionManager:
     def register(self, conn: ClientConnection):
         with self._lock:
             self._connections.append(conn)
-        logger.info(
-            "WebSocket client registered: guild=%s user=%s",
-            conn.guild_id, conn.discord_user_id,
-        )
 
     def unregister(self, websocket: WebSocket):
         with self._lock:
             self._connections = [
                 c for c in self._connections if c.websocket is not websocket
             ]
-        logger.info("WebSocket client unregistered")
 
     def _get_connections_for_guild(self, guild_id: int) -> list[ClientConnection]:
         with self._lock:
