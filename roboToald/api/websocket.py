@@ -1,5 +1,6 @@
 """WebSocket connection manager and delta protocol for real-time account updates."""
 import asyncio
+import datetime
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -32,9 +33,11 @@ def build_account_tree(accessible_accounts) -> dict:
                 for char in account.characters
             },
             "last_login": (
-                account.last_login.isoformat()
-                if account.last_login else None
+                account.last_login.astimezone(datetime.timezone.utc).isoformat()
+                if account.last_login and account.last_login.year > 1
+                else None
             ),
+            "last_login_by": account.last_login_by,
         }
     return tree
 
@@ -107,11 +110,12 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
             if char_diff:
                 fields["characters"] = char_diff
 
-        # Scalar last_login
-        old_ll = old_data.get("last_login")
-        new_ll = new_data.get("last_login")
-        if old_ll != new_ll:
-            fields["last_login"] = new_ll
+        # Scalar fields
+        for scalar in ("last_login", "last_login_by"):
+            old_val = old_data.get(scalar)
+            new_val = new_data.get(scalar)
+            if old_val != new_val:
+                fields[scalar] = new_val
 
         if fields:
             changes.append({

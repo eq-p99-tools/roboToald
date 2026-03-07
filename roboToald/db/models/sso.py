@@ -91,6 +91,7 @@ class SSOAccount(base.Base):
         sqlalchemy.String(255), config.ENCRYPTION_KEY), nullable=False)
 
     last_login = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.min)
+    last_login_by = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
     groups = sqlalchemy.orm.relationship("SSOAccountGroup", secondary=account_group_mapping,
                                          back_populates="accounts")
@@ -412,14 +413,16 @@ def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
     return account
 
 
-def update_last_login(account_id: int) -> None:
-    """Update the last_login timestamp for an account."""
+def update_last_login(account_id: int, login_by: str | None = None) -> None:
+    """Update the last_login timestamp (and optionally who logged in) for an account."""
     with base.get_session() as session:
         account = session.query(SSOAccount).filter(
             SSOAccount.id == account_id
         ).one_or_none()
         if account:
             account.last_login = datetime.datetime.now()
+            if login_by is not None:
+                account.last_login_by = login_by
             session.commit()
 
 

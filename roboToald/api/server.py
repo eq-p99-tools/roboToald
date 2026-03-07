@@ -1,5 +1,6 @@
 """REST API server implementation for RoboToald."""
 import asyncio
+import datetime
 import json
 import logging
 from typing import Union
@@ -250,7 +251,8 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         raise_auth_failed()
 
     # Authentication successful - update account's last_login timestamp
-    sso_model.update_last_login(account_id)
+    login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+    sso_model.update_last_login(account_id, login_by=login_name)
     ws_manager.notify_guild(guild_id)
 
     # Create successful audit log entry
@@ -357,7 +359,12 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
                 } for character in account.characters
             },
             # Added in v3
-            "last_login": account.last_login,
+            "last_login": (
+                account.last_login.astimezone(datetime.timezone.utc).isoformat()
+                if account.last_login and account.last_login.year > 1
+                else None
+            ),
+            "last_login_by": account.last_login_by,
         } for account in accessible_accounts
     }
 
@@ -421,7 +428,8 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
         raise_auth_failed()
 
     # Authentication successful - update account's last_login timestamp because why not, it's still online
-    sso_model.update_last_login(account.id)
+    login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+    sso_model.update_last_login(account.id, login_by=login_name)
 
     # Update location
     sso_model.update_account_character(
@@ -465,7 +473,8 @@ async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
     if not account:
         raise_invalid_character()
 
-    sso_model.update_last_login(account.id)
+    login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+    sso_model.update_last_login(account.id, login_by=login_name)
 
     return {'status': 'success'}
 
@@ -597,7 +606,8 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     account = sso_model.find_account_by_character(conn.guild_id, character_name)
     if not account:
         return
-    sso_model.update_last_login(account.id)
+    login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
+    sso_model.update_last_login(account.id, login_by=login_name)
     await ws_manager.notify_guild_async(conn.guild_id)
 
 
@@ -616,7 +626,8 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     ):
         return
 
-    sso_model.update_last_login(account.id)
+    login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
+    sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.update_account_character(
         guild_id=conn.guild_id,
         name=character_name,
@@ -646,6 +657,17 @@ async def _ws_close(websocket: WebSocket, code: int, reason: str):
         await websocket.close(code=code, reason=reason)
     except Exception:
         pass
+
+
+def _resolve_display_name(discord_client, guild_id: int, discord_user_id: int) -> str | None:
+    """Resolve a Discord user ID to their guild display name."""
+    if not discord_client:
+        return None
+    guild = discord_client.get_guild(guild_id)
+    if not guild:
+        return None
+    member = guild.get_member(discord_user_id)
+    return member.display_name if member else None
 
 
 def raise_auth_failed():
