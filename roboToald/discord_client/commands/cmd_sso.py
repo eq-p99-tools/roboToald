@@ -259,13 +259,8 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         for group in all_groups:
             # Check if group has role-based access
             has_access = False
-            if user_is_admin:
+            if user_is_admin or group.role_id in user_roles:
                 has_access = True
-            else:
-                for role in user_roles:
-                    if role in group.role_id:
-                        has_access = True
-                        break
     
             # If has access, add to available groups
             if has_access:
