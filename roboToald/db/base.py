@@ -34,30 +34,47 @@ def get_engine(store={}) -> sqlalchemy.engine.Engine:
     if not store:
         store['engine'] = sqlalchemy.create_engine(
             "sqlite:///alerts.db", echo=False, future=True)
-        Base.metadata.create_all(store['engine'])
     return store['engine']
 
 
 def initialize_database(run_migrations=True):
     """Initialize the database and optionally run migrations.
-    
-    This function should be called during application startup to ensure
-    the database schema is properly set up and up to date.
+
+    Detects three possible states:
+    - Fresh DB (no tables): create_all() + stamp head
+    - Pre-Alembic DB (app tables exist, no alembic_version): stamp head
+    - Normal DB (alembic_version exists): upgrade head
     """
-    # Create tables if they don't exist
-    get_engine()
-    print("Database tables created if they didn't exist")
-    
-    # Run migrations if requested
-    if run_migrations:
-        try:
-            # Import here to avoid circular imports
-            from roboToald.db.migrations import upgrade_database
-            upgrade_database()
-        except ImportError as e:
-            print("Alembic migrations not available. Skipping schema migrations.")
-        except Exception as e:
-            print(f"Error running database migrations: {e}")
+    engine = get_engine()
+
+    if not run_migrations:
+        Base.metadata.create_all(engine)
+        return
+
+    try:
+        from roboToald.db.migrations import upgrade_database, stamp_database
+    except ImportError:
+        print("Alembic not available — falling back to create_all().")
+        Base.metadata.create_all(engine)
+        return
+
+    inspector = sqlalchemy.inspect(engine)
+    table_names = inspector.get_table_names()
+    has_alembic = "alembic_version" in table_names
+    has_app_tables = "sso_account" in table_names
+
+    if not has_app_tables:
+        print("Fresh database detected — creating tables and stamping head.")
+        Base.metadata.create_all(engine)
+        stamp_database()
+    elif not has_alembic:
+        print("Pre-Alembic database detected — stamping head.")
+        stamp_database()
+    else:
+        print("Running Alembic migrations...")
+        upgrade_database()
+
+    print("Database schema is up to date.")
 
 
 @contextlib.contextmanager
