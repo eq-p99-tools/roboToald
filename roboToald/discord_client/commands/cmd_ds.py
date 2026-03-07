@@ -547,7 +547,7 @@ async def tod(
     if backdate > 0:
         message += f" (backdated {backdate} minutes ago)"
     # message += ". Stopped camp time for the following members:\n"
-    message += ". Stopped (and restarted) camp time for the following members:\n"
+    message += ". Stopped camp time for the following members:\n"
 
     active_events = points_model.get_active_events(
         inter.guild_id, include_0=True)
