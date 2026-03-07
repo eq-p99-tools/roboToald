@@ -1280,3 +1280,65 @@ def find_account_by_character(guild_id: int, name: str) -> SSOAccount | None:
             return None
         session.expunge_all()
     return character.account
+
+
+class SSOCharacterSession(base.Base):
+    """Tracks contiguous heartbeat sessions for characters.
+
+    A new row is created when a heartbeat arrives and no recent session exists
+    (i.e. last_seen is older than the inactivity threshold).  Subsequent
+    heartbeats extend the existing session by updating last_seen.
+    """
+    __tablename__ = "sso_character_session"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
+    character_name = sqlalchemy.Column(sqlalchemy.String(64), nullable=False)
+    discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    first_seen = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
+    last_seen = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
+
+    account = sqlalchemy.orm.relationship("SSOAccount")
+
+
+def record_heartbeat_session(guild_id: int, account_id: int,
+                             character_name: str, discord_user_id: int) -> None:
+    """Record a heartbeat, extending an active session or creating a new one."""
+    now = datetime.datetime.now()
+    threshold = now - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+    with base.get_session() as session:
+        active = session.query(SSOCharacterSession).filter(
+            SSOCharacterSession.guild_id == guild_id,
+            SSOCharacterSession.character_name == character_name,
+            SSOCharacterSession.last_seen >= threshold,
+        ).first()
+        if active:
+            active.last_seen = now
+            active.discord_user_id = discord_user_id
+        else:
+            session.add(SSOCharacterSession(
+                guild_id=guild_id,
+                account_id=account_id,
+                character_name=character_name,
+                discord_user_id=discord_user_id,
+                first_seen=now,
+                last_seen=now,
+            ))
+        session.commit()
+
+
+def get_sessions_in_range(guild_id: int, start: datetime.datetime,
+                          end: datetime.datetime) -> list[SSOCharacterSession]:
+    """Return sessions overlapping [start, end] with eager-loaded account + aliases."""
+    with base.get_session() as session:
+        sessions = session.query(SSOCharacterSession).options(
+            sqlalchemy.orm.joinedload(SSOCharacterSession.account)
+            .joinedload(SSOAccount.aliases)
+        ).filter(
+            SSOCharacterSession.guild_id == guild_id,
+            SSOCharacterSession.first_seen <= end,
+            SSOCharacterSession.last_seen >= start,
+        ).order_by(SSOCharacterSession.first_seen).all()
+        session.expunge_all()
+    return sessions

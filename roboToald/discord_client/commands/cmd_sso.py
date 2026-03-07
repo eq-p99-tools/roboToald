@@ -1272,26 +1272,26 @@ class SSOCommands(commands.Cog):
                 await inter.send(content="⚠️ **Could not find event time in Raid Status message.**", ephemeral=True)
             return
 
-        # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
+        # Get character sessions overlapping the event window (-30 min to +1 hour)
         start_time = event_time - datetime.timedelta(minutes=30)
         end_time = event_time + datetime.timedelta(hours=1)
-        print(f"RECONCILE Start: {start_time}")
-        print(f"RECONCILE End: {end_time}")
 
         local_tz = datetime.datetime.now().astimezone().tzinfo
 
-        logs = sso_model.get_audit_logs(
-            guild_id=channel.guild.id, success=True,
-            since=start_time.astimezone(local_tz).replace(tzinfo=None),
-            until=end_time.astimezone(local_tz).replace(tzinfo=None))
+        sessions = sso_model.get_sessions_in_range(
+            guild_id=channel.guild.id,
+            start=start_time.astimezone(local_tz).replace(tzinfo=None),
+            end=end_time.astimezone(local_tz).replace(tzinfo=None))
         logins = []
-        for log in logs:
-            username = log.username
-            aliases = [a.alias for a in log.account.aliases]
-            if "via tag/alias" in log.details:
-                username = log.details.split("via tag/alias ")[1]
-            # logins.append(f"`{username:<14}` | `{log.username:<14}`: <t:{int(log.timestamp.timestamp())}:T> by <@{log.discord_user_id}>")
-            logins.append(f"<t:{int(log.timestamp.timestamp())}:T> <@{log.discord_user_id}>: `{', '.join(aliases) if aliases else "No Aliases"}` | `{username}` | `{log.username}`")
+        for s in sessions:
+            aliases = [a.alias for a in s.account.aliases]
+            first = int(s.first_seen.timestamp())
+            last = int(s.last_seen.timestamp())
+            alias_str = ', '.join(aliases) if aliases else "No Aliases"
+            logins.append(
+                f"<t:{first}:T>–<t:{last}:T> <@{s.discord_user_id}>: "
+                f"`{alias_str}` | `{s.character_name}` | `{s.account.real_user}`"
+            )
         logins.sort()
 
         def split_fields(lines, maxlen=1024):
@@ -1327,7 +1327,7 @@ class SSOCommands(commands.Cog):
         login_chunks = split_fields(logins)
         # Add login_chunks fields
         for i, chunk in enumerate(login_chunks, 1):
-            field_name = f"SSO Logs {i}" if len(login_chunks) > 1 else "SSO Logs"
+            field_name = f"Active Sessions {i}" if len(login_chunks) > 1 else "Active Sessions"
             field_value = chunk
             field_size = len(field_name) + len(field_value)
             # 6000 char limit per embed and 25 fields per embed
@@ -1340,14 +1340,14 @@ class SSOCommands(commands.Cog):
             current_size += field_size
             current_fields += 1
         if not login_chunks:
-            no_logs_value = f"No SSO activity for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
-            if current_size + len("SSO Logs") + len(no_logs_value) > 6000 or current_fields >= 25:
+            no_logs_value = f"No active sessions for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
+            if current_size + len("Active Sessions") + len(no_logs_value) > 6000 or current_fields >= 25:
                 embeds.append(current_embed)
                 current_embed = disnake.Embed(title=embed_title)
                 current_size = len(embed_title)
                 current_fields = 0
-            current_embed.add_field(name="SSO Logs", value=no_logs_value, inline=False)
-            current_size += len("SSO Logs") + len(no_logs_value)
+            current_embed.add_field(name="Active Sessions", value=no_logs_value, inline=False)
+            current_size += len("Active Sessions") + len(no_logs_value)
             current_fields += 1
         # Append last embed if it has fields
         if len(current_embed.fields) > 0:
