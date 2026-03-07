@@ -480,13 +480,13 @@ class SSOCommands(commands.Cog):
             account = sso_model.find_account_by_username(username, inter.guild_id)
             if not account:
                 raise sso_model.SSOAccountNotFoundError
-            group_names = '\n'.join([f'• `{group.group_name}`' for group in account.groups])
+            group_names = '\n'.join([f' * `{group.group_name}`' for group in account.groups])
             group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
-            tag_names = '\n'.join([f'• `{tag.tag}`' for tag in account.tags])
+            tag_names = '\n'.join([f' * `{tag.tag}`' for tag in account.tags])
             tag_string = f"\n🏷️ Tags:\n{tag_names}" if tag_names else ""
-            alias_names = '\n'.join([f'• `{alias.alias}`' for alias in account.aliases])
+            alias_names = '\n'.join([f' * `{alias.alias}`' for alias in account.aliases])
             alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
-            character_names = '\n'.join([f'• `{character.name}` ({character.klass.value})' for character in account.characters])
+            character_names = '\n'.join([f' * `{character.name}` ({character.klass.value})' for character in account.characters])
             character_string = f"\n🧍 Characters:\n{character_names}" if character_names else ""
             await send_and_split(
                 inter.send,
@@ -632,7 +632,7 @@ class SSOCommands(commands.Cog):
         # Implement tag show logic
         tags = sso_model.get_tag(inter.guild_id, tag)
         if not tags:
-            await inter.send(content=f"⚠️ **Tag not found:** `{tag}`", ephemeral=True)
+            await inter.send(content=f"⚠️🏷️ **Tag not found:** `{tag}`", ephemeral=True)
             return
             
         formatted = f"🏷️ **{tag}:**\n"
@@ -690,14 +690,14 @@ class SSOCommands(commands.Cog):
                          )):
         if new_ui_macro_data:
             if new_ui_macro_data.size > 1024 * 1024:
-                await inter.send(content="⚠️ **Attachment too large** (max 1MB)", ephemeral=True)
+                await inter.send(content="⚠️🏷️ **Attachment too large** (max 1MB)", ephemeral=True)
                 return
             new_ui_macro_data = await new_ui_macro_data.read()
         if new_name:
             new_name = new_name.lower()
             existing_tags = sso_model.list_tags(inter.guild_id)
             if new_name in existing_tags:
-                await inter.send(content=f"⚠️ **Tag already exists:** `{new_name}`", ephemeral=True)
+                await inter.send(content=f"⚠️🏷️ **Tag already exists:** `{new_name}`", ephemeral=True)
                 return
         if new_name is None and new_ui_macro_data is None:
             await inter.send(content="⚠️ **No changes specified, no action taken.**", ephemeral=True)
@@ -748,7 +748,7 @@ class SSOCommands(commands.Cog):
         # Implement group show logic
         try:
             account_group = sso_model.get_account_group(inter.guild_id, name)
-            account_names = '\n'.join([f'• `{account.real_user}`' for account in account_group.accounts])
+            account_names = '\n'.join([f' * `{account.real_user}`' for account in account_group.accounts])
             await send_and_split(inter.send, f"🗂️ **Group:** `{account_group.group_name}`\n"
                                              f" → 🤖 Accounts:\n{account_names}", ephemeral=True)
         except sqlalchemy.exc.NoResultFound:
@@ -858,10 +858,10 @@ class SSOCommands(commands.Cog):
         # Implement alias list logic
         aliases = sso_model.list_account_aliases(inter.guild_id)
         if not aliases:
-            await inter.send(content="ℹ️ **No aliases found on this server.**", ephemeral=True)
+            await inter.send(content="ℹ️ **No aliases found in this server.**", ephemeral=True)
             return
         formatted = '\n'.join([f"🔗 `{alias.alias}` → `{alias.account.real_user}`" for alias in aliases])
-        await send_and_split(inter.send, f"🔗 **Aliases:**\n{formatted}", ephemeral=True)
+        await send_and_split(inter.send, f"**Aliases:**\n{formatted}", ephemeral=True)
 
     @sso_admin.sub_command_group(description="Alias related commands", name="alias")
     async def admin_alias(self, inter: disnake.ApplicationCommandInteraction):
@@ -1170,7 +1170,7 @@ class SSOCommands(commands.Cog):
             await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
             ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n{e}", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n`{e}`", ephemeral=True)
 
     @admin_revocation.sub_command(description="List access revocations", name="list")
     async def revocation_list(self, inter: disnake.ApplicationCommandInteraction,
@@ -1197,7 +1197,7 @@ class SSOCommands(commands.Cog):
             await inter.send(content=f"🔑 **Access revocations disabled for user:** <@{user.id}>", allowed_mentions=disnake.AllowedMentions.none())
             ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n{e}", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n`{e}`", ephemeral=True)
 
     @sso_admin.sub_command(description="Reset rate limit for an IP address", name="reset_rate_limit")
     async def reset_rate_limit(self, inter: disnake.ApplicationCommandInteraction,
@@ -1210,7 +1210,7 @@ class SSOCommands(commands.Cog):
             else:
                 await inter.send(content=f"🔑 **No rate limit entries found for IP:** `{ip_address}`", ephemeral=True)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n{e}", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n`{e}`", ephemeral=True)
 
     @staticmethod
     async def _get_reconcile_embed_response(
@@ -1235,7 +1235,7 @@ class SSOCommands(commands.Cog):
 
         if not status_embed:
             if inter:
-                await inter.send(content="No Raid Status message found in this channel.", ephemeral=True)
+                await inter.send(content="⚠️ **No Raid Status message found in this channel.**", ephemeral=True)
             return
 
         # Parse the attendee list out of the status message
@@ -1250,7 +1250,7 @@ class SSOCommands(commands.Cog):
         event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
         if not event_field:
             if inter:
-                await inter.send(content="Could not find Event Review field in Raid Status message.", ephemeral=True)
+                await inter.send(content="⚠️ **Could not find Event Review field in Raid Status message.**", ephemeral=True)
             return
         event_header = event_field.value.splitlines()[1]
         event_time = event_header.split(' added at ')[1]
@@ -1264,12 +1264,12 @@ class SSOCommands(commands.Cog):
             print(f"Replaced timezone on event time: {event_time}")
         except ValueError:
             if inter:
-                await inter.send(content="Could not parse event time in Raid Status message.", ephemeral=True)
+                await inter.send(content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True)
             return
 
         if not event_time:
             if inter:
-                await inter.send(content="Could not find event time in Raid Status message.", ephemeral=True)
+                await inter.send(content="⚠️ **Could not find event time in Raid Status message.**", ephemeral=True)
             return
 
         # Get the SSO audit logs for logins around this event time (30 minutes before and 1 hour after)
@@ -1359,7 +1359,7 @@ class SSOCommands(commands.Cog):
         # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
 
         if not EVENT_CHANNEL_MATCHER.match(inter.channel.name):
-            await inter.send(content="Reconcile can only be used in an event channel.", ephemeral=True)
+            await inter.send(content="⚠️ **Reconcile can only be used in an event channel.**", ephemeral=True)
             return
 
         await inter.response.defer()
@@ -1395,17 +1395,17 @@ class SSOCommands(commands.Cog):
                 name=character_name,
                 klass=character_class
             )
-            message = f"✨🧍**Added character** `{char.name}` *({char.klass.value})* on account 🤖`{username}`."
+            message = f"✨🧍 **Added character** `{char.name}` *({char.klass.value})* on account 🤖 `{username}`."
         except sso_model.SSOAccountNotFoundError:
-            message = f"⚠️🤖**Account not found:** `{username}`"
+            message = f"⚠️🤖 **Account not found:** `{username}`"
             await inter.send(content=message, ephemeral=True)
             return
         except sso_model.SSOCharacterAlreadyExistsError:
-            message = f"⚠️🧍**Character already exists:** `{character_name}`"
+            message = f"⚠️🧍 **Character already exists:** `{character_name}`"
             await inter.send(content=message, ephemeral=True)
             return
         except Exception as e:
-            message = f"❌🧍**Error:**\n```\n{e}\n```"
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
 
@@ -1425,13 +1425,13 @@ class SSOCommands(commands.Cog):
                 name=character_name
             )
             if removed:
-                message = f"🗑️🧍**Deleted character:** `{character_name}`"
+                message = f"🗑️🧍 **Deleted character:** `{character_name}`"
             else:
-                message = f"⚠️🧍**Character not found:** `{character_name}`"
+                message = f"⚠️🧍 **Character not found:** `{character_name}`"
                 await inter.send(content=message, ephemeral=True)
                 return
         except Exception as e:
-            message = f"**Error:**\n```\n{e}\n```"
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
         await inter.send(content=message)
@@ -1455,11 +1455,11 @@ class SSOCommands(commands.Cog):
             else:
                 message = f"**🧍Characters:**\n{desc}"
         except sso_model.SSOAccountNotFoundError:
-            message = f"⚠️🤖**Account not found:** `{username}`"
+            message = f"⚠️🤖 **Account not found:** `{username}`"
             await inter.send(content=message, ephemeral=True)
             return
         except Exception as e:
-            message = f"❌🧍**Error:**\n```\n{e}\n```"
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)
             return
         await send_and_split(inter.send, message, True)
