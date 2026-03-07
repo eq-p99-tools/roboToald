@@ -519,6 +519,16 @@ async def websocket_accounts(websocket: WebSocket):
             await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
             return
 
+    if discord_client:
+        guild = discord_client.get_guild(guild_id)
+        member = guild.get_member(discord_user_id) if guild else None
+        guild_label = f"{guild_id} ({guild.name})" if guild else str(guild_id)
+        user_label = f"{discord_user_id} ({member.display_name})" if member else str(discord_user_id)
+    else:
+        guild_label = str(guild_id)
+        user_label = str(discord_user_id)
+    ws_label = f"guild={guild_label} user={user_label} ip={client_host}"
+
     # --- Phase 2: send full state ---
     account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
     dynamic_tag_zones, dynamic_tag_classes = sso_model.get_dynamic_tags()
