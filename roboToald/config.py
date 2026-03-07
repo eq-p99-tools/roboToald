@@ -83,6 +83,10 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'wakeup_channels', fallback=None),
         'wakeup_exclusions': CONF.get(
             f"guild.{guild}", 'wakeup_exclusions', fallback=None),
+        'min_client_version': CONF.get(
+            f"guild.{guild}", 'min_client_version', fallback=None),
+        'client_update_message': CONF.get(
+            f"guild.{guild}", 'client_update_message', fallback=None),
     }
     if GUILD_SETTINGS[guild]['wakeup_channels']:
         for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):

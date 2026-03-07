@@ -40,6 +40,11 @@ enable_random = false
 # Wakeup channel mappings
 wakeup_channels = textchannel_id1:voicechannel_id1, textchannel_id2:voicechannel_id2
 
+# Minimum SSO client version required to connect (optional, omit to allow any version)
+# Clients below this version are rejected with client_update_message shown as a popup
+#min_client_version = 1.2.0
+#client_update_message = Your SSO client is outdated. Please download the latest version.
+
 [guild.67890]
 # Raid Subscription commands will be unusable.
 enable_raidtarget = false

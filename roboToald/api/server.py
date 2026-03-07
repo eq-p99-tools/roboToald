@@ -518,6 +518,19 @@ async def websocket_accounts(websocket: WebSocket):
     client_host = websocket.client.host if websocket.client else "unknown"
     ws_label = f"guild={guild_id} user={discord_user_id} ip={client_host}"
 
+    # --- Check client version against guild minimum ---
+    guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
+    min_ver = guild_settings.get("min_client_version")
+    if min_ver:
+        client_ver = msg.get("client_version", "0.0.0")
+        if _parse_version(client_ver) < _parse_version(min_ver):
+            update_msg = guild_settings.get("client_update_message") or (
+                f"Client update required (minimum version: {min_ver})"
+            )
+            logger.info("Rejecting outdated client %s (minimum %s): %s", client_ver, min_ver, ws_label)
+            await _ws_close(websocket, 4010, update_msg)
+            return
+
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
     if discord_client and not discord_client.is_ready():
@@ -652,6 +665,22 @@ async def _ws_ping_loop(websocket: WebSocket):
         pass
     except Exception:
         pass
+
+
+def _parse_version(ver: str) -> tuple:
+    """Parse a semver-ish string into a comparable tuple of ints.
+
+    Pre-release suffixes (e.g. '1.2.0-rc3') sort below the release
+    they're attached to, which is the standard semver expectation.
+    """
+    base, _, _pre = ver.partition("-")
+    parts = []
+    for seg in base.split("."):
+        try:
+            parts.append(int(seg))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
 
 
 async def _ws_close(websocket: WebSocket, code: int, reason: str):
