@@ -98,6 +98,7 @@ class UpdateLocationRequest(BaseModel):
     character_name: str
     bind_location: str | None = None
     park_location: str | None = None
+    level: int | None = None
 
 
 class HeartbeatRequest(BaseModel):
@@ -332,7 +333,8 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
                 character.name: {
                     "class": character.klass,
                     "bind": character.bind_location,
-                    "park": character.park_location
+                    "park": character.park_location,
+                    "level": character.level,
                 } for character in account.characters
             },
             # Added in v3
@@ -407,7 +409,8 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
         guild_id=guild_id,
         name=location_data.character_name,
         bind_location=location_data.bind_location,
-        park_location=location_data.park_location
+        park_location=location_data.park_location,
+        level=location_data.level,
     )
 
     # Log successful request
@@ -420,7 +423,8 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
         guild_id=guild_id,
         details=f"Successfully updated location: "
                 f"bind = {location_data.bind_location is not None}, "
-                f"park = {location_data.park_location is not None}"
+                f"park = {location_data.park_location is not None}, "
+                f"level = {location_data.level}"
     )
 
     return {'status': 'success'}
@@ -576,6 +580,7 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         name=character_name,
         bind_location=msg.get("bind_location"),
         park_location=msg.get("park_location"),
+        level=msg.get("level"),
     )
     await ws_manager.notify_guild_async(conn.guild_id)
 

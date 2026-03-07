@@ -27,6 +27,7 @@ def build_account_tree(accessible_accounts) -> dict:
                     "class": char.klass.value if char.klass else None,
                     "bind": char.bind_location,
                     "park": char.park_location,
+                    "level": char.level,
                 }
                 for char in account.characters
             },

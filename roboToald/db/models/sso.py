@@ -164,6 +164,27 @@ def get_account_by_id(account_id: int) -> SSOAccount:
             raise SSOAccountNotFoundError(f"Account '{account_id}' not found")
 
 
+def _max_character_level(account: "SSOAccount") -> int:
+    """Return the highest level among an account's characters (0 if unset)."""
+    return max((c.level or 0 for c in account.characters), default=0)
+
+
+def _login_sort_key(account: "SSOAccount", now: datetime.datetime, level_fn) -> tuple:
+    """Sort key for tag-based account selection.
+
+    Buckets last_login so that level acts as a meaningful tiebreaker:
+      - < 20 min ago: 30-second buckets (higher bucket = older = preferred)
+      - >= 20 min ago: all equivalent (bucket 0)
+    Within a bucket, higher level wins.
+    """
+    age = (now - account.last_login).total_seconds()
+    if age >= 1200:
+        bucket = 0
+    else:
+        bucket = int(age // 30)
+    return (-bucket, -(level_fn(account)))
+
+
 def find_account_by_username(username: str, guild_id: int = None, inactive_only: bool = False) -> SSOAccount or None:
     username = username.lower()
     """Find an account by username."""
@@ -226,16 +247,16 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
         ).all()
 
         if tagged_accounts:
+            now = datetime.datetime.now()
             if inactive_only:
-                inactivity_time = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+                inactivity_time = now - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
                 accounts = [tagged_account.account for tagged_account in tagged_accounts
                             if tagged_account.account.last_login < inactivity_time]
             else:
                 accounts = [tagged_account.account for tagged_account in tagged_accounts]
-            # Sort accounts by last_login
             if not accounts:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
-            accounts.sort(key=lambda account: account.last_login, reverse=False)
+            accounts.sort(key=lambda a: _login_sort_key(a, now, _max_character_level))
             account = session.query(SSOAccount).options(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
@@ -270,9 +291,12 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             characters = list_account_characters_by_class_zone(guild_id, klass, zones)
             if not characters:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
-            # Get a unique list of accounts from characters and sort by last_login
-            accounts = list(set([character.account for character in characters]))
-            accounts.sort(key=lambda account: account.last_login, reverse=False)
+            # Build account_id -> character level mapping (one class per account)
+            char_level_by_account = {c.account_id: (c.level or 0) for c in characters}
+            accounts = list({c.account for c in characters})
+            now = datetime.datetime.now()
+            accounts.sort(key=lambda a: _login_sort_key(
+                a, now, lambda acct: char_level_by_account.get(acct.id, 0)))
             if not accounts:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
             return accounts[0]
@@ -1138,6 +1162,7 @@ class SSOAccountCharacter(base.Base):
 
     bind_location = sqlalchemy.Column(sqlalchemy.String(64), nullable=True)
     park_location = sqlalchemy.Column(sqlalchemy.String(64), nullable=True)
+    level = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
 
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
@@ -1220,7 +1245,8 @@ def remove_account_character(guild_id: int, name: str) -> bool:
 
 
 def update_account_character(guild_id: int, name: str, klass: CharacterClass = None,
-                             bind_location: str = None, park_location: str = None) -> bool:
+                             bind_location: str = None, park_location: str = None,
+                             level: int = None) -> bool:
     with base.get_session() as session:
         character = session.query(SSOAccountCharacter).filter_by(
             name=name, guild_id=guild_id
@@ -1233,6 +1259,8 @@ def update_account_character(guild_id: int, name: str, klass: CharacterClass = N
             character.bind_location = bind_location
         if park_location:
             character.park_location = park_location
+        if level is not None:
+            character.level = level
         session.commit()
     return True
 
