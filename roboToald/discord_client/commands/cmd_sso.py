@@ -488,8 +488,9 @@ class SSOCommands(commands.Cog):
             alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
             character_names = '\n'.join([f'• `{character.name}` ({character.klass.value})' for character in account.characters])
             character_string = f"\n🧍 Characters:\n{character_names}" if character_names else ""
-            await inter.send(
-                content=f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}{character_string}",
+            await send_and_split(
+                inter.send,
+                f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}{character_string}",
                 ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
@@ -748,8 +749,8 @@ class SSOCommands(commands.Cog):
         try:
             account_group = sso_model.get_account_group(inter.guild_id, name)
             account_names = '\n'.join([f'• `{account.real_user}`' for account in account_group.accounts])
-            await inter.send(content=f"🗂️ **Group:** `{account_group.group_name}`\n"
-                                     f" → 🤖 Accounts:\n{account_names}", ephemeral=True)
+            await send_and_split(inter.send, f"🗂️ **Group:** `{account_group.group_name}`\n"
+                                             f" → 🤖 Accounts:\n{account_names}", ephemeral=True)
         except sqlalchemy.exc.NoResultFound:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
 
@@ -960,7 +961,7 @@ class SSOCommands(commands.Cog):
             response += "\n".join(formatted_logs)
             
             # Send the response
-            await inter.send(content=response, ephemeral=True)
+            await send_and_split(inter.send, response, ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except Exception as e:
@@ -1185,7 +1186,7 @@ class SSOCommands(commands.Cog):
             expiry_str = f"{revocation.expiry_days} day{'s' if revocation.expiry_days > 1 else ''}" if revocation.expiry_days > 0 else 'Permanent'
             reason_str = f": `{revocation.details}`" if revocation.details else ""
             formatted += f"* <@{revocation.discord_user_id}> ({expiry_str}){reason_str}\n"
-        await inter.send(content=f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
+        await send_and_split(inter.send, f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
     
     @admin_revocation.sub_command(description="Remove access revocation", name="remove")
     async def revocation_remove(self, inter: disnake.ApplicationCommandInteraction,
