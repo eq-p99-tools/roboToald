@@ -1284,13 +1284,10 @@ class SSOCommands(commands.Cog):
             end=end_time.astimezone(local_tz).replace(tzinfo=None))
         logins = []
         for s in sessions:
-            aliases = [a.alias for a in s.account.aliases]
             first = int(s.first_seen.timestamp())
             last = int(s.last_seen.timestamp())
-            alias_str = ', '.join(aliases) if aliases else "No Aliases"
             logins.append(
-                f"<t:{first}:T>–<t:{last}:T> <@{s.discord_user_id}>: "
-                f"`{alias_str}` | `{s.character_name}` | `{s.account.real_user}`"
+                f"<t:{first}:T>–<t:{last}:T> <@{s.discord_user_id}>: `{s.character_name}`"
             )
         logins.sort()
 
