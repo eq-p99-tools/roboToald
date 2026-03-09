@@ -19,17 +19,31 @@ async def process_message(message: disnake.Message) -> None:
             await wakeup(voice_channel)
         except disnake.errors.ClientException:
             print(f"Already connected to a voice channel, likely a duplicate trigger.")
+        except Exception as e:
+            print(f"Unexpected error during wakeup: {e}")
 
 
 async def wakeup(channel: disnake.VoiceChannel) -> None:
     vc: disnake.voice_client.VoiceClient = await channel.connect()
+    try:
+        def finished(error):
+            if error:
+                print(error)
 
-    def finished(error):
-        if error:
-            print(error)
-
-    wakeup_sound = disnake.FFmpegPCMAudio(config.WAKEUP_AUDIOFILE)
-    vc.play(wakeup_sound, after=finished)
-    while vc.is_playing():
-        await asyncio.sleep(1)
-    await vc.disconnect()
+        wakeup_sound = disnake.FFmpegPCMAudio(config.WAKEUP_AUDIOFILE)
+        vc.play(wakeup_sound, after=finished)
+        timeout = 60
+        elapsed = 0
+        while vc.is_playing() and elapsed < timeout:
+            await asyncio.sleep(1)
+            elapsed += 1
+        if elapsed >= timeout:
+            print(f"Wakeup playback timed out after {timeout}s, forcing disconnect")
+            vc.stop()
+    except Exception as e:
+        print(f"Wakeup voice error: {e}")
+    finally:
+        try:
+            await vc.disconnect(force=True)
+        except Exception:
+            pass
