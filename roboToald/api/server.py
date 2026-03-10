@@ -550,8 +550,19 @@ async def websocket_accounts(websocket: WebSocket):
             await _ws_close(websocket, 4010, update_msg)
             return
 
-    # --- Resolve friendly guild/user names for logging ---
+    # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
+    if discord_client and not discord_client.is_ready():
+        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
+        for _ in range(30):
+            await asyncio.sleep(1)
+            if discord_client.is_ready():
+                break
+        else:
+            await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
+            return
+
+    # --- Resolve friendly guild/user names for logging ---
     if discord_client:
         guild = discord_client.get_guild(guild_id)
         member = guild.get_member(discord_user_id) if guild else None
@@ -569,17 +580,6 @@ async def websocket_accounts(websocket: WebSocket):
         logger.info("Rejecting client due to settings: %s: %s", settings_error, ws_label)
         await _ws_close(websocket, 4011, settings_error)
         return
-
-    # --- Wait for Discord cache to be ready ---
-    if discord_client and not discord_client.is_ready():
-        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
-        for _ in range(30):
-            await asyncio.sleep(1)
-            if discord_client.is_ready():
-                break
-        else:
-            await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
-            return
 
     # --- Phase 2: send full state ---
     account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
