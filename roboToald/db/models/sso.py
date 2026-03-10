@@ -1332,6 +1332,23 @@ def record_heartbeat_session(guild_id: int, account_id: int,
         session.commit()
 
 
+def get_active_characters(guild_id: int) -> dict[int, str]:
+    """Return a mapping of account_id -> character_name for currently active sessions."""
+    threshold = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+    with base.get_session() as session:
+        rows = session.query(
+            SSOCharacterSession.account_id,
+            SSOCharacterSession.character_name,
+        ).filter(
+            SSOCharacterSession.guild_id == guild_id,
+            SSOCharacterSession.last_seen >= threshold,
+        ).order_by(SSOCharacterSession.last_seen.desc()).all()
+    seen: dict[int, str] = {}
+    for account_id, character_name in rows:
+        seen.setdefault(account_id, character_name)
+    return seen
+
+
 def get_sessions_in_range(guild_id: int, start: datetime.datetime,
                           end: datetime.datetime) -> list[SSOCharacterSession]:
     """Return sessions overlapping [start, end] with eager-loaded account + aliases."""

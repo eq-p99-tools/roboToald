@@ -13,11 +13,15 @@ from roboToald.db.models import sso as sso_model
 logger = logging.getLogger(__name__)
 
 
-def build_account_tree(accessible_accounts) -> dict:
+def build_account_tree(accessible_accounts, active_characters: dict[int, str] | None = None) -> dict:
     """Build an account_tree dict from a list of SSOAccount objects.
 
     Matches the v3 structure returned by POST /list_accounts.
+    *active_characters* is an optional ``{account_id: character_name}`` map
+    from :func:`sso_model.get_active_characters`.
     """
+    if active_characters is None:
+        active_characters = {}
     tree = {}
     for account in accessible_accounts:
         tree[account.real_user] = {
@@ -38,6 +42,7 @@ def build_account_tree(accessible_accounts) -> dict:
                 else None
             ),
             "last_login_by": account.last_login_by,
+            "active_character": active_characters.get(account.id),
         }
     return tree
 
@@ -111,7 +116,7 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
                 fields["characters"] = char_diff
 
         # Scalar fields
-        for scalar in ("last_login", "last_login_by"):
+        for scalar in ("last_login", "last_login_by", "active_character"):
             old_val = old_data.get(scalar)
             new_val = new_data.get(scalar)
             if old_val != new_val:
@@ -191,17 +196,19 @@ class ConnectionManager:
             return
 
         all_accounts = sso_model.list_accounts(guild_id)
+        active_characters = sso_model.get_active_characters(guild_id)
 
         for conn in connections:
             try:
-                await self._push_delta(conn, guild_id, all_accounts)
+                await self._push_delta(conn, guild_id, all_accounts, active_characters)
             except Exception:
                 logger.exception(
                     "Failed to push delta to WS client guild=%s user=%s",
                     guild_id, conn.discord_user_id,
                 )
 
-    async def _push_delta(self, conn: ClientConnection, guild_id: int, all_accounts):
+    async def _push_delta(self, conn: ClientConnection, guild_id: int,
+                          all_accounts, active_characters: dict[int, str]):
         from roboToald.api.server import user_has_access_to_accounts
 
         if conn.websocket.client_state != WebSocketState.CONNECTED:
@@ -214,7 +221,7 @@ class ConnectionManager:
             guild_id,
             [a.id for a in all_accounts],
         )
-        new_tree = build_account_tree(accessible)
+        new_tree = build_account_tree(accessible, active_characters)
         changes = compute_diff(conn.last_sent_state, new_tree)
 
         if changes:
@@ -226,13 +233,14 @@ class ConnectionManager:
         from roboToald.api.server import user_has_access_to_accounts
 
         all_accounts = sso_model.list_accounts(guild_id)
+        active_characters = sso_model.get_active_characters(guild_id)
         accessible = user_has_access_to_accounts(
             self._discord_client,
             discord_user_id,
             guild_id,
             [a.id for a in all_accounts],
         )
-        return build_account_tree(accessible)
+        return build_account_tree(accessible, active_characters)
 
 
 manager = ConnectionManager()

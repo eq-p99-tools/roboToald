@@ -358,6 +358,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
 
     ### Build v2/v3 response data
+    active_characters = sso_model.get_active_characters(guild_id)
     account_tree = {
         account.real_user: {
             "aliases": [
@@ -382,6 +383,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
                 else None
             ),
             "last_login_by": account.last_login_by,
+            "active_character": active_characters.get(account.id),
         } for account in accessible_accounts
     }
 
