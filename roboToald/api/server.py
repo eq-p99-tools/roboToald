@@ -571,7 +571,8 @@ async def websocket_accounts(websocket: WebSocket):
     else:
         guild_label = str(guild_id)
         user_label = str(discord_user_id)
-    ws_label = f"guild={guild_label} user={user_label} ip={client_host}"
+    client_ver = msg.get("client_version", "unknown")
+    ws_label = f"guild={guild_label} user={user_label} v={client_ver} ip={client_host}"
 
     # --- Check client settings against guild requirements ---
     user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
