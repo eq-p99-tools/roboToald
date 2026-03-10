@@ -45,6 +45,11 @@ wakeup_channels = textchannel_id1:voicechannel_id1, textchannel_id2:voicechannel
 #min_client_version = 1.2.0
 #client_update_message = Your SSO client is outdated. Please download the latest version.
 
+# Require EQ logging to be enabled (Log=TRUE in eqclient.ini).
+# Older clients that don't send client_settings are allowed through regardless.
+# Pair with min_client_version to enforce this for all users.
+#require_log = true
+
 [guild.67890]
 # Raid Subscription commands will be unusable.
 enable_raidtarget = false

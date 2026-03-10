@@ -96,6 +96,7 @@ class AuthRequest(BaseModel):
     """Request model for SSO authentication."""
     username: str
     password: str
+    client_settings: dict | None = None
 
 
 class SSOResponse(BaseModel):
@@ -135,12 +136,13 @@ async def root(request: Request):
     return {"status": "ok", "service": "RoboToald API", "message": "API server is running"}
 
 
-@app.post("/auth", response_model=Union[SSOResponse, ErrorResponse], 
-          status_code=status.HTTP_200_OK, 
+@app.post("/auth", response_model=Union[SSOResponse, ErrorResponse],
+          status_code=status.HTTP_200_OK,
           responses={
               400: {"model": ErrorResponse, "description": "Character not found"},
               401: {"model": ErrorResponse, "description": "Authentication failed"},
               410: {"model": ErrorResponse, "description": "Tag temporarily empty"},
+              422: {"model": ErrorResponse, "description": "Client settings rejected"},
               #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
           })
 async def authenticate(auth_data: AuthRequest, request: Request):
@@ -191,6 +193,14 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     if access_key:
         discord_user_id = access_key.discord_user_id
         guild_id = access_key.guild_id
+
+        settings_error = _validate_client_settings(auth_data.client_settings, guild_id)
+        if settings_error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=settings_error,
+            )
+
         try:
             account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id, inactive_only=True)
         except sso_model.SSOTagTemporarilyEmptyError:
@@ -531,6 +541,13 @@ async def websocket_accounts(websocket: WebSocket):
             await _ws_close(websocket, 4010, update_msg)
             return
 
+    # --- Check client settings against guild requirements ---
+    settings_error = _validate_client_settings(msg.get("client_settings"), guild_id)
+    if settings_error:
+        logger.info("Rejecting client due to settings: %s: %s", settings_error, ws_label)
+        await _ws_close(websocket, 4011, settings_error)
+        return
+
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
     if discord_client and not discord_client.is_ready():
@@ -701,6 +718,28 @@ def _resolve_display_name(discord_client, guild_id: int, discord_user_id: int) -
         return None
     member = guild.get_member(discord_user_id)
     return member.display_name if member else None
+
+
+def _validate_client_settings(client_settings: dict | None, guild_id: int) -> str | None:
+    """Return an error message if client settings fail guild requirements, else None.
+
+    Older clients that omit client_settings entirely are allowed through for
+    backward compatibility. Enforcement only applies when the field is present
+    but contains a failing value. Use min_client_version to close this loophole.
+    """
+    if not client_settings:
+        return None
+
+    guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
+
+    if (guild_settings.get("require_log")
+            and "log_enabled" in client_settings
+            and not client_settings["log_enabled"]):
+        return (
+            "Logging must be enabled in eqclient.ini (Log=TRUE in [Defaults] section). "
+            "The login proxy attempted to set this automatically but the file may be read-only."
+        )
+    return None
 
 
 def raise_auth_failed():
