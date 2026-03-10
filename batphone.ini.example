@@ -50,6 +50,13 @@ wakeup_channels = textchannel_id1:voicechannel_id1, textchannel_id2:voicechannel
 # Pair with min_client_version to enforce this for all users.
 #require_log = true
 
+# Block clients that have the Rustle UI skin in their uifiles directory.
+# Older clients that don't send client_settings are allowed through regardless.
+# Pair with min_client_version to enforce this for all users.
+#block_rustle = true
+# Discord roles exempt from the Rustle block (comma-separated role IDs)
+#block_rustle_exempt_roles = 123456789, 987654321
+
 [guild.67890]
 # Raid Subscription commands will be unusable.
 enable_raidtarget = false

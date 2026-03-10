@@ -194,8 +194,15 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         discord_user_id = access_key.discord_user_id
         guild_id = access_key.guild_id
 
-        settings_error = _validate_client_settings(auth_data.client_settings, guild_id)
+        discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+        user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
+        settings_error = _validate_client_settings(auth_data.client_settings, guild_id, user_role_ids=user_role_ids)
         if settings_error:
+            login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+            logger.info(
+                "Rejecting /auth due to client settings: %s [account: %s, guild: %s, user: %s (%s)]",
+                settings_error, auth_data.username, guild_id, discord_user_id, login_name or "unknown",
+            )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=settings_error,
@@ -541,25 +548,8 @@ async def websocket_accounts(websocket: WebSocket):
             await _ws_close(websocket, 4010, update_msg)
             return
 
-    # --- Check client settings against guild requirements ---
-    settings_error = _validate_client_settings(msg.get("client_settings"), guild_id)
-    if settings_error:
-        logger.info("Rejecting client due to settings: %s: %s", settings_error, ws_label)
-        await _ws_close(websocket, 4011, settings_error)
-        return
-
-    # --- Wait for Discord cache to be ready ---
+    # --- Resolve friendly guild/user names for logging ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
-    if discord_client and not discord_client.is_ready():
-        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
-        for _ in range(30):
-            await asyncio.sleep(1)
-            if discord_client.is_ready():
-                break
-        else:
-            await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
-            return
-
     if discord_client:
         guild = discord_client.get_guild(guild_id)
         member = guild.get_member(discord_user_id) if guild else None
@@ -569,6 +559,25 @@ async def websocket_accounts(websocket: WebSocket):
         guild_label = str(guild_id)
         user_label = str(discord_user_id)
     ws_label = f"guild={guild_label} user={user_label} ip={client_host}"
+
+    # --- Check client settings against guild requirements ---
+    user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
+    settings_error = _validate_client_settings(msg.get("client_settings"), guild_id, user_role_ids=user_role_ids)
+    if settings_error:
+        logger.info("Rejecting client due to settings: %s: %s", settings_error, ws_label)
+        await _ws_close(websocket, 4011, settings_error)
+        return
+
+    # --- Wait for Discord cache to be ready ---
+    if discord_client and not discord_client.is_ready():
+        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
+        for _ in range(30):
+            await asyncio.sleep(1)
+            if discord_client.is_ready():
+                break
+        else:
+            await _ws_close(websocket, 4004, "Server still initializing, try again shortly")
+            return
 
     # --- Phase 2: send full state ---
     account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
@@ -720,7 +729,22 @@ def _resolve_display_name(discord_client, guild_id: int, discord_user_id: int) -
     return member.display_name if member else None
 
 
-def _validate_client_settings(client_settings: dict | None, guild_id: int) -> str | None:
+def _get_user_role_ids(discord_client, guild_id: int, discord_user_id: int) -> list[int]:
+    """Return the Discord role IDs for a guild member, or an empty list."""
+    if not discord_client:
+        return []
+    guild = discord_client.get_guild(guild_id)
+    member = guild.get_member(discord_user_id) if guild else None
+    if member is None:
+        return []
+    return [role.id for role in member.roles]
+
+
+def _validate_client_settings(
+    client_settings: dict | None,
+    guild_id: int,
+    user_role_ids: list[int] | None = None,
+) -> str | None:
     """Return an error message if client settings fail guild requirements, else None.
 
     Older clients that omit client_settings entirely are allowed through for
@@ -739,6 +763,17 @@ def _validate_client_settings(client_settings: dict | None, guild_id: int) -> st
             "Logging must be enabled in eqclient.ini (Log=TRUE in [Defaults] section). "
             "The login proxy attempted to set this automatically but the file may be read-only."
         )
+
+    if (guild_settings.get("block_rustle")
+            and "rustle_present" in client_settings
+            and client_settings["rustle_present"]):
+        exempt_roles = guild_settings.get("block_rustle_exempt_roles", [])
+        if not exempt_roles or not user_role_ids or not any(r in exempt_roles for r in user_role_ids):
+            return (
+                "The Rustle UI skin was detected in your EverQuest uifiles directory. "
+                "Please remove it to continue."
+            )
+
     return None
 
 

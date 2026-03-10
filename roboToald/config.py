@@ -89,6 +89,10 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'client_update_message', fallback=None),
         'require_log': CONF.getboolean(
             f"guild.{guild}", 'require_log', fallback=False),
+        'block_rustle': CONF.getboolean(
+            f"guild.{guild}", 'block_rustle', fallback=False),
+        'block_rustle_exempt_roles': [int(x) for x in CONF.get(
+            f"guild.{guild}", 'block_rustle_exempt_roles', fallback="").split(",") if x.strip()],
     }
     if GUILD_SETTINGS[guild]['wakeup_channels']:
         for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
