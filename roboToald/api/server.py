@@ -674,6 +674,8 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
 
     login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
+    sso_model.record_heartbeat_session(
+        conn.guild_id, account.id, character_name, conn.discord_user_id)
     sso_model.update_account_character(
         guild_id=conn.guild_id,
         name=character_name,
