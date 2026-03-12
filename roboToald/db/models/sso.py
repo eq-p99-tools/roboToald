@@ -1332,6 +1332,23 @@ def record_heartbeat_session(guild_id: int, account_id: int,
         session.commit()
 
 
+def expire_other_sessions(guild_id: int, discord_user_id: int,
+                          keep_account_id: int) -> int:
+    """Expire active sessions for a user on all accounts except keep_account_id.
+    Returns the number of sessions expired."""
+    threshold = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+    expired_time = threshold - datetime.timedelta(seconds=1)
+    with base.get_session() as session:
+        count = session.query(SSOCharacterSession).filter(
+            SSOCharacterSession.guild_id == guild_id,
+            SSOCharacterSession.discord_user_id == discord_user_id,
+            SSOCharacterSession.account_id != keep_account_id,
+            SSOCharacterSession.last_seen >= threshold,
+        ).update({SSOCharacterSession.last_seen: expired_time})
+        session.commit()
+    return count
+
+
 def get_active_characters(guild_id: int) -> dict[int, str]:
     """Return a mapping of account_id -> character_name for currently active sessions."""
     threshold = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)

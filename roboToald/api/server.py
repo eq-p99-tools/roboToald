@@ -654,6 +654,8 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.record_heartbeat_session(
         conn.guild_id, account.id, character_name, conn.discord_user_id)
+    sso_model.expire_other_sessions(
+        conn.guild_id, conn.discord_user_id, account.id)
     await ws_manager.notify_guild_async(conn.guild_id)
 
 
@@ -676,6 +678,8 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.record_heartbeat_session(
         conn.guild_id, account.id, character_name, conn.discord_user_id)
+    sso_model.expire_other_sessions(
+        conn.guild_id, conn.discord_user_id, account.id)
     sso_model.update_account_character(
         guild_id=conn.guild_id,
         name=character_name,
