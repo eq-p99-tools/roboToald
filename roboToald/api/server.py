@@ -725,14 +725,18 @@ def _parse_version(ver: str) -> tuple:
 
     Pre-release suffixes (e.g. '1.2.0-rc3') sort below the release
     they're attached to, which is the standard semver expectation.
+    A version with any pre-release or build suffix is considered older
+    than the same base version without one.
     """
-    base, _, _pre = ver.partition("-")
+    base, _, pre = ver.partition("-")
     parts = []
     for seg in base.split("."):
         try:
             parts.append(int(seg))
         except ValueError:
             parts.append(0)
+    # No suffix → release (1), any suffix → pre-release (0)
+    parts.append(0 if pre else 1)
     return tuple(parts)
 
 
