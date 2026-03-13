@@ -195,6 +195,24 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         guild_id = access_key.guild_id
 
         discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+
+        guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
+        min_ver = guild_settings.get("min_client_version")
+        if min_ver:
+            client_ver = request.headers.get("X-Client-Version", "0.0.0")
+            if _parse_version(client_ver) < _parse_version(min_ver):
+                update_msg = guild_settings.get("client_update_message") or (
+                    f"Client update required (minimum version: {min_ver})"
+                )
+                logger.info(
+                    "Rejecting /auth: client %s below minimum %s [account: %s, guild: %s]",
+                    client_ver, min_ver, auth_data.username, guild_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=update_msg,
+                )
+
         user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
         settings_error = _validate_client_settings(auth_data.client_settings, guild_id, user_role_ids=user_role_ids)
         if settings_error:
