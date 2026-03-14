@@ -13,11 +13,6 @@ for section in CONF.sections():
     if section.startswith("guild."):
         TEST_GUILDS.append(int(section.split('.')[-1]))
 
-RT_ENDPOINT = CONF.get('raidtargets', 'endpoint')
-SOON_THRESHOLD = CONF.getint(
-    'raidtargets', 'soon_threshold',
-    fallback=48 * 60 * 60)  # Default: 48 hours
-
 SKP_STARTTIME = CONF.getint(
     'ds', 'skp_starttime', fallback=8 * 60)
 SKP_BASELINE = CONF.getint(
@@ -93,6 +88,13 @@ for guild in TEST_GUILDS:
             f"guild.{guild}", 'block_rustle', fallback=False),
         'block_rustle_exempt_roles': [int(x) for x in CONF.get(
             f"guild.{guild}", 'block_rustle_exempt_roles', fallback="").split(",") if x.strip()],
+        'raidtargets_endpoint': CONF.get(
+            f"guild.{guild}", 'raidtargets_endpoint', fallback=None),
+        'raidtargets_authkey': CONF.get(
+            f"guild.{guild}", 'raidtargets_authkey', fallback=None),
+        'raidtargets_soon_threshold': CONF.getint(
+            f"guild.{guild}", 'raidtargets_soon_threshold',
+            fallback=48 * 60 * 60),
     }
     if GUILD_SETTINGS[guild]['wakeup_channels']:
         for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
@@ -123,3 +125,16 @@ def guilds_for_command(command_name: str) -> List[int]:
         if GUILD_SETTINGS[guild_entry].get(f'enable_{command_name}', False):
             guild_list.append(guild_entry)
     return guild_list
+
+
+def get_raidtargets_endpoint(guild_id: int) -> str | None:
+    return GUILD_SETTINGS.get(guild_id, {}).get('raidtargets_endpoint')
+
+
+def get_raidtargets_authkey(guild_id: int) -> str | None:
+    return GUILD_SETTINGS.get(guild_id, {}).get('raidtargets_authkey')
+
+
+def get_raidtargets_soon_threshold(guild_id: int) -> int:
+    return GUILD_SETTINGS.get(guild_id, {}).get(
+        'raidtargets_soon_threshold', 48 * 60 * 60)
