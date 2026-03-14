@@ -553,25 +553,12 @@ async def websocket_accounts(websocket: WebSocket):
     guild_id = access_key.guild_id
     discord_user_id = access_key.discord_user_id
     client_host = websocket.client.host if websocket.client else "unknown"
-    ws_label = f"guild={guild_id} user={discord_user_id} ip={client_host}"
-
-    # --- Check client version against guild minimum ---
-    guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
-    min_ver = guild_settings.get("min_client_version")
-    if min_ver:
-        client_ver = msg.get("client_version", "0.0.0")
-        if _parse_version(client_ver) < _parse_version(min_ver):
-            update_msg = guild_settings.get("client_update_message") or (
-                f"Client update required (minimum version: {min_ver})"
-            )
-            logger.info("Rejecting outdated client %s (minimum %s): %s", client_ver, min_ver, ws_label)
-            await _ws_close(websocket, 4010, update_msg)
-            return
 
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
     if discord_client and not discord_client.is_ready():
-        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label)
+        ws_label_early = f"guild={guild_id} user={discord_user_id} ip={client_host}"
+        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label_early)
         for _ in range(30):
             await asyncio.sleep(1)
             if discord_client.is_ready():
@@ -591,6 +578,19 @@ async def websocket_accounts(websocket: WebSocket):
         user_label = str(discord_user_id)
     client_ver = msg.get("client_version", "unknown")
     ws_label = f"guild={guild_label} user={user_label} v={client_ver} ip={client_host}"
+
+    # --- Check client version against guild minimum ---
+    guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
+    min_ver = guild_settings.get("min_client_version")
+    if min_ver:
+        client_ver = msg.get("client_version", "0.0.0")
+        if _parse_version(client_ver) < _parse_version(min_ver):
+            update_msg = guild_settings.get("client_update_message") or (
+                f"Client update required (minimum version: {min_ver})"
+            )
+            logger.info("Rejecting outdated client %s (minimum %s): %s", client_ver, min_ver, ws_label)
+            await _ws_close(websocket, 4010, update_msg)
+            return
 
     # --- Check client settings against guild requirements ---
     user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
@@ -801,8 +801,8 @@ def _validate_client_settings(
         exempt_roles = guild_settings.get("block_rustle_exempt_roles", [])
         if not exempt_roles or not user_role_ids or not any(r in exempt_roles for r in user_role_ids):
             return (
-                "The Rustle UI skin was detected in your EverQuest uifiles directory. "
-                "Please remove it to continue."
+                "A UI skin with modified inventory slots was detected in your "
+                "EverQuest uifiles directory. Please remove it to continue."
             )
 
     return None
