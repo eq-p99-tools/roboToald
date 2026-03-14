@@ -832,48 +832,41 @@ def raise_tag_temporarily_empty():
     )
 
 
-def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_ids: list[int]) -> list[int]:
+def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_ids: list[int]) -> list[sso_model.SSOAccount]:
+    """Return the subset of *account_ids* accessible to the Discord user.
+
+    Uses a single bulk query instead of per-account/per-group lookups.
     """
-    Check if a Discord user has access to a specific account.
-    
-    This function checks:
-    1. If the user has any groups
-    2. If the accounts belong to any of those groups
-    """
+    import sqlalchemy.orm
+
+    role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
+    if not role_ids or not account_ids:
+        return []
+
     with base.get_session() as session:
         try:
-            # Get all groups for the guild
-            groups = session.query(sso_model.SSOAccountGroup).filter(
-                sso_model.SSOAccountGroup.guild_id == guild_id
-            ).all()
-
-            # Check if discord is available and guild/member are cached
-            guild = discord_client.get_guild(guild_id) if discord_client else None
-            member = guild.get_member(discord_user_id) if guild else None
-
-            if member is not None:
-                role_ids = [role.id for role in member.roles]
-            else:
-                role_ids = []
-
-            valid_accounts = set()
-            for account_id in account_ids:
-                # Check each group to see if the user has the role and if the account is in the group
-                for group in groups:
-                    # Check if the account is in this group
-                    account_in_group = session.query(sso_model.account_group_mapping).filter(
-                        sso_model.account_group_mapping.c.account_id == account_id,
-                        sso_model.account_group_mapping.c.group_id == group.id
-                    ).count() > 0
-                
-                    if account_in_group:
-                        # Check if the user has the role_id associated with the group
-                        if group.role_id in role_ids:
-                            valid_accounts.add(sso_model.get_account_by_id(account_id))
-                            continue
-                    
-            # Return the list of valid accounts
-            return list(valid_accounts)
+            accessible_ids = {
+                row[0] for row in session.query(
+                    sso_model.account_group_mapping.c.account_id
+                ).join(
+                    sso_model.SSOAccountGroup,
+                    sso_model.account_group_mapping.c.group_id == sso_model.SSOAccountGroup.id,
+                ).filter(
+                    sso_model.account_group_mapping.c.account_id.in_(account_ids),
+                    sso_model.SSOAccountGroup.guild_id == guild_id,
+                    sso_model.SSOAccountGroup.role_id.in_(role_ids),
+                ).all()
+            }
+            if not accessible_ids:
+                return []
+            accounts = session.query(sso_model.SSOAccount).options(
+                sqlalchemy.orm.joinedload(sso_model.SSOAccount.groups),
+                sqlalchemy.orm.joinedload(sso_model.SSOAccount.characters),
+                sqlalchemy.orm.joinedload(sso_model.SSOAccount.tags),
+                sqlalchemy.orm.joinedload(sso_model.SSOAccount.aliases),
+            ).filter(sso_model.SSOAccount.id.in_(accessible_ids)).all()
+            session.expunge_all()
+            return accounts
         except Exception as e:
-            logger.error(f"Error checking user access: {str(e)}")
+            logger.error(f"Error checking user access: {e}")
             return []

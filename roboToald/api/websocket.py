@@ -6,11 +6,18 @@ import threading
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket
-from starlette.websockets import WebSocketState
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from roboToald.db.models import sso as sso_model
 
 logger = logging.getLogger(__name__)
+
+
+def _brief_exc_info() -> str:
+    """Return a one-line summary of the current exception (type + message)."""
+    import sys
+    exc = sys.exc_info()[1]
+    return f"{type(exc).__name__}: {exc}" if exc else "unknown"
 
 
 def build_account_tree(accessible_accounts, active_characters: dict[int, str] | None = None) -> dict:
@@ -190,37 +197,61 @@ class ConnectionManager:
 
     # -- Internal -------------------------------------------------------------
 
+    def _filter_accessible(self, discord_user_id: int, guild_id: int,
+                           accounts: list) -> list:
+        """Filter accounts to those accessible by the user's Discord roles.
+
+        Relies on the ``groups`` relationship already being loaded on each
+        account (e.g. via ``joinedload``), so this does **no** DB queries.
+        """
+        if not self._discord_client:
+            return []
+        guild = self._discord_client.get_guild(guild_id)
+        member = guild.get_member(discord_user_id) if guild else None
+        if member is None:
+            return []
+        role_ids = {role.id for role in member.roles}
+        return [
+            a for a in accounts
+            if any(g.role_id in role_ids for g in a.groups)
+        ]
+
     async def _notify_guild_async(self, guild_id: int):
         connections = self._get_connections_for_guild(guild_id)
         if not connections:
             return
 
-        all_accounts = sso_model.list_accounts(guild_id)
-        active_characters = sso_model.get_active_characters(guild_id)
+        all_accounts = await asyncio.to_thread(sso_model.list_accounts, guild_id)
+        active_characters = await asyncio.to_thread(
+            sso_model.get_active_characters, guild_id)
 
-        for conn in connections:
+        async def _safe_push(conn: ClientConnection):
             try:
                 await self._push_delta(conn, guild_id, all_accounts, active_characters)
-            except Exception:
-                logger.exception(
-                    "Failed to push delta to WS client guild=%s user=%s",
+            except WebSocketDisconnect:
+                logger.info(
+                    "WS client disconnected during delta push guild=%s user=%s",
                     guild_id, conn.discord_user_id,
                 )
+                self.unregister(conn.websocket)
+            except Exception:
+                logger.warning(
+                    "Failed to push delta to WS client guild=%s user=%s: %s",
+                    guild_id, conn.discord_user_id,
+                    _brief_exc_info(),
+                )
+                self.unregister(conn.websocket)
+
+        await asyncio.gather(*[_safe_push(conn) for conn in connections])
 
     async def _push_delta(self, conn: ClientConnection, guild_id: int,
                           all_accounts, active_characters: dict[int, str]):
-        from roboToald.api.server import user_has_access_to_accounts
-
         if conn.websocket.client_state != WebSocketState.CONNECTED:
             self.unregister(conn.websocket)
             return
 
-        accessible = user_has_access_to_accounts(
-            self._discord_client,
-            conn.discord_user_id,
-            guild_id,
-            [a.id for a in all_accounts],
-        )
+        accessible = self._filter_accessible(
+            conn.discord_user_id, guild_id, all_accounts)
         new_tree = build_account_tree(accessible, active_characters)
         changes = compute_diff(conn.last_sent_state, new_tree)
 
@@ -230,16 +261,10 @@ class ConnectionManager:
 
     async def build_full_state(self, guild_id: int, discord_user_id: int) -> dict:
         """Build the full account_tree for a user (used on initial WS auth)."""
-        from roboToald.api.server import user_has_access_to_accounts
-
         all_accounts = sso_model.list_accounts(guild_id)
         active_characters = sso_model.get_active_characters(guild_id)
-        accessible = user_has_access_to_accounts(
-            self._discord_client,
-            discord_user_id,
-            guild_id,
-            [a.id for a in all_accounts],
-        )
+        accessible = self._filter_accessible(
+            discord_user_id, guild_id, all_accounts)
         return build_account_tree(accessible, active_characters)
 
 
