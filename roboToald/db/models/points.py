@@ -143,10 +143,12 @@ def get_last_pop_time() -> datetime.datetime:
 
 
 def get_event_pairs_since_last_pop(
-        guild_id: int
+        guild_id: int,
+        start_time: datetime.datetime = None
 ) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
-    last_pop_time = get_last_pop_time()
-    events = get_events_since_time(guild_id, last_pop_time)
+    if start_time is None:
+        start_time = get_last_pop_time()
+    events = get_events_since_time(guild_id, start_time)
     event_pairs = get_event_pairs_split_members(events)
     return event_pairs
 

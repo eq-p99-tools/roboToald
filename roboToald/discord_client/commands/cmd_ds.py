@@ -6,6 +6,7 @@ import time
 from typing import Tuple
 
 import disnake
+from dateutil import parser
 from disnake.ext import commands
 
 from roboToald import config
@@ -17,6 +18,37 @@ from roboToald.discord_client.commands import cmd_timer
 from roboToald import utils
 
 DS_GUILDS = config.guilds_for_command('ds')
+
+# Per-guild override for the effective last-POP time. When set, point ramp
+# calculations use this instead of the real POP event from the database.
+# Cleared when /ds tod records a real POP. Restored on startup from the
+# DS Spawn timer's first_run field.
+SPAWN_OVERRIDE: dict[int, datetime.datetime] = {}
+
+
+def get_effective_pop_time(guild_id: int) -> datetime.datetime:
+    if guild_id in SPAWN_OVERRIDE:
+        return SPAWN_OVERRIDE[guild_id]
+    return points_model.get_last_pop_time()
+
+
+async def restore_spawn_overrides():
+    """Derive SPAWN_OVERRIDE from persisted DS Spawn timers on startup."""
+    for guild_id in DS_GUILDS:
+        timer_channel_id = config.GUILD_SETTINGS.get(
+            guild_id, {}).get('ds_tod_channel')
+        if not timer_channel_id:
+            continue
+        timers = timer_model.get_timers_for_channel(timer_channel_id)
+        for t in timers:
+            if t.name != "DS Spawn":
+                continue
+            implied_pop = datetime.datetime.fromtimestamp(
+                t.first_run - 86400).astimezone()
+            real_pop = points_model.get_last_pop_time()
+            if abs((implied_pop - real_pop).total_seconds()) > 300:
+                SPAWN_OVERRIDE[guild_id] = implied_pop
+            break
 
 @base.DISCORD_CLIENT.slash_command(
     description="DS Camp Time Auditing",
@@ -35,7 +67,7 @@ async def quake(
             ge=0,
             description="Backdate entry by <X> minutes.")
 ):
-    last_pop_time = points_model.get_last_pop_time()
+    last_pop_time = get_effective_pop_time(inter.guild_id)
     last = points_model.get_last_event(0, inter.guild_id)
     last_was_quake = last and last.event in (constants.Event.COMP_START, constants.Event.COMP_END)
     event_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
@@ -114,7 +146,7 @@ async def start(
         await inter.send("Cannot backdate prior to the player's latest entry.",
                          ephemeral=True)
         return
-    last_tod = points_model.get_last_pop_time()
+    last_tod = get_effective_pop_time(inter.guild_id)
     if last_tod and start_time.astimezone() < last_tod:
         await inter.send(f"Cannot backdate prior to the last ToD "
                          f"(<t:{int(time.mktime(last_tod.timetuple()))}:R>).",
@@ -159,11 +191,13 @@ def get_point_value(minute: int) -> float:
 def calculate_points_for_session(
         guild_id: int, stop_time: datetime.datetime
 ) -> dict[int, dict[int, int]]:
-    # Get all start/stop event pairs since the last pop
-    event_pairs = points_model.get_event_pairs_since_last_pop(guild_id)
+    start_time = get_effective_pop_time(guild_id)
+
+    # Get all start/stop event pairs since the effective pop time
+    event_pairs = points_model.get_event_pairs_since_last_pop(
+        guild_id, start_time=start_time)
 
     ### Normalize all event times
-    start_time = points_model.get_last_pop_time()
     time_at_camp = stop_time.astimezone() - start_time
     standard_minutes = math.ceil(time_at_camp.total_seconds() / 60)
 
@@ -298,7 +332,7 @@ async def stop(
     stop_time = datetime.datetime.now()
     if backdate:
         stop_time -= datetime.timedelta(minutes=backdate)
-    last_pop = points_model.get_last_pop_time()
+    last_pop = get_effective_pop_time(inter.guild_id)
     # If there is an event, it is closed, it is after the last pop,
     # and backdate is set, then update the last event's stop time
     if last and not last.active and last.time.astimezone() > last_pop and backdate is not None:
@@ -369,7 +403,7 @@ async def status(
     # if offhours_start < tznow < offhours_end:
     #     is_offhours = True
 
-    start_time = points_model.get_last_pop_time()
+    start_time = get_effective_pop_time(inter.guild_id)
     time_at_camp = datetime.datetime.now().astimezone() - start_time
     minute = math.ceil(time_at_camp.total_seconds() / 60) % (60 * 24)
     current_rate = get_point_value(minute)
@@ -598,7 +632,8 @@ async def tod(
             message += f"<@{event.user_id}>, "
         message = message[:-2] + ".\n"
 
-    # Record the POP event
+    # Record the POP event and clear any spawn override
+    SPAWN_OVERRIDE.pop(inter.guild_id, None)
     pop_event = points_model.PointsAudit(
         user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
         time=stop_time, active=False)
@@ -702,6 +737,89 @@ async def adjust(
     message += "."
     await inter.send(
         message, allowed_mentions=disnake.AllowedMentions(users=False))
+
+
+@ds.sub_command(description="[Admin] Override the next DS spawn time.")
+async def set_spawn(
+        inter: disnake.ApplicationCommandInteraction,
+        hours: int = commands.Param(
+            default=0, ge=0,
+            description="Hours until next spawn."),
+        minutes: int = commands.Param(
+            default=0, ge=0,
+            description="Minutes until next spawn."),
+        timestamp: str = commands.Param(
+            default=None,
+            description="Absolute next-spawn time (assumes ET).")):
+
+    admin_role = config.GUILD_SETTINGS.get(inter.guild_id, {}).get('ds_admin_role')
+    if admin_role != 0 and admin_role not in (role.id for role in inter.user.roles):
+        await inter.send("You do not have permission to use this command.", ephemeral=True)
+        return
+
+    if timestamp:
+        try:
+            parsed = parser.parse(timestamp, tzinfos=constants.TIMEZONES)
+        except parser.ParserError:
+            await inter.send("Could not parse that timestamp.", ephemeral=True)
+            return
+        if not parsed.tzname():
+            parsed = parsed.replace(tzinfo=constants.TIMEZONES['ET'])
+        next_spawn_time = parsed.astimezone()
+    elif hours or minutes:
+        next_spawn_time = (
+            datetime.datetime.now().astimezone()
+            + datetime.timedelta(hours=hours, minutes=minutes))
+    else:
+        await inter.send(
+            "Provide hours/minutes until spawn, or a timestamp.", ephemeral=True)
+        return
+
+    if next_spawn_time <= datetime.datetime.now().astimezone():
+        await inter.send("Next spawn time must be in the future.", ephemeral=True)
+        return
+
+    old_pop = get_effective_pop_time(inter.guild_id)
+    implied_pop = next_spawn_time - datetime.timedelta(hours=24)
+    SPAWN_OVERRIDE[inter.guild_id] = implied_pop
+
+    old_spawn = old_pop + datetime.timedelta(hours=24)
+    old_ts = int(old_spawn.timestamp())
+    new_ts = int(next_spawn_time.timestamp())
+    message = (f"Spawn override applied.\n"
+               f"Old spawn: <t:{old_ts}> (<t:{old_ts}:R>)\n"
+               f"New spawn: <t:{new_ts}> (<t:{new_ts}:R>)")
+
+    active_events = points_model.get_active_events(inter.guild_id)
+    if active_events:
+        message += f"\n⚠ {len(active_events)} active camper(s) — point rates will shift."
+
+    await inter.send(message)
+
+    # Restart the DS Spawn timer to match
+    timer_channel_id = config.GUILD_SETTINGS.get(
+        inter.guild_id, {}).get('ds_tod_channel')
+    if not timer_channel_id:
+        return
+    timers = timer_model.get_timers_for_channel(timer_channel_id)
+    timer_channel = inter.guild.get_channel(timer_channel_id)
+    if timers:
+        for t in timers:
+            await cmd_timer._stop(t.id, timer_channel.send)
+
+    delay_seconds = int(
+        (next_spawn_time - datetime.datetime.now().astimezone()).total_seconds())
+    await cmd_timer._start(
+        timer_channel.send,
+        timer_channel,
+        base.DISCORD_CLIENT.user.id,
+        inter.guild_id,
+        name="DS Spawn",
+        hours=24,
+        minutes=1,
+        delay_minutes=0,
+        delay_seconds=delay_seconds - (24 * 3600 + 60),
+        repeating=True)
 
 
 @ds.sub_command(description="Show audit logs for a member's DS events.")
