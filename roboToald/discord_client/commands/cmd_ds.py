@@ -67,7 +67,7 @@ async def quake(
             ge=0,
             description="Backdate entry by <X> minutes.")
 ):
-    last_pop_time = get_effective_pop_time(inter.guild_id)
+    last_pop_time = points_model.get_last_pop_time()
     last = points_model.get_last_event(0, inter.guild_id)
     last_was_quake = last and last.event in (constants.Event.COMP_START, constants.Event.COMP_END)
     event_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
@@ -146,7 +146,7 @@ async def start(
         await inter.send("Cannot backdate prior to the player's latest entry.",
                          ephemeral=True)
         return
-    last_tod = get_effective_pop_time(inter.guild_id)
+    last_tod = points_model.get_last_pop_time()
     if last_tod and start_time.astimezone() < last_tod:
         await inter.send(f"Cannot backdate prior to the last ToD "
                          f"(<t:{int(time.mktime(last_tod.timetuple()))}:R>).",
@@ -191,13 +191,16 @@ def get_point_value(minute: int) -> float:
 def calculate_points_for_session(
         guild_id: int, stop_time: datetime.datetime
 ) -> dict[int, dict[int, int]]:
-    start_time = get_effective_pop_time(guild_id)
+    # Real POP defines the session boundary (which events to include)
+    real_pop = points_model.get_last_pop_time()
+    event_pairs = points_model.get_event_pairs_since_last_pop(guild_id)
 
-    # Get all start/stop event pairs since the effective pop time
-    event_pairs = points_model.get_event_pairs_since_last_pop(
-        guild_id, start_time=start_time)
+    # Effective POP controls where we are on the point ramp curve
+    effective_pop = get_effective_pop_time(guild_id)
+    ramp_offset = round((real_pop - effective_pop).total_seconds() / 60)
 
-    ### Normalize all event times
+    ### Normalize all event times relative to the real POP
+    start_time = real_pop
     time_at_camp = stop_time.astimezone() - start_time
     standard_minutes = math.ceil(time_at_camp.total_seconds() / 60)
 
@@ -275,7 +278,7 @@ def calculate_points_for_session(
         #     point_value *= config.OFFHOURS_MULTIPLIER
 
         ### THE NEW WAY
-        point_value = get_point_value(minute % (24 * 60))
+        point_value = get_point_value((minute + ramp_offset) % (24 * 60))
 
         # Round off point_value only if it is within 0.1 of an integer
         # if abs(point_value - round(point_value)) < 0.1:
@@ -332,7 +335,7 @@ async def stop(
     stop_time = datetime.datetime.now()
     if backdate:
         stop_time -= datetime.timedelta(minutes=backdate)
-    last_pop = get_effective_pop_time(inter.guild_id)
+    last_pop = points_model.get_last_pop_time()
     # If there is an event, it is closed, it is after the last pop,
     # and backdate is set, then update the last event's stop time
     if last and not last.active and last.time.astimezone() > last_pop and backdate is not None:
