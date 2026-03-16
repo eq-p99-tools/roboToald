@@ -22,7 +22,7 @@ def upgrade() -> None:
     """Upgrade schema."""
     # Add rate_limit column to sso_audit_log - this is the main change we need
     op.add_column('sso_audit_log', sa.Column('rate_limit', sa.Boolean(), nullable=True, server_default='1'))
-    
+
     # For SQLite, we need to use batch operations for constraint changes
     # We'll skip the constraint changes for now as they're not critical
     # If you need to apply these changes later, use batch operations

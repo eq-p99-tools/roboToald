@@ -292,7 +292,7 @@ async def status(
         if verbose:
             session_rates = points_for_session.get(event.user_id, 0)
             message += f"; rates: {session_rates}"
-        message += f")\n"
+        message += ")\n"
 
     # If more players were in the session, list them
     if len(set(points_per_member).difference(active_members)) > 0:
@@ -307,7 +307,7 @@ async def status(
                 if verbose:
                     session_rates = points_for_session.get(member, 0)
                     message += f"; rates: {session_rates}"
-                message += f")\n"
+                message += ")\n"
 
     await utils.send_and_split(inter, message)
 

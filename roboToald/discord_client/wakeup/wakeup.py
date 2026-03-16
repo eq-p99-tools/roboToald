@@ -18,7 +18,7 @@ async def process_message(message: disnake.Message) -> None:
         try:
             await wakeup(voice_channel)
         except disnake.errors.ClientException:
-            print(f"Already connected to a voice channel, likely a duplicate trigger.")
+            print("Already connected to a voice channel, likely a duplicate trigger.")
         except Exception as e:
             print(f"Unexpected error during wakeup: {e}")
 

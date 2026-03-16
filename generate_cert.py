@@ -65,6 +65,6 @@ def generate_self_signed_cert(cert_path, key_path):
 if __name__ == "__main__":
     # Create certs directory if it doesn't exist
     os.makedirs("certs", exist_ok=True)
-    
+
     # Generate the certificate and key
     generate_self_signed_cert("certs/cert.pem", "certs/key.pem")

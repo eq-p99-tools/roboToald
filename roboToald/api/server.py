@@ -78,7 +78,7 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             "proxy_headers": True,
             "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS
         }
-        
+
         # Add SSL parameters if certificates are provided
         if use_ssl:
             logger.info(f"Starting API server with TLS on {host}:{port}")
@@ -86,13 +86,13 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             uvicorn_params["ssl_keyfile"] = keyfile
         else:
             logger.warning(f"Starting API server WITHOUT TLS on {host}:{port} - THIS IS POSSIBLY INSECURE")
-        
+
         # Run the server with the appropriate configuration
         uvicorn.run(**uvicorn_params)
-        
+
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
-    
+
     # Log the server start with appropriate protocol
     protocol = "https" if use_ssl else "http"
     logger.info(f"API server started in thread at {protocol}://{host}:{port}")
@@ -174,12 +174,12 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
     """
     client_ip = _get_client_ip(request)
-    
+
     # Check if the IP is rate limited
     if sso_model.is_ip_rate_limited(client_ip, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
         raise_auth_failed()
-    
+
     # Initialize audit log variables
     account_id = None
     guild_id = None
@@ -410,7 +410,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
 
     # Get all accounts for this guild
     all_accounts = sso_model.list_accounts(guild_id)
-    
+
     # Filter accounts based on user access
     accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
 
@@ -452,7 +452,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
         "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
         "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
     }
-    
+
     # Log successful request
     sso_model.create_audit_log(
         username="list_accounts",
@@ -463,7 +463,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
         guild_id=guild_id,
         details="Successfully retrieved resources list"
     )
-    
+
     return response
 
 

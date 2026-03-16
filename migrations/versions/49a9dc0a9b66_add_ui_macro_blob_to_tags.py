@@ -31,14 +31,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('tag_name', 'guild_id', name='uq_tag_name_guild_id')
     )
-    
+
     # Use batch operations for SQLite to add the foreign key
     with op.batch_alter_table('sso_tag') as batch_op:
         batch_op.add_column(sa.Column('ui_macro_id', sa.Integer(), nullable=True))
         batch_op.create_foreign_key(
-            'fk_sso_tag_ui_macro_id', 
-            'sso_tag_ui_macro', 
-            ['ui_macro_id'], 
+            'fk_sso_tag_ui_macro_id',
+            'sso_tag_ui_macro',
+            ['ui_macro_id'],
             ['id']
         )
     # ### end Alembic commands ###
@@ -51,7 +51,7 @@ def downgrade() -> None:
     with op.batch_alter_table('sso_tag') as batch_op:
         batch_op.drop_constraint('fk_sso_tag_ui_macro_id', type_='foreignkey')
         batch_op.drop_column('ui_macro_id')
-    
+
     # Drop the table
     op.drop_table('sso_tag_ui_macro')
     # ### end Alembic commands ###

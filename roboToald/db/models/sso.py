@@ -551,14 +551,14 @@ def add_account_to_group(guild_id: int, group_name: str, real_user: str) -> None
                 SSOAccount.real_user == real_user).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
-            
+
         try:
             group = session.query(SSOAccountGroup).filter(
                 SSOAccountGroup.guild_id == guild_id,
                 SSOAccountGroup.group_name == group_name).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
-            
+
         account.groups.append(group)
         session.commit()
 
@@ -572,14 +572,14 @@ def remove_account_from_group(guild_id: int, group_name: str, real_user: str) ->
                 SSOAccount.real_user == real_user).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
-            
+
         try:
             group = session.query(SSOAccountGroup).filter(
                 SSOAccountGroup.guild_id == guild_id,
                 SSOAccountGroup.group_name == group_name).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountGroupNotFoundError(f"Group '{group_name}' not found in guild {guild_id}")
-            
+
         if group not in account.groups:
             raise sqlalchemy.exc.IntegrityError(None, None, "Account is not in this group")
         account.groups.remove(group)
@@ -736,11 +736,11 @@ def tag_account(guild_id: int, real_user: str, tag: str) -> SSOTag:
                 SSOAccount.real_user == real_user).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
-            
+
         tag_obj = SSOTag(guild_id=guild_id, tag=tag, account_id=account.id)
         session.add(tag_obj)
         session.commit()
-        
+
         try:
             tag_obj = session.query(SSOTag).options(
                 sqlalchemy.orm.joinedload(SSOTag.account)).filter(
@@ -762,7 +762,7 @@ def untag_account(guild_id: int, real_user: str, tag: str) -> None:
                 SSOAccount.real_user == real_user).one()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
-            
+
         try:
             tag_obj = session.query(SSOTag).filter(
                 SSOTag.tag == tag,
@@ -788,7 +788,7 @@ def list_tags(guild_id: int) -> dict[str, list[str]]:
 
 
 def get_tag(guild_id: int, tag: str) -> list[SSOTag]:
-    tag = tag.lower()   
+    tag = tag.lower()
     with base.get_session() as session:
         tag_objs = session.query(SSOTag).options(
             sqlalchemy.orm.joinedload(SSOTag.account),
@@ -800,7 +800,7 @@ def get_tag(guild_id: int, tag: str) -> list[SSOTag]:
 
 
 def update_tag(guild_id: int, tag: str, new_name: str = None, new_ui_macro_data: bytes = None) -> None:
-    tag = tag.lower()   
+    tag = tag.lower()
     with base.get_session() as session:
         try:
             tag_objs = session.query(SSOTag).filter(
@@ -808,17 +808,17 @@ def update_tag(guild_id: int, tag: str, new_name: str = None, new_ui_macro_data:
                 SSOTag.guild_id == guild_id).all()
             if not tag_objs:
                 raise sqlalchemy.exc.NoResultFound()
-                
+
             if new_name is not None:
                 for tag_obj in tag_objs:
                     tag_obj.tag = new_name.lower()
-                    
+
             if new_ui_macro_data is not None:
                 # Update or create UI macro for this tag
                 macro = session.query(SSOTagUIMacro).filter(
                     SSOTagUIMacro.tag_name == tag,
                     SSOTagUIMacro.guild_id == guild_id).one_or_none()
-                
+
                 if macro:
                     macro.ui_macro_data = new_ui_macro_data
                 else:
@@ -826,11 +826,11 @@ def update_tag(guild_id: int, tag: str, new_name: str = None, new_ui_macro_data:
                     new_macro = SSOTagUIMacro(guild_id, tag, new_ui_macro_data)
                     session.add(new_macro)
                     session.flush()  # Get the ID of the new macro
-                    
+
                     # Associate all matching tags with this macro
                     for tag_obj in tag_objs:
                         tag_obj.ui_macro_id = new_macro.id
-            
+
             session.commit()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountTagNotFoundError(f"Tag '{tag}' not found in guild {guild_id}")
@@ -844,7 +844,7 @@ class SSOTagUIMacro(base.Base):
 
     tag_name = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
     ui_macro_data = sqlalchemy.Column(sqlalchemy.BLOB, nullable=False)
-    
+
     # Relationship to SSOTag - one macro can be referenced by many tags
     tags = sqlalchemy.orm.relationship("SSOTag", back_populates="ui_macro")
 
@@ -939,11 +939,11 @@ class SSORevocation(base.Base):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     timestamp = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
-    
+
     # Expiry information
     expiry_days = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     active = sqlalchemy.Column(sqlalchemy.Boolean, default=True)
-    
+
     # User information
     discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -1016,11 +1016,11 @@ class SSOAuditLog(base.Base):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     timestamp = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
-    
+
     # Request information
     ip_address = sqlalchemy.Column(sqlalchemy.String(45), nullable=True)  # IPv6 can be up to 45 chars
     username = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
-    
+
     # Result information
     success = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     # if discord user lookup succeeded:
@@ -1035,7 +1035,7 @@ class SSOAuditLog(base.Base):
     # Additional information
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
-    def __init__(self, username, ip_address=None, success=False, discord_user_id=None, 
+    def __init__(self, username, ip_address=None, success=False, discord_user_id=None,
                  account_id=None, guild_id=None, details=None, rate_limit=True, timestamp=None):
         self.username = username
         self.ip_address = ip_address
@@ -1048,7 +1048,7 @@ class SSOAuditLog(base.Base):
         self.timestamp = timestamp or datetime.datetime.now()
 
 
-def create_audit_log(username, ip_address=None, success=False, discord_user_id=None, 
+def create_audit_log(username, ip_address=None, success=False, discord_user_id=None,
                      account_id=None, guild_id=None, details=None, rate_limit=True) -> SSOAuditLog:
     """Create an audit log entry for an SSO authentication attempt."""
     with base.get_session() as session:
@@ -1081,7 +1081,7 @@ def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0, includ
     return logs
 
 
-def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=None, 
+def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=None,
                    since=None, include_list=False, until=None) -> list[SSOAuditLog]:
     """
     Get audit logs with optional filtering.
@@ -1092,7 +1092,7 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
     with base.get_session() as session:
         query = session.query(SSOAuditLog).options(
             sqlalchemy.orm.joinedload(SSOAuditLog.account).joinedload(SSOAccount.aliases))
-        
+
         # Apply filters if provided
         if guild_id:
             query = query.filter(SSOAuditLog.guild_id == guild_id)
@@ -1111,13 +1111,13 @@ def get_audit_logs(limit=100, offset=0, guild_id=None, username=None, success=No
 
         # Don't include acknowledged (rate limit removed) entries
         query = query.filter(SSOAuditLog.rate_limit != False)
-        
+
         # Order by timestamp descending (newest first)
         query = query.order_by(SSOAuditLog.timestamp.desc())
-        
+
         # Apply pagination
         query = query.limit(limit).offset(offset)
-        
+
         logs = query.all()
         session.expunge_all()
     return logs
@@ -1136,11 +1136,11 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
     """
     if not ip_address:
         return 0
-        
+
     with base.get_session() as session:
         # Calculate the time threshold
         time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=minutes)
-        
+
         # Count failed attempts
         count = session.query(SSOAuditLog).filter(
             SSOAuditLog.ip_address == ip_address,
@@ -1148,7 +1148,7 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
             SSOAuditLog.timestamp >= time_threshold,
             SSOAuditLog.rate_limit != False
         ).count()
-        
+
         return count
 
 
@@ -1198,7 +1198,7 @@ def is_ip_rate_limited(ip_address: str, max_attempts: int = 20, minutes: int = 3
     """
     if not ip_address:
         return False
-        
+
     failed_attempts = count_failed_attempts(ip_address, minutes)
     return failed_attempts >= max_attempts
 
@@ -1239,7 +1239,7 @@ def add_account_character(guild_id: int, real_user: str, name: str, klass: Chara
             )
             session.add(character)
             session.commit()
-        except sqlalchemy.exc.IntegrityError as e:
+        except sqlalchemy.exc.IntegrityError:
             raise SSOCharacterAlreadyExistsError(f"Character '{name}' already exists in guild {guild_id}")
 
         character = session.query(SSOAccountCharacter).filter(

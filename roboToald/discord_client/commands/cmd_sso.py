@@ -106,7 +106,7 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
 
         # Get all accounts for this guild
         all_accounts = sso_model.list_accounts(inter.guild_id)
-        
+
         # Filter accounts based on user's roles and access permissions
         available_accounts = []
         for account in all_accounts:
@@ -119,20 +119,20 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
                     if group.role_id in user_roles:
                         has_access = True
                         break
-            
+
             # If no groups or has access, add to available accounts
             if has_access:
                 available_accounts.append(account)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_accounts = [
-                account.real_user for account in available_accounts 
+                account.real_user for account in available_accounts
                 if string.lower() in account.real_user.lower()
             ]
         else:
             filtered_accounts = [account.real_user for account in available_accounts]
-        
+
         # Return up to 50 choices
         return filtered_accounts[:25]
     except Exception:
@@ -195,10 +195,10 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all aliases for this guild
         all_aliases = sso_model.list_account_aliases(inter.guild_id)
-        
+
         # Filter aliases based on user's roles and access permissions
         available_aliases = []
         for alias in all_aliases:
@@ -211,20 +211,20 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
                     if group.role_id in user_roles:
                         has_access = True
                         break
-            
+
             # If has access, add to available aliases
             if has_access:
                 available_aliases.append(alias)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_aliases = [
-                alias.alias for alias in available_aliases 
+                alias.alias for alias in available_aliases
                 if string.lower() in alias.alias.lower()
             ]
         else:
             filtered_aliases = [alias.alias for alias in available_aliases]
-        
+
         # Return up to 50 choices
         return filtered_aliases[:25]
     except Exception:
@@ -250,10 +250,10 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all groups for this guild
         all_groups = sso_model.list_account_groups(inter.guild_id)
-        
+
         # Filter groups based on user's roles and access permissions
         available_groups = []
         for group in all_groups:
@@ -261,23 +261,23 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
             has_access = False
             if user_is_admin or group.role_id in user_roles:
                 has_access = True
-    
+
             # If has access, add to available groups
             if has_access:
                 available_groups.append(group)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_groups = [
-                group.group_name for group in available_groups 
+                group.group_name for group in available_groups
                 if string.lower() in group.group_name.lower()
             ]
         else:
             filtered_groups = [group.group_name for group in available_groups]
-        
+
         # Return up to 50 choices
         return filtered_groups[:25]
-    except Exception as e:
+    except Exception:
         # In case of error, return an empty list
         return []
 
@@ -288,10 +288,10 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all tags for this guild
         all_tags = sso_model.list_tags(inter.guild_id)
-        
+
         # Filter tags based on user's roles and access permissions
         available_tags = []
 
@@ -337,23 +337,23 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
                         if group.role_id in user_roles:
                             has_access = True
                             break
-            
+
             # If has access, add to available tags
             if has_access and valid_tag:
                 available_tags.append(tag)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_tags = [
-                tag for tag in available_tags 
+                tag for tag in available_tags
                 if string.lower() in tag.lower()
             ]
         else:
             filtered_tags = [tag for tag in available_tags]
-        
+
         # Return up to 50 choices
         return filtered_tags[:25]
-    except Exception as e:
+    except Exception:
         # In case of error, return an empty list
         return []
 
@@ -396,7 +396,7 @@ async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: 
     lines = message.splitlines(keepends=True)
     current_chunk = ''
     chunks = []
-    
+
     # Collect all chunks
     for line in lines:
         if len(current_chunk) + len(line) > max_length:
@@ -405,12 +405,12 @@ async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: 
         current_chunk += line
     if current_chunk:
         chunks.append(current_chunk)
-    
+
     # Send all chunks except the last one
     for i in range(len(chunks) - 1):
         await send_fn(content=chunks[i], ephemeral=ephemeral,
                       allowed_mentions=disnake.AllowedMentions.none())
-    
+
     # Send the last chunk with files if provided
     if chunks:
         if files:
@@ -634,10 +634,10 @@ class SSOCommands(commands.Cog):
         if not tags:
             await inter.send(content=f"⚠️🏷️ **Tag not found:** `{tag}`", ephemeral=True)
             return
-            
+
         formatted = f"🏷️ **{tag}:**\n"
         files = []
-        
+
         for tag_obj in tags:
             formatted += f"  →  🤖 `{tag_obj.account.real_user}`\n"
             # Check if this tag has a UI macro and we haven't already added it to files
@@ -651,7 +651,7 @@ class SSOCommands(commands.Cog):
 
         if files:
             formatted += "  →  📄 UI Macro (attached)\n"
-                
+
         # Send the response with any attached files
         await send_and_split(inter.send, formatted, files=files, ephemeral=True)
 
@@ -905,7 +905,7 @@ class SSOCommands(commands.Cog):
         pass
 
     @audit.sub_command(description="Audit an account", name="account")
-    async def audit_account(self, inter: disnake.ApplicationCommandInteraction, 
+    async def audit_account(self, inter: disnake.ApplicationCommandInteraction,
                            username: str = commands.Param(
                                description="Account username to audit",
                                autocomplete=account_and_alias_autocomplete
@@ -928,38 +928,38 @@ class SSOCommands(commands.Cog):
                 username=account.real_user,
                 success=None
             )
-            
+
             if not logs:
                 await inter.send(content=f"📋 **No audit logs found for account:** `{account.real_user}`", ephemeral=True)
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             success_count = 0
             failed_count = 0
-            
+
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 if log.success:
                     status = "✅"
                     success_count += 1
                 else:
                     status = "❌"
                     failed_count += 1
-                    
+
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
-                
+
                 formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
             response = f"# 📋 Audit Logs for Account: `{account.real_user}`\n"
             response += f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)._\n\n"
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
@@ -968,7 +968,7 @@ class SSOCommands(commands.Cog):
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
     @audit.sub_command(description="Audit a user", name="user")
-    async def audit_user(self, inter: disnake.ApplicationCommandInteraction, 
+    async def audit_user(self, inter: disnake.ApplicationCommandInteraction,
                          user: disnake.User = commands.Param(
                             None,
                             description="Discord user to audit (defaults to yourself)",
@@ -978,7 +978,7 @@ class SSOCommands(commands.Cog):
             # If no user is provided, use the current user
             if user is None:
                 user = inter.author
-                
+
             user_id = user.id
             user_mention = user.mention
 
@@ -987,12 +987,12 @@ class SSOCommands(commands.Cog):
             if not logs:
                 await inter.send(content=f"📋 **No audit logs found for user:** {user_mention}", ephemeral=True)
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 status = "✅" if log.success else "❌"
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
@@ -1000,15 +1000,15 @@ class SSOCommands(commands.Cog):
 
                 formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
             response = f"# 📋 Audit Logs for User: {user_mention}\n"
             response += f"_Showing the {len(logs)} most recent authentication attempts_\n\n"
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
@@ -1032,7 +1032,7 @@ class SSOCommands(commands.Cog):
             since = None
             if hours > 0:
                 since = datetime.datetime.now() - datetime.timedelta(hours=hours)
-            
+
             # Get failed audit logs for all accounts in this guild
             logs = sso_model.get_audit_logs(
                 limit=max_records,
@@ -1052,18 +1052,18 @@ class SSOCommands(commands.Cog):
                 or log.guild_id is None
                 or log.username in account_names
             ]
-            
+
             if not logs:
                 await inter.send(content=f"📋 **No unacknowledged failed authentication attempts found in the last {hours} hours.**", ephemeral=True)
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             ip_counts = {}  # Track counts by IP for potential attack detection
-            
+
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 username = log.username if log.username else "Unknown"
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
@@ -1072,25 +1072,25 @@ class SSOCommands(commands.Cog):
                 # Track IP addresses for potential attack detection
                 if ip != "N/A":
                     ip_counts[ip] = ip_counts.get(ip, 0) + 1
-                
+
                 formatted_log = f"🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
-            response = f"# 📋 Failed Authentication Attempts\n"
+            response = "# 📋 Failed Authentication Attempts\n"
             response += f"_Showing {len(logs)} failed authentication attempts from the last {hours} hours._\n\n"
-            
+
             # Add warning for potential attacks (multiple failures from same IP)
             potential_attacks = [f"`{ip}` ({count} attempts)" for ip, count in ip_counts.items() if count > 2]
             if potential_attacks:
                 response += "⚠️ **Potential attacks detected from:**\n"
                 response += ", ".join(potential_attacks) + "\n\n"
-            
+
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
@@ -1103,26 +1103,26 @@ class SSOCommands(commands.Cog):
                 limit=5000,  # Get a large sample for statistics
                 guild_id=inter.guild_id
             )
-            
+
             if not all_logs:
                 await inter.send(content="📊 **No audit logs found for this guild**", ephemeral=True)
                 return
-                
+
             # Calculate statistics
             total_attempts = len(all_logs)
             successful_attempts = sum(1 for log in all_logs if log.success)
             failed_attempts = total_attempts - successful_attempts
-            
+
             # Get unique usernames and IP addresses
             unique_usernames = set(log.username for log in all_logs if log.username)
             unique_ips = set(log.ip_address for log in all_logs if log.ip_address)
-            
+
             # Get the most recent logs
             recent_logs = all_logs[:10]  # Assuming logs are already sorted by timestamp desc
-            
+
             # Calculate success rate
             success_rate = (successful_attempts / total_attempts) * 100 if total_attempts > 0 else 0
-            
+
             # Format the statistics
             response = "# 📊 SSO Audit Statistics\n\n"
             response += "## Summary\n"
@@ -1131,25 +1131,25 @@ class SSOCommands(commands.Cog):
             response += f"❌ **Failed Attempts:** `{failed_attempts}`\n"
             response += f"🤖 **Unique Usernames Used:** `{len(unique_usernames)}`\n"
             response += f"🌐 **Unique IP Addresses:** `{len(unique_ips)}`\n\n"
-            
+
             # Add recent activity
             response += "## Recent Activity\n"
             if recent_logs:
                 for log in recent_logs:
                     discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                    
+
                     status = "✅" if log.success else "❌"
                     username = log.username if log.username else "Unknown"
                     ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                     discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
-                    
+
                     response += f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
             else:
                 response += "_No recent activity_\n"
-                
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit statistics:** `{str(e)}`", ephemeral=True)
 
@@ -1195,7 +1195,7 @@ class SSOCommands(commands.Cog):
             reason_str = f": `{revocation.details}`" if revocation.details else ""
             formatted += f"* <@{revocation.discord_user_id}> ({expiry_str}){reason_str}\n"
         await send_and_split(inter.send, f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
-    
+
     @admin_revocation.sub_command(description="Remove access revocation", name="remove")
     async def revocation_remove(self, inter: disnake.ApplicationCommandInteraction,
                                 user: disnake.Member = commands.Param(

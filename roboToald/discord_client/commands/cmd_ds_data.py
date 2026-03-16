@@ -93,7 +93,7 @@ def combine_months(months, num_cols):
             for month in month_set:
                 try:
                     line += month.splitlines()[i] + " || "
-                except IndexError as e:
+                except IndexError:
                     line += " " * len(month.splitlines()[0]) + " || "
             one_set.append(line[:-4])
         combined_months.append('\n'.join(one_set))
