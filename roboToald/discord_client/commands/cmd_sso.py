@@ -1037,14 +1037,21 @@ class SSOCommands(commands.Cog):
             logs = sso_model.get_audit_logs(
                 limit=max_records,
                 success=False,
-                since=since
+                since=since,
+                include_list=True,
             )
 
             accounts = sso_model.list_accounts(inter.guild_id)
-            account_names = [account.real_user for account in accounts]
+            account_names = {account.real_user for account in accounts}
 
-            # Filter by either guild_id or account.guild_id
-            logs = [log for log in logs if log.guild_id == inter.guild_id or log.username in account_names]
+            # Include entries that belong to this guild, match a known
+            # account, or have no guild (e.g. invalid access key attempts).
+            logs = [
+                log for log in logs
+                if log.guild_id == inter.guild_id
+                or log.guild_id is None
+                or log.username in account_names
+            ]
             
             if not logs:
                 await inter.send(content=f"📋 **No unacknowledged failed authentication attempts found in the last {hours} hours.**", ephemeral=True)
@@ -1168,6 +1175,7 @@ class SSOCommands(commands.Cog):
             if details:
                 message += f"\n* **Reason:** {details}"
             await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.disconnect_user(inter.guild_id, user.id)
             ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n`{e}`", ephemeral=True)
@@ -1177,7 +1185,7 @@ class SSOCommands(commands.Cog):
                               user: disnake.Member = commands.Param(
                                 description="Member to list access revocations for.",
                                 default=None)):
-        revocations = sso_model.get_user_access_revocations(guild_id=inter.guild_id, discord_user_id=user.id)
+        revocations = sso_model.get_user_access_revocations(guild_id=inter.guild_id, discord_user_id=user.id if user else None)
         if not revocations:
             await inter.send(content="ℹ️ **No access revocations found.**", ephemeral=True)
             return
@@ -1199,18 +1207,61 @@ class SSOCommands(commands.Cog):
         except Exception as e:
             await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n`{e}`", ephemeral=True)
 
-    @sso_admin.sub_command(description="Reset rate limit for an IP address", name="reset_rate_limit")
+    @sso_admin.sub_command(description="Show currently rate-limited IPs", name="rate_limited")
+    async def rate_limited(self, inter: disnake.ApplicationCommandInteraction):
+        try:
+            rows = sso_model.get_rate_limited_ips(
+                config.RATE_LIMIT_MAX_ATTEMPTS,
+                config.RATE_LIMIT_WINDOW_MINUTES,
+            )
+            if not rows:
+                await inter.send(
+                    content="ℹ️ **No IPs are currently rate-limited.**",
+                    ephemeral=True,
+                )
+                return
+            lines = []
+            for ip, count in rows:
+                hashed = hash_ip(ip)
+                lines.append(f"🌐 `{hashed}` — **{count}** failures")
+            header = (
+                f"# 🚫 Rate-Limited IPs\n"
+                f"_Threshold: {config.RATE_LIMIT_MAX_ATTEMPTS} failures "
+                f"in {config.RATE_LIMIT_WINDOW_MINUTES} min_\n\n"
+            )
+            await send_and_split(
+                inter.send, header + "\n".join(lines), ephemeral=True,
+            )
+        except Exception as e:
+            await inter.send(
+                content=f"⚠️ **Error:** `{e}`", ephemeral=True,
+            )
+
+    @sso_admin.sub_command(description="Reset rate limit for an IP (real or hashed)", name="reset_rate_limit")
     async def reset_rate_limit(self, inter: disnake.ApplicationCommandInteraction,
                                      ip_address: str = commands.Param(
-                                        description="IP address to reset rate limit for.")):
+                                        description="Real IP or hashed IP to reset rate limit for.")):
         try:
+            # Try the raw value first (real IP)
             updated = sso_model.clear_rate_limit(ip_address)
             if updated > 0:
-                await inter.send(content=f"🔑 **Rate limit reset for IP:** `{ip_address}` *({updated} records found)*")
-            else:
-                await inter.send(content=f"🔑 **No rate limit entries found for IP:** `{ip_address}`", ephemeral=True)
+                await inter.send(content=f"🔑 **Rate limit reset for IP:** `{hash_ip(ip_address)}` *({updated} records cleared)*")
+                return
+
+            # No match — treat input as a hashed IP and scan for the real one
+            rows = sso_model.get_rate_limited_ips(
+                config.RATE_LIMIT_MAX_ATTEMPTS,
+                config.RATE_LIMIT_WINDOW_MINUTES,
+            )
+            for real_ip, _ in rows:
+                if hash_ip(real_ip) == ip_address:
+                    updated = sso_model.clear_rate_limit(real_ip)
+                    await inter.send(content=f"🔑 **Rate limit reset for IP:** `{ip_address}` *({updated} records cleared)*")
+                    return
+
+            await inter.send(content=f"🔑 **No rate limit entries found for:** `{ip_address}`", ephemeral=True)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n`{e}`", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to reset rate limit:** `{e}`", ephemeral=True)
 
     @staticmethod
     async def _get_reconcile_embed_response(

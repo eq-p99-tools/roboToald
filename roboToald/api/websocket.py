@@ -179,6 +179,39 @@ class ConnectionManager:
 
     # -- Public notification API (thread-safe) --------------------------------
 
+    def disconnect_user(self, guild_id: int, discord_user_id: int,
+                        code: int = 4003, reason: str = "Access revoked"):
+        """Close all WebSocket connections for a specific user in a guild.
+
+        Safe to call from any thread.
+        """
+        if self._loop is None or self._loop.is_closed():
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._disconnect_user_async(guild_id, discord_user_id, code, reason),
+            self._loop,
+        )
+
+    async def _disconnect_user_async(self, guild_id: int, discord_user_id: int,
+                                     code: int, reason: str):
+        with self._lock:
+            targets = [
+                c for c in self._connections
+                if c.guild_id == guild_id and c.discord_user_id == discord_user_id
+            ]
+        for conn in targets:
+            try:
+                await conn.websocket.send_json({"type": "error", "detail": reason})
+                await conn.websocket.close(code=code, reason=reason)
+            except Exception:
+                pass
+            self.unregister(conn.websocket)
+        if targets:
+            logger.info(
+                "Disconnected %d WebSocket session(s) for user %s in guild %s: %s",
+                len(targets), discord_user_id, guild_id, reason,
+            )
+
     def notify_guild(self, guild_id: int):
         """Schedule a delta push for all clients of a guild.
 

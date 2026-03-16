@@ -1,5 +1,6 @@
 import datetime
 import itertools
+import secrets
 
 import sqlalchemy
 import sqlalchemy.exc
@@ -598,18 +599,13 @@ class SSOAccessKey(base.Base):
 
 
 def generate_access_key():
-    # Generate a random access key
-    passkey = ""
-    tries = 0
-    while 14 > len(passkey) < 24:
-        tries += 1
-        verb = words.get_verb().capitalize()
-        adjective = words.get_adjective().capitalize()
-        noun = words.get_noun().capitalize()
-        passkey = f"{verb}{adjective}{noun}"
-        if tries > 10:
-            break
-    return passkey
+    parts = [
+        secrets.choice(words.WORDS['verbs']).strip().capitalize(),
+        secrets.choice(words.WORDS['adjectives']).strip().capitalize(),
+        secrets.choice(words.WORDS['nouns']).strip().capitalize(),
+        secrets.choice(words.WORDS['adjectives']).strip().capitalize(),
+    ]
+    return "".join(parts)
 
 
 def get_access_key_by_user(guild_id: int, discord_user_id: int) -> SSOAccessKey:
@@ -623,6 +619,7 @@ def get_access_key_by_user(guild_id: int, discord_user_id: int) -> SSOAccessKey:
             try:
                 session.add(access_key)
                 session.commit()
+                invalidate_access_key_cache()
                 session.expunge(access_key)
                 access_key = session.query(SSOAccessKey).filter(
                     SSOAccessKey.guild_id == guild_id,
@@ -635,13 +632,32 @@ def get_access_key_by_user(guild_id: int, discord_user_id: int) -> SSOAccessKey:
     return access_key
 
 
-def get_access_key_by_key(access_key: str) -> SSOAccessKey or None:
+_access_key_cache: dict[str, SSOAccessKey] | None = None
+
+
+def _load_access_key_cache() -> dict[str, SSOAccessKey]:
+    """Load all access keys into an in-memory dict keyed by plaintext key.
+
+    EncryptedType decrypts on attribute access, so after expunge the Python
+    attribute holds the plaintext.  This turns every subsequent lookup from a
+    full-table-scan-with-decrypt into a dict lookup.
+    """
+    global _access_key_cache
     with base.get_session() as session:
-        access_key_obj = session.query(SSOAccessKey).filter(
-            SSOAccessKey.access_key == access_key).one_or_none()
-        if access_key_obj:
-            session.expunge(access_key_obj)
-    return access_key_obj
+        all_keys = session.query(SSOAccessKey).all()
+        session.expunge_all()
+    _access_key_cache = {k.access_key: k for k in all_keys}
+    return _access_key_cache
+
+
+def invalidate_access_key_cache() -> None:
+    global _access_key_cache
+    _access_key_cache = None
+
+
+def get_access_key_by_key(access_key: str) -> SSOAccessKey or None:
+    cache = _access_key_cache if _access_key_cache is not None else _load_access_key_cache()
+    return cache.get(access_key)
 
 
 def reset_access_key(guild_id: int, discord_user_id: int) -> SSOAccessKey:
@@ -654,6 +670,7 @@ def reset_access_key(guild_id: int, discord_user_id: int) -> SSOAccessKey:
 
         access_key.access_key = generate_access_key()
         session.commit()
+        invalidate_access_key_cache()
         session.expunge(access_key)
         access_key = session.query(SSOAccessKey).filter(
             SSOAccessKey.guild_id == guild_id,
@@ -669,6 +686,7 @@ def delete_access_key(guild_id: int, discord_user_id: int) -> None:
             SSOAccessKey.discord_user_id == discord_user_id).one()
         session.delete(access_key)
         session.commit()
+        invalidate_access_key_cache()
 
 
 class SSOTag(base.Base):
@@ -1118,14 +1136,31 @@ def count_failed_attempts(ip_address: str, minutes: int = 60) -> int:
             SSOAuditLog.ip_address == ip_address,
             SSOAuditLog.success == False,
             SSOAuditLog.timestamp >= time_threshold,
-            sqlalchemy.or_(
-                SSOAuditLog.account_id.isnot(None),
-                SSOAuditLog.username == "list_accounts"
-            ),
             SSOAuditLog.rate_limit != False
         ).count()
         
         return count
+
+
+def get_rate_limited_ips(max_attempts: int = 20, minutes: int = 30) -> list[tuple[str, int]]:
+    """Return (ip_address, failure_count) pairs for all currently rate-limited IPs."""
+    with base.get_session() as session:
+        time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=minutes)
+        rows = (
+            session.query(
+                SSOAuditLog.ip_address,
+                sqlalchemy.func.count(SSOAuditLog.id),
+            )
+            .filter(
+                SSOAuditLog.success == False,
+                SSOAuditLog.timestamp >= time_threshold,
+                SSOAuditLog.rate_limit != False,
+            )
+            .group_by(SSOAuditLog.ip_address)
+            .having(sqlalchemy.func.count(SSOAuditLog.id) >= max_attempts)
+            .all()
+        )
+    return rows
 
 
 def clear_rate_limit(ip_address: str) -> int:

@@ -43,6 +43,8 @@ API_HOST = CONF.get('sso', 'host', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
 FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
 SSO_INACTIVITY_SECONDS = CONF.getint('sso', 'inactivity_seconds', fallback=62)
+RATE_LIMIT_MAX_ATTEMPTS = CONF.getint('sso', 'rate_limit_max_attempts', fallback=20)
+RATE_LIMIT_WINDOW_MINUTES = CONF.getint('sso', 'rate_limit_window_minutes', fallback=30)
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}

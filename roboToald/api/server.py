@@ -63,11 +63,18 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
     # Check if both certfile and keyfile are provided
     use_ssl = certfile and keyfile
     def _run():
+        log_config = uvicorn.config.LOGGING_CONFIG
+        ts_fmt = "%(asctime)s %(levelprefix)s %(message)s"
+        log_config["formatters"]["default"]["fmt"] = ts_fmt
+        log_config["formatters"]["access"]["fmt"] = (
+            "%(asctime)s %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s"
+        )
         uvicorn_params = {
             "app": "roboToald.api.server:app",
             "host": host,
             "port": port,
             "log_level": "info",
+            "log_config": log_config,
             "proxy_headers": True,
             "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS
         }
@@ -166,16 +173,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     Rate limiting:
     - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
     """
-    client_ip = request.client.host
+    client_ip = _get_client_ip(request)
     
     # Check if the IP is rate limited
-    if sso_model.is_ip_rate_limited(client_ip):
+    if sso_model.is_ip_rate_limited(client_ip, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-        # Return a 429 Too Many Requests status code
-        # raise HTTPException(
-        #     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #     detail="Too many failed attempts. Please try again later."
-        # )
         raise_auth_failed()
     
     # Initialize audit log variables
@@ -193,6 +195,19 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     if access_key:
         discord_user_id = access_key.discord_user_id
         guild_id = access_key.guild_id
+
+        if sso_model.is_user_access_revoked(guild_id, discord_user_id):
+            logger.warning(f"Authentication failed: Access revoked for user {discord_user_id}")
+            sso_model.create_audit_log(
+                username=auth_data.username,
+                ip_address=client_ip,
+                success=False,
+                discord_user_id=discord_user_id,
+                account_id=None,
+                guild_id=guild_id,
+                details="Access revoked"
+            )
+            raise_auth_failed()
 
         discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
 
@@ -250,10 +265,8 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         raise_auth_failed()
 
     if not account_id:
-        # Log account missing
         details = "Account not found"
         logger.warning(f"Authentication failed: {details}")
-        # Create audit log entry before raising exception
         # sso_model.create_audit_log(
         #     username=auth_data.username,
         #     ip_address=client_ip,
@@ -290,7 +303,16 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     sso_model.update_last_login(account_id, login_by=login_name)
     ws_manager.notify_guild(guild_id)
 
-    # Create successful audit log entry
+    # Create successful audit log entry with specific resolution method
+    input_name = auth_data.username.lower()
+    if input_name == real_username:
+        auth_detail = "Authentication successful (account name)"
+    elif any(c.name.lower() == input_name for c in account.characters):
+        auth_detail = f"Authentication successful via character {auth_data.username}"
+    elif any(a.alias.lower() == input_name for a in account.aliases):
+        auth_detail = f"Authentication successful via alias {auth_data.username}"
+    else:
+        auth_detail = f"Authentication successful via tag {auth_data.username}"
     sso_model.create_audit_log(
         username=real_username,
         ip_address=client_ip,
@@ -298,7 +320,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         discord_user_id=discord_user_id,
         account_id=account_id,
         guild_id=guild_id,
-        details="Authentication successful" + f" via tag/alias {auth_data.username}" if auth_data.username != real_username else ""
+        details=auth_detail
     )
 
     # Return the real credentials
@@ -308,16 +330,19 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     )
 
 
-def _check_auth(request: Request, access_key_in: str, query_type: str | None):
+def _get_client_ip(request: Request) -> str:
+    """Extract the real client IP, respecting X-Forwarded-For from trusted proxies."""
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        client_ip = forwarded_for.split(',')[0].strip()
-    else:
-        client_ip = request.client.host
+        return forwarded_for.split(',')[0].strip()
+    return request.client.host
+
+
+def _check_auth(request: Request, access_key_in: str, query_type: str | None):
+    client_ip = _get_client_ip(request)
 
     # Check rate limiting
-    if sso_model.is_ip_rate_limited(client_ip):
-        # If rate limited, log and return 401
+    if sso_model.is_ip_rate_limited(client_ip, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
         raise_auth_failed()
 
@@ -353,6 +378,20 @@ def _check_auth(request: Request, access_key_in: str, query_type: str | None):
         raise_auth_failed()
 
     # Past this point we are guaranteed to have a discord_user_id and guild_id
+    if sso_model.is_user_access_revoked(guild_id, discord_user_id):
+        logger.warning(f"Authentication failed: Access revoked for user {discord_user_id}")
+        if query_type:
+            sso_model.create_audit_log(
+                username=query_type,
+                ip_address=client_ip,
+                success=False,
+                discord_user_id=discord_user_id,
+                account_id=None,
+                guild_id=guild_id,
+                details="Access revoked"
+            )
+        raise_auth_failed()
+
     discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
     return discord_client, discord_user_id, guild_id, client_ip
 
@@ -510,6 +549,9 @@ async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
     if not account:
         raise_invalid_character()
 
+    if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id]):
+        raise_auth_failed()
+
     login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.record_heartbeat_session(
@@ -545,14 +587,30 @@ async def websocket_accounts(websocket: WebSocket):
         await _ws_close(websocket, 4002, "Expected auth message")
         return
 
+    client_host = websocket.client.host if websocket.client else "unknown"
+
+    if sso_model.is_ip_rate_limited(client_host, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
+        logger.warning("WebSocket rejected: rate limit exceeded for IP %s", client_host)
+        await _ws_close(websocket, 4003, "Invalid access key")
+        return
+
     access_key = sso_model.get_access_key_by_key(msg["access_key"])
     if not access_key:
+        logger.warning("WebSocket auth failed: invalid access key from %s", client_host)
+        sso_model.create_audit_log(
+            username="ws_auth",
+            ip_address=client_host,
+            success=False,
+            discord_user_id=None,
+            account_id=None,
+            guild_id=None,
+            details="Invalid access key (WebSocket)"
+        )
         await _ws_close(websocket, 4003, "Invalid access key")
         return
 
     guild_id = access_key.guild_id
     discord_user_id = access_key.discord_user_id
-    client_host = websocket.client.host if websocket.client else "unknown"
 
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
@@ -578,6 +636,12 @@ async def websocket_accounts(websocket: WebSocket):
         user_label = str(discord_user_id)
     client_ver = msg.get("client_version", "unknown")
     ws_label = f"guild={guild_label} user={user_label} v={client_ver} ip={client_host}"
+
+    # --- Check revocation ---
+    if sso_model.is_user_access_revoked(guild_id, discord_user_id):
+        logger.warning("WebSocket rejected: access revoked: %s", ws_label)
+        await _ws_close(websocket, 4003, "Access revoked")
+        return
 
     # --- Check client version against guild minimum ---
     guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
@@ -668,6 +732,13 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     account = sso_model.find_account_by_character(conn.guild_id, character_name)
     if not account:
         return
+
+    if not user_has_access_to_accounts(
+        ws_manager._discord_client, conn.discord_user_id,
+        conn.guild_id, [account.id]
+    ):
+        return
+
     login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.record_heartbeat_session(
