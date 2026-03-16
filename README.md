@@ -1,65 +1,171 @@
-# RoboToald Discord Bot
+# RoboToald
 
-**WARNING:** 95% of the documentation in this README is AI generated (including the ERD SVGs), so only trust it as much as you trust any AI generated documentation.
+> **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-RoboToald is a Discord bot designed to enhance guild management and gaming experiences with event point tracking, raid alerts, raid-window tracking subscriptions, basic timers, and single sign-on capabilities.
+RoboToald is a Discord bot for EverQuest guild management. It provides single sign-on (SSO) for shared game accounts, Drusella Sathir camp-time point tracking, raid alerts (BatPhones), timers, and raid-window subscription notifications.
 
-## Key Features
+## SSO System
 
-### Single Sign-On (SSO) System
-- Secure account management for game accounts
-- Role-based access control with group permissions
-- API authentication with encrypted credentials
-- Audit logging
-- Rate limiting to prevent brute force attacks
+The SSO system lets guild members log in to shared EverQuest accounts through the [P99 Login Proxy](https://p99loginproxy.net) without knowing the real credentials. Access is controlled by Discord roles.
 
-### Points System
-- Track points earned and spent by users
-- Award points for participation and activities
-- Complete audit trail of all point transactions
-- Balance calculation and reporting
+### Core Concepts
 
-### Alerts (BatPhones)
-- Create custom alerts with regex pattern matching
-- Get notified when specific content appears in channels
-- Assign roles to be notified for specific alerts
-- Track trigger counts for analytics
+- **Account** -- a real EQ login (username + password). Credentials are stored encrypted.
+- **Group** -- links a Discord role to a set of accounts. Members with that role can access the accounts in the group.
+- **Tag** -- a label applied to one or more accounts. Logging in with a tag picks the least-recently-used inactive account (round-robin).
+- **Alias** -- an alternative name for a single account.
+- **Character** -- a character name, class, bind/park location, and level tied to an account. You can log in by character name.
+- **Dynamic Tag** -- a computed zone+class tag (e.g. `vpclr`, `stenc`). Logging in with a dynamic tag finds an inactive character of the matching class parked in the matching zone.
+- **Access Key** -- a per-user secret generated via `/sso access get`. Used as the password in the login proxy.
 
-### Timers
-- Create one-time or repeating timers
-- Channel-specific or user-specific notifications
-- Customizable countdown timers for events
+### User Workflow
 
-### Raid-Window Subscriptions
-- Receive notifications when a raid window opens
-- Get notified before subscriptions expire
-- Customizable lead times for notifications
+1. Run `/sso access get` to receive your access key (visible only to you).
+2. Enter the access key as the password in the P99 Login Proxy.
+3. In EverQuest, enter an account name, alias, tag, character name, or dynamic tag as the username.
+4. Type literally any text as the password.
 
-## Documentation
+### Admin Workflow
 
-### API Documentation
-For details on the REST API that provides SSO authentication, see [README_API.md](README_API.md).
+Admins (users with roles listed in `sso_admin_roles`) manage the SSO system via `/sso_admin`:
 
-### Database Schema Documentation
-The bot uses several database models to store and manage data. Each model has its own documentation and Entity Relationship Diagram (ERD):
+1. **Create groups** linked to Discord roles (`/sso_admin group create`).
+2. **Create accounts** with real credentials (`/sso_admin account create`), optionally assigning to a group.
+3. **Add characters** to accounts (`/sso_admin character add`).
+4. **Tag accounts** for round-robin login (`/sso_admin tag add`).
+5. **Create aliases** for convenience (`/sso_admin alias create`).
 
-- [SSO Schema](erd/sso_schema.md) - Single Sign-On system ([ERD](erd/sso_erd.svg))
-- [Points Schema](erd/points_schema.md) - Points tracking system ([ERD](erd/points_erd.svg))
-- [Alert (BatPhone) Schema](erd/alert_schema.md) - Alert (BatPhone) monitoring system ([ERD](erd/alert_erd.svg))
-- [Timer Schema](erd/timer_schema.md) - Timer notification system ([ERD](erd/timer_erd.svg))
-- [Raid-Window Subscription Schema](erd/subscription_schema.md) - Raid-window subscription tracking system ([ERD](erd/subscription_erd.svg))
+## Drusella Sathir Points
 
-## Setup and Configuration
+Tracks camp time for the Drusella Sathir raid encounter. Members earn points based on how long they camp, and spend points to purchase urn drops.
 
-The bot can be run standalone or with Docker using the provided Dockerfile and docker-compose.yml. Configuration is handled in `batphone.ini`.
+- `/ds start` / `/ds stop` -- clock in/out of a camp session (supports backdating).
+- `/ds tod` -- record a Drusella Sathir death (time of death).
+- `/ds urn` -- record an urn purchase (spends points).
+- `/ds points` -- check your point balance.
+- `/ds status` -- see who is currently camping and the next expected spawn.
+- `/ds audit` -- view point transaction history for a member.
+- `/ds set_spawn` / `/ds adjust` -- admin-only overrides.
 
-## Security
+Points scale with time until next spawn, with configurable baseline and plateau.
 
-- All passwords and sensitive data are stored encrypted
-- The API server supports TLS for secure communication
-- Comprehensive audit logging tracks all authentication attempts
-- Rate limiting prevents brute force attacks
+### Data Commands
 
-## Contributing
+- `/ds data calendar` -- urn purchase calendar.
+- `/ds data purchases` -- urn purchase history.
+- `/ds data overview` -- historical camp overview.
 
-When contributing to this project, please ensure that you update the appropriate schema documentation and ERDs when making changes to the database models.
+## BatPhones (Alerts)
+
+Register webhook-based alerts that fire when a message in a channel matches a regex pattern.
+
+- `/batphone register` -- create an alert (channel, regex filter, webhook URL, optional role ping).
+- `/batphone list` -- list your registered alerts.
+- `/batphone help` -- setup tutorial (SquadCast integration).
+
+When a matching message appears, the bot forwards it to the configured webhook URL and optionally pings the specified role.
+
+## Timers
+
+Simple one-time or repeating countdown timers.
+
+- `/timer start` -- create a timer (name, duration, optional delay/repeat/timestamp).
+- `/timer list` -- list active timers.
+- `/timer show` -- show details for a timer.
+- `/timer stop` -- cancel a timer.
+
+## Raid-Window Subscriptions
+
+Subscribe to raid target windows and get DM notifications when a window opens or is approaching.
+
+- `/raidtarget subscribe` -- subscribe with a configurable lead time.
+- `/raidtarget unsubscribe` -- unsubscribe.
+- `/raidtarget subscriptions` -- list your subscriptions.
+
+Subscriptions expire after 30 days and can be refreshed via the button on the notification.
+
+## Command Reference
+
+### `/sso` (user)
+
+| Subcommand | Description |
+|---|---|
+| `help` | Usage tutorial |
+| `access get` | Get your access key |
+| `access reset` | Reset your access key |
+| `account show <name>` | Show account details |
+| `account list [group] [tag]` | List accounts you can access |
+| `tag list` | List all tags |
+| `tag show <tag>` | Show tag details |
+| `group show <name>` | Show group details |
+| `group list [role]` | List groups |
+| `alias list` | List aliases |
+| `character list [username]` | List characters |
+| `reconcile` | Event-channel audit |
+
+### `/sso_admin` (admin)
+
+| Subcommand | Description |
+|---|---|
+| `help` | Admin setup tutorial |
+| `account create / update / delete` | Manage accounts |
+| `account list_no_characters` | Accounts missing characters |
+| `group create / delete` | Manage groups |
+| `group add / remove` | Add/remove accounts from groups |
+| `tag add / remove / update` | Manage tags (incl. UI macros) |
+| `alias create / delete` | Manage aliases |
+| `character add / remove` | Manage characters |
+| `audit account / user / failed / statistics` | Audit logs |
+| `revocation add / list / remove` | Revoke/restore user access |
+| `reset_rate_limit` | Clear rate limit for an IP |
+
+### `/ds`
+
+| Subcommand | Description |
+|---|---|
+| `start / stop` | Clock in/out of camp |
+| `status` | Current camp status |
+| `points [player]` | Point balance |
+| `tod [is_quake]` | Record DS death (optional quake bonus) |
+| `urn` | Record urn purchase |
+| `adjust` | Adjust points (admin) |
+| `set_spawn` | Override spawn time (admin) |
+| `audit` | Audit logs |
+| `data calendar` | Urn purchase calendar |
+| `data purchases` | Purchase history |
+| `data overview` | Camp overview |
+
+### `/batphone`
+
+| Subcommand | Description |
+|---|---|
+| `help` | Setup tutorial |
+| `register` | Register a webhook alert |
+| `list` | List your alerts |
+
+### `/timer`
+
+| Subcommand | Description |
+|---|---|
+| `start` | Start a timer |
+| `list` | List timers |
+| `show` | Show timer details |
+| `stop` | Stop a timer |
+
+### `/raidtarget`
+
+| Subcommand | Description |
+|---|---|
+| `subscribe` | Subscribe to a raid target |
+| `unsubscribe` | Unsubscribe |
+| `subscriptions` | List your subscriptions |
+
+### `/random`
+
+| Parameter | Description |
+|---|---|
+| `end` (default 100), `start` (default 0) | Random integer in range |
+
+## Development
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for setup, configuration, architecture, and contributing guidelines.

@@ -1,130 +1,320 @@
-# RoboToald SSO Database Schema
+# SSO Database Schema
 
-## Tables and Relationships
+> **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-### 1. SSOAccount
-- **Description**: Represents an EQ bot account
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `guild_id` (Integer, Not Null)
-  - `real_user` (String(255), Not Null)
-  - `real_pass` (EncryptedType(String(255)), Not Null)
-  - `last_login` (DateTime, Default: datetime.datetime.min)
-- **Indexes**:
-  - Unique Constraint: `uq_guild_id_real_user` on (`guild_id`, `real_user`)
-- **Relationships**:
-  - Many-to-Many with `SSOAccountGroup` through `account_group_mapping`
-  - One-to-Many with `SSOTag` (has many tags)
-  - One-to-Many with `SSOAccountAlias` (has many aliases)
-
-### 2. SSOAccountGroup
-- **Description**: Represents a group of accounts with specific role permissions
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `guild_id` (Integer, Not Null)
-  - `group_name` (String(255), Not Null)
-  - `role_id` (Integer, Not Null)
-- **Indexes**:
-  - Unique Constraint: `uq_guild_id_group_name` on (`guild_id`, `group_name`)
-- **Relationships**:
-  - Many-to-Many with `SSOAccount` through `account_group_mapping`
-
-### 3. account_group_mapping
-- **Description**: Junction table for the many-to-many relationship between accounts and groups
-- **Columns**:
-  - `id` (Integer, Primary Key)
-  - `account_id` (Integer, Foreign Key to `SSOAccount.id`)
-  - `group_id` (Integer, Foreign Key to `SSOAccountGroup.id`)
-
-### 4. SSOAccessKey
-- **Description**: Stores access keys for Discord users to authenticate with the API
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `guild_id` (Integer, Not Null)
-  - `discord_user_id` (Integer, Not Null)
-  - `access_key` (EncryptedType(String(255)), Unique, Indexed)
-- **Indexes**:
-  - Unique Constraint: `uq_guild_id_discord_user_id` on (`guild_id`, `discord_user_id`)
-  - Index on `access_key`
-
-### 5. SSOTag
-- **Description**: Tags associated with accounts for easier grouping and searching
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `guild_id` (Integer, Not Null)
-  - `tag` (String(255), Not Null)
-  - `account_id` (Integer, Foreign Key to `SSOAccount.id`)
-- **Indexes**:
-  - Unique Constraint: `uq_tag_account_id` on (`tag`, `account_id`)
-- **Relationships**:
-  - Many-to-One with `SSOAccount` (belongs to an account)
-
-### 6. SSOAccountAlias
-- **Description**: Alternative names for accounts
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `guild_id` (Integer, Not Null)
-  - `alias` (String(255), Not Null)
-  - `account_id` (Integer, Foreign Key to `SSOAccount.id`)
-- **Indexes**:
-  - Unique Constraint: `uq_alias_guild_id` on (`alias`, `guild_id`)
-- **Relationships**:
-  - Many-to-One with `SSOAccount` (belongs to an account)
-
-### 7. SSOAuditLog
-- **Description**: Audit log for SSO authentication attempts through the API
-- **Columns**:
-  - `id` (Integer, Primary Key, Auto-increment)
-  - `timestamp` (DateTime, Default: current timestamp)
-  - `ip_address` (String(45), Nullable) - IPv6 can be up to 45 chars
-  - `username` (String(255), Not Null)
-  - `success` (Boolean, Default: False)
-  - `discord_user_id` (Integer, Nullable)
-  - `account_id` (Integer, Nullable)
-  - `guild_id` (Integer, Nullable)
-  - `details` (String(255), Nullable)
+Source: `roboToald/db/models/sso.py`
 
 ## Entity Relationship Diagram
 
-Please refer to the [SSO ERD](./sso_erd.svg) for a visual representation of this table.
+```mermaid
+erDiagram
+    SSOAccount ||--o{ SSOTag : "has"
+    SSOAccount ||--o{ SSOAccountAlias : "has"
+    SSOAccount ||--o{ SSOAccountCharacter : "has"
+    SSOAccount ||--o{ SSOAuditLog : "has"
+    SSOAccount }o--o{ SSOAccountGroup : "account_group_mapping"
+    SSOTag }o--o| SSOTagUIMacro : "references"
+    SSOAccount ||--o{ SSOCharacterSession : "has"
 
-## Key Database Operations
+    SSOAccount {
+        int id PK
+        int guild_id
+        string real_user
+        encrypted real_pass
+        datetime last_login
+        string last_login_by
+    }
 
-1. **Authentication Flow**:
-   - User provides username and password to the API
-   - System looks up the password in `SSOAccessKey` to find the Discord user ID
-   - System checks if the user has access to the requested account
-   - If authorized, returns the real credentials from `SSOAccount`
-   - Creates an entry in `SSOAuditLog` for the authentication attempt
+    SSOAccountGroup {
+        int id PK
+        int guild_id
+        string group_name
+        int role_id
+    }
 
-2. **Account Management**:
-   - Accounts can be created, updated, and deleted
-   - Accounts can be assigned to groups for role-based access control
-   - Accounts can have tags for categorization
-   - Accounts can have aliases for alternative names
+    account_group_mapping {
+        int id PK
+        int account_id FK
+        int group_id FK
+    }
 
-3. **Security Features**:
-   - Passwords and access keys are stored encrypted
-   - Failed authentication attempts are logged
-   - IP-based rate limiting prevents brute force attacks
-   - Audit logs track all authentication activity
+    SSOAccessKey {
+        int id PK
+        int guild_id
+        int discord_user_id
+        encrypted access_key
+    }
 
-## Notes on NULL Values
+    SSOTag {
+        int id PK
+        int guild_id
+        string tag
+        int account_id FK
+        int ui_macro_id FK
+    }
 
-For failed authentication attempts, the `guild_id` field in `SSOAuditLog` might be NULL. When filtering audit logs by guild_id, a special OR condition is used to include both attempts with a matching guild_id and those with NULL guild_id.
+    SSOTagUIMacro {
+        int id PK
+        int guild_id
+        string tag_name
+        blob ui_macro_data
+    }
 
-## Recent Updates
+    SSOAccountAlias {
+        int id PK
+        int guild_id
+        string alias
+        int account_id FK
+    }
 
-1. **API Server Enhancements**:
-   - Added support for running with or without TLS based on certificate availability
-   - Improved handling of X-Forwarded-For headers for proper client IP identification
-   - Added configurable forwarded_allow_ips setting to control trusted proxy IPs
+    SSOAccountCharacter {
+        int id PK
+        int guild_id
+        string name
+        enum klass
+        string bind_location
+        string park_location
+        int level
+        int account_id FK
+    }
 
-2. **Account Management**:
-   - Modified last_login field to use datetime.min as default value instead of NULL
-   - Changed account sorting in tag-based lookups to prioritize least recently used accounts
-   - Added rate limiting configuration with shorter timeframe (10 minutes) and lower threshold (20 attempts)
+    SSOCharacterSession {
+        int id PK
+        int guild_id
+        int account_id FK
+        string character_name
+        int discord_user_id
+        datetime first_seen
+        datetime last_seen
+    }
 
-3. **Utility Scripts**:
-   - Added import_accounts.py script for bulk importing accounts from CSV files
-   - CSV format supports account credentials, group assignment, aliases, and tags
+    SSORevocation {
+        int id PK
+        datetime timestamp
+        int expiry_days
+        bool active
+        int discord_user_id
+        int guild_id
+        string details
+    }
+
+    SSOAuditLog {
+        int id PK
+        datetime timestamp
+        string ip_address
+        string username
+        bool success
+        int discord_user_id
+        int guild_id
+        int account_id FK
+        bool rate_limit
+        string details
+    }
+```
+
+## Tables
+
+### SSOAccount
+
+Represents a real EverQuest account with encrypted credentials.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | Discord guild this account belongs to |
+| `real_user` | String(255) | NOT NULL | EQ account username (stored lowercase) |
+| `real_pass` | EncryptedType(String) | NOT NULL | EQ account password (encrypted at rest) |
+| `last_login` | DateTime | default `datetime.min` | Last time this account was used for login |
+| `last_login_by` | String(255) | nullable | Display name of the Discord user who last logged in |
+
+**Unique constraint:** `(guild_id, real_user)`
+
+**Relationships:** groups (M2M via `account_group_mapping`), tags (1:N), aliases (1:N), characters (1:N, cascade delete), audit_logs (1:N)
+
+### SSOAccountGroup
+
+Links a Discord role to a set of accounts for RBAC.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `group_name` | String(255) | NOT NULL | Human-readable group name |
+| `role_id` | Integer | NOT NULL | Discord role ID granting access |
+
+**Unique constraint:** `(guild_id, group_name)`
+
+**Relationships:** accounts (M2M via `account_group_mapping`)
+
+### account_group_mapping
+
+Junction table for the many-to-many relationship between accounts and groups.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | Integer | PK |
+| `account_id` | Integer | FK -> `sso_account.id` |
+| `group_id` | Integer | FK -> `sso_account_group.id` |
+
+**Unique constraint:** `(account_id, group_id)`
+
+### SSOAccessKey
+
+Per-user-per-guild encrypted access key used as the "password" in API authentication.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `discord_user_id` | Integer | NOT NULL | |
+| `access_key` | EncryptedType(String) | UNIQUE, indexed | Generated passphrase (e.g. `ConcentrateRedundantCollar`) |
+
+**Unique constraint:** `(guild_id, discord_user_id)`
+
+Access keys are generated automatically on first request (`/sso access get`) using random verb+adjective+noun combinations from word lists.
+
+### SSOTag
+
+A named tag applied to one or more accounts. Logging in with a tag name picks the least-recently-used inactive account among all accounts sharing that tag.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `tag` | String(255) | NOT NULL | Tag name (stored lowercase) |
+| `account_id` | Integer | FK -> `sso_account.id` | |
+| `ui_macro_id` | Integer | FK -> `sso_tag_ui_macro.id`, nullable | Optional UI macro blob |
+
+**Unique constraint:** `(tag, account_id)`
+
+**Tag login selection:** accounts are sorted by a bucketed last-login age (30-second buckets for the first 20 minutes, then all equivalent) with highest character level as tiebreaker.
+
+### SSOTagUIMacro
+
+Stores a UI macro binary blob associated with a tag name. Multiple tags can reference the same macro.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `tag_name` | String(255) | NOT NULL | Tag name this macro is for (lowercase) |
+| `ui_macro_data` | BLOB | NOT NULL | Binary UI macro data |
+
+**Unique constraint:** `(tag_name, guild_id)`
+
+### SSOAccountAlias
+
+An alternative name for a single account. Logging in with an alias resolves to the aliased account directly.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `alias` | String(255) | NOT NULL | Alias name (stored lowercase) |
+| `account_id` | Integer | FK -> `sso_account.id` | |
+
+**Unique constraint:** `(alias, guild_id)`
+
+### SSOAccountCharacter
+
+Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `name` | String(64) | NOT NULL | Character name |
+| `klass` | Enum(CharacterClass) | NOT NULL | Character class |
+| `bind_location` | String(64) | nullable | Zone key where character is bound |
+| `park_location` | String(64) | nullable | Zone key where character is parked |
+| `level` | Integer | nullable | Character level |
+| `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
+
+**Unique constraint:** `(name, guild_id)`
+
+**CharacterClass enum:** Bard, Cleric, Druid, Enchanter, Magician, Monk, Necromancer, Paladin, Ranger, Rogue, ShadowKnight, Shaman, Warrior, Wizard
+
+### SSOCharacterSession
+
+Tracks contiguous heartbeat sessions for characters. A new row is created when a heartbeat arrives with no recent session (last_seen older than the inactivity threshold). Subsequent heartbeats extend the existing session.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL | |
+| `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
+| `character_name` | String(64) | NOT NULL | |
+| `discord_user_id` | Integer | NOT NULL | Who is playing this session |
+| `first_seen` | DateTime | NOT NULL | When session started |
+| `last_seen` | DateTime | NOT NULL | Last heartbeat received |
+
+Used to determine `active_character` in the account tree and for session history queries.
+
+### SSORevocation
+
+Blocks a Discord user's access to the SSO system, with an optional time-based expiry.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `timestamp` | DateTime | NOT NULL | When the revocation was created |
+| `expiry_days` | Integer | NOT NULL | Days until expiry (`0` = permanent) |
+| `active` | Boolean | default `True` | Set to `False` when removed by admin |
+| `discord_user_id` | Integer | NOT NULL | Revoked user |
+| `guild_id` | Integer | NOT NULL | |
+| `details` | String(255) | nullable | Reason for revocation |
+
+A user is considered revoked if any active revocation exists that is either permanent (`expiry_days = 0`) or has not yet expired.
+
+### SSOAuditLog
+
+Records every API authentication attempt for security monitoring.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `timestamp` | DateTime | NOT NULL | |
+| `ip_address` | String(45) | nullable | Client IP (supports IPv6) |
+| `username` | String(255) | NOT NULL | Username used in the attempt |
+| `success` | Boolean | default `False` | |
+| `discord_user_id` | Integer | nullable | Resolved Discord user (if key was valid) |
+| `guild_id` | Integer | nullable | May be NULL for failed attempts |
+| `account_id` | Integer | FK -> `sso_account.id`, nullable | Resolved account (if found) |
+| `rate_limit` | Boolean | default `True` | Set to `False` when admin clears rate limit |
+| `details` | String(255) | nullable | Failure reason or success details |
+
+Rate limiting counts failed attempts where `rate_limit != False` and `account_id IS NOT NULL` (or `username = 'list_accounts'`), within a rolling 30-minute window, threshold of 20.
+
+## RBAC Access Model
+
+```
+Discord User's Roles
+        |
+        v
+SSOAccountGroup (role_id matches any user role)
+        |
+        v  (via account_group_mapping)
+SSOAccount (accessible)
+```
+
+A user can access an account if they hold any Discord role whose ID matches the `role_id` of any group the account belongs to. This check is performed as a single bulk query joining `account_group_mapping` with `SSOAccountGroup` filtered by role IDs.
+
+## Dynamic Tags
+
+Dynamic tags are computed zone+class combinations that are not stored in the database. They are generated from hardcoded zone prefixes and class suffixes.
+
+**Zone prefixes:** `vp`, `st`, `tov`, `dn`, `kael`, `pog`, `thurg`, `ss`, `fear`, `vox`, `naggy` (plus aliases `dain`=thurg, `yeli`=ss, `zlandi`=dn)
+
+**Class suffixes:** `bar`/`brd`/`bard`, `clr`/`cle`/`cleric`, `dru`/`druid`, `enc`/`enchanter`, `mag`/`mage`/`magician`, `mnk`/`mon`/`monk`, `nec`/`necro`/`necromancer`, `pal`/`pld`/`paladin`, `ran`/`rng`/`ranger`, `rog`/`rogue`, `sk`/`shadowknight`, `sha`/`shm`/`sham`/`shaman`, `war`/`warrior`, `wiz`/`wizard`
+
+A dynamic tag like `vpclr` resolves to: find inactive characters of class Cleric whose `bind_location` or `park_location` is in the `vp` zone set (`veeshan`, `skyfire`). Among matches, pick the account with the best login-age + level sort key.
+
+## Auth Flow
+
+1. Client sends `POST /auth {username, password}` (or authenticates via WebSocket).
+2. API looks up `password` in `SSOAccessKey` to get `discord_user_id` and `guild_id`.
+3. API checks for active `SSORevocation` for the user.
+4. API resolves `username` through the resolution chain (account -> character -> alias -> tag -> dynamic tag).
+5. API checks RBAC: user's Discord roles -> matching groups -> account membership.
+6. On success: updates `last_login`, creates a success audit log, returns real credentials.
+7. On failure: creates a failure audit log, returns generic 401.
