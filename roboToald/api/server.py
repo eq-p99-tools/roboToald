@@ -8,7 +8,7 @@ from typing import Union
 import threading
 
 from disnake.ext import commands
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import uvicorn
 
@@ -162,7 +162,7 @@ async def root(request: Request):
         # 429: {"model": ErrorResponse, "description": "Too many failed attempts"}
     },
 )
-async def authenticate(auth_data: AuthRequest, request: Request):
+async def authenticate(auth_data: AuthRequest, request: Request, background_tasks: BackgroundTasks):
     """
     Authenticate a user based on username and password.
 
@@ -315,12 +315,8 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         )
         raise_auth_failed()
 
-    # Authentication successful - update account's last_login timestamp
+    # Authentication successful - build audit detail
     login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
-    sso_model.update_last_login(account_id, login_by=login_name)
-    ws_manager.notify_guild(guild_id)
-
-    # Create successful audit log entry with specific resolution method
     input_name = auth_data.username.lower()
     if input_name == real_username:
         auth_detail = "Authentication successful (account name)"
@@ -330,17 +326,22 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         auth_detail = f"Authentication successful via alias {auth_data.username}"
     else:
         auth_detail = f"Authentication successful via tag {auth_data.username}"
-    sso_model.create_audit_log(
-        username=real_username,
-        ip_address=client_ip,
-        success=True,
-        discord_user_id=discord_user_id,
-        account_id=account_id,
-        guild_id=guild_id,
-        details=auth_detail,
-    )
 
-    # Return the real credentials
+    def _post_auth_write():
+        sso_model.update_last_login_and_log(
+            account_id=account_id,
+            login_by=login_name,
+            username=real_username,
+            ip_address=client_ip,
+            discord_user_id=discord_user_id,
+            guild_id=guild_id,
+            details=auth_detail,
+        )
+        ws_manager.notify_guild(guild_id)
+
+    background_tasks.add_task(_post_auth_write)
+
+    # Return the real credentials immediately; writes happen in background
     return SSOResponse(real_user=account.real_user, real_pass=account.real_pass)
 
 

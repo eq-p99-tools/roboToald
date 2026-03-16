@@ -219,19 +219,24 @@ def _login_sort_key(account: "SSOAccount", now: datetime.datetime, level_fn) -> 
     return (-bucket, -(level_fn(account)))
 
 
+def _account_eager_opts():
+    return (
+        sqlalchemy.orm.joinedload(SSOAccount.groups),
+        sqlalchemy.orm.joinedload(SSOAccount.tags),
+        sqlalchemy.orm.joinedload(SSOAccount.characters),
+        sqlalchemy.orm.joinedload(SSOAccount.aliases),
+    )
+
+
 def find_account_by_username(username: str, guild_id: int = None, inactive_only: bool = False) -> SSOAccount or None:
+    """Find an account by username, trying resolution in priority order:
+    account name > character > alias > tag > dynamic tag."""
     username = username.lower()
-    """Find an account by username."""
     with base.get_session() as session:
         # Try to find the account directly by real_user
         account = (
             session.query(SSOAccount)
-            .options(
-                sqlalchemy.orm.joinedload(SSOAccount.groups),
-                sqlalchemy.orm.joinedload(SSOAccount.tags),
-                sqlalchemy.orm.joinedload(SSOAccount.characters),
-                sqlalchemy.orm.joinedload(SSOAccount.aliases),
-            )
+            .options(*_account_eager_opts())
             .filter(SSOAccount.real_user == username, SSOAccount.guild_id == guild_id)
             .one_or_none()
         )
@@ -240,123 +245,92 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             session.expunge(account)
             return account
 
-        # If not found, try to find by character name
-        character = (
-            session.query(SSOAccountCharacter)
-            .options(sqlalchemy.orm.joinedload(SSOAccountCharacter.account))
+        # Try by character name (single query via join)
+        account = (
+            session.query(SSOAccount)
+            .join(SSOAccountCharacter, SSOAccountCharacter.account_id == SSOAccount.id)
+            .options(*_account_eager_opts())
             .filter(
-                sqlalchemy_func.lower(SSOAccountCharacter.name) == username.lower(),
+                sqlalchemy_func.lower(SSOAccountCharacter.name) == username,
                 SSOAccountCharacter.guild_id == guild_id,
             )
-            .one_or_none()
+            .first()
         )
 
-        if character:
-            account = (
-                session.query(SSOAccount)
-                .options(
-                    sqlalchemy.orm.joinedload(SSOAccount.groups),
-                    sqlalchemy.orm.joinedload(SSOAccount.tags),
-                    sqlalchemy.orm.joinedload(SSOAccount.characters),
-                    sqlalchemy.orm.joinedload(SSOAccount.aliases),
-                )
-                .filter(SSOAccount.id == character.account_id)
-                .one_or_none()
-            )
+        if account:
             session.expunge(account)
             return account
 
-        # If not found, try to find by alias
-        alias = (
-            session.query(SSOAccountAlias)
-            .options(sqlalchemy.orm.joinedload(SSOAccountAlias.account))
+        # Try by alias (single query via join)
+        account = (
+            session.query(SSOAccount)
+            .join(SSOAccountAlias, SSOAccountAlias.account_id == SSOAccount.id)
+            .options(*_account_eager_opts())
             .filter(SSOAccountAlias.alias == username, SSOAccountAlias.guild_id == guild_id)
-            .one_or_none()
+            .first()
         )
 
-        if alias:
-            account = (
-                session.query(SSOAccount)
-                .options(
-                    sqlalchemy.orm.joinedload(SSOAccount.groups),
-                    sqlalchemy.orm.joinedload(SSOAccount.tags),
-                    sqlalchemy.orm.joinedload(SSOAccount.characters),
-                    sqlalchemy.orm.joinedload(SSOAccount.aliases),
-                )
-                .filter(SSOAccount.id == alias.account_id)
-                .one_or_none()
-            )
+        if account:
             session.expunge(account)
             return account
 
-        # If not found, try to find by traditional tag
-        tagged_accounts = (
-            session.query(SSOTag)
-            .options(sqlalchemy.orm.joinedload(SSOTag.account))
+        # Try by traditional tag (single query, sort in Python)
+        accounts = (
+            session.query(SSOAccount)
+            .join(SSOTag, SSOTag.account_id == SSOAccount.id)
+            .options(*_account_eager_opts())
             .filter(SSOTag.tag == username, SSOTag.guild_id == guild_id)
             .all()
         )
 
-        if tagged_accounts:
+        if accounts:
             now = datetime.datetime.now()
             if inactive_only:
                 inactivity_time = now - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
-                accounts = [
-                    tagged_account.account
-                    for tagged_account in tagged_accounts
-                    if tagged_account.account.last_login < inactivity_time
-                ]
-            else:
-                accounts = [tagged_account.account for tagged_account in tagged_accounts]
+                accounts = [a for a in accounts if a.last_login < inactivity_time]
             if not accounts:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
             accounts.sort(key=lambda a: _login_sort_key(a, now, _max_character_level))
-            account = (
-                session.query(SSOAccount)
-                .options(
-                    sqlalchemy.orm.joinedload(SSOAccount.groups),
-                    sqlalchemy.orm.joinedload(SSOAccount.tags),
-                    sqlalchemy.orm.joinedload(SSOAccount.characters),
-                    sqlalchemy.orm.joinedload(SSOAccount.aliases),
-                )
-                .filter(SSOAccount.id == accounts[0].id)
-                .one_or_none()
-            )
-            session.expunge(account)
-            return account
+            session.expunge(accounts[0])
+            return accounts[0]
 
-        # If not found, try to find by dynamic tag
-        if username in get_dynamic_tag_list():
-            dynamic_tags_tuple = get_dynamic_tags()
-            dynamic_tag_zones: dict[str, list[str]] = dynamic_tags_tuple[0]
-            dynamic_tag_classes: dict[str, CharacterClass] = dynamic_tags_tuple[1]
-
-            # Figure out which zone/class the username is
+        # Try by dynamic tag
+        dt_zones, dt_classes = _dynamic_tags
+        dt_list = _dynamic_tag_list
+        if username in dt_list:
             zones = None
             klass = None
-            for dt_zone, dt_zones in dynamic_tag_zones.items():
+            for dt_zone, dt_zone_list in dt_zones.items():
                 if username.startswith(dt_zone):
-                    zones = dt_zones
+                    zones = dt_zone_list
                     break
-            for dt_class, dt_classes in dynamic_tag_classes.items():
+            for dt_class, dt_class_val in dt_classes.items():
                 if username.endswith(dt_class):
-                    klass = dt_classes
+                    klass = dt_class_val
                     break
             if not zones or not klass:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
 
-            # Get the account
             characters = list_account_characters_by_class_zone(guild_id, klass, zones)
             if not characters:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
-            # Build account_id -> character level mapping (one class per account)
             char_level_by_account = {c.account_id: (c.level or 0) for c in characters}
-            accounts = list({c.account for c in characters})
+            unique_accounts = list({c.account for c in characters})
             now = datetime.datetime.now()
-            accounts.sort(key=lambda a: _login_sort_key(a, now, lambda acct: char_level_by_account.get(acct.id, 0)))
-            if not accounts:
+            unique_accounts.sort(key=lambda a: _login_sort_key(a, now, lambda acct: char_level_by_account.get(acct.id, 0)))
+            if not unique_accounts:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
-            return accounts[0]
+            # Re-query with full eager loads (the accounts from
+            # list_account_characters_by_class_zone only have the
+            # account relationship, not groups/tags/characters/aliases)
+            account = (
+                session.query(SSOAccount)
+                .options(*_account_eager_opts())
+                .filter(SSOAccount.id == unique_accounts[0].id)
+                .one()
+            )
+            session.expunge(account)
+            return account
 
 
 def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSOAccount]:
@@ -452,10 +426,15 @@ def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
     return dynamic_tag_zones, dynamic_tag_classes
 
 
+# Pre-compute once at module load since these are static
+_dynamic_tags = get_dynamic_tags()
+_dynamic_tag_list = frozenset(
+    "{}{}".format(a, b) for a, b in itertools.product(list(_dynamic_tags[0]), list(_dynamic_tags[1]))
+)
+
+
 def get_dynamic_tag_list():
-    dt_zones, dt_classes = get_dynamic_tags()
-    dt_list = ["{}{}".format(a, b) for a, b in itertools.product(list(dt_zones), list(dt_classes))]
-    return dt_list
+    return _dynamic_tag_list
 
 
 def update_account(guild_id: int, real_user: str, password: str) -> SSOAccount:
@@ -484,6 +463,38 @@ def update_last_login(account_id: int, login_by: str | None = None) -> None:
             if login_by is not None:
                 account.last_login_by = login_by
             session.commit()
+
+
+def update_last_login_and_log(
+    account_id: int,
+    login_by: str | None,
+    username: str,
+    ip_address: str,
+    discord_user_id: int,
+    guild_id: int,
+    details: str,
+) -> "SSOAuditLog":
+    """Combine update_last_login + create_audit_log into a single DB session."""
+    with base.get_session() as session:
+        account = session.query(SSOAccount).filter(SSOAccount.id == account_id).one_or_none()
+        if account:
+            account.last_login = datetime.datetime.now()
+            if login_by is not None:
+                account.last_login_by = login_by
+
+        audit_log = SSOAuditLog(
+            username=username,
+            ip_address=ip_address,
+            success=True,
+            discord_user_id=discord_user_id,
+            account_id=account_id,
+            guild_id=guild_id,
+            details=details,
+        )
+        session.add(audit_log)
+        session.commit()
+        session.expunge(audit_log)
+    return audit_log
 
 
 def delete_account(guild_id: int, real_user: str) -> None:
@@ -1028,6 +1039,10 @@ class SSORevocation(base.Base):
 
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
+    __table_args__ = (
+        sqlalchemy.Index("ix_revocation_lookup", "guild_id", "discord_user_id", "active"),
+    )
+
     def __init__(
         self,
         guild_id: int,
@@ -1045,6 +1060,29 @@ class SSORevocation(base.Base):
         self.timestamp = timestamp or datetime.datetime.now()
 
 
+# --- Revocation cache ---
+# Maps (guild_id, discord_user_id) -> list of (expiry_days, timestamp) for active revocations.
+# None means the cache hasn't been loaded yet.
+_revocation_cache: dict[tuple[int, int], list[tuple[int, datetime.datetime]]] | None = None
+
+
+def _load_revocation_cache() -> dict[tuple[int, int], list[tuple[int, datetime.datetime]]]:
+    global _revocation_cache
+    cache: dict[tuple[int, int], list[tuple[int, datetime.datetime]]] = {}
+    with base.get_session() as session:
+        rows = session.query(SSORevocation).filter(SSORevocation.active == sqlalchemy.true()).all()
+        for r in rows:
+            key = (r.guild_id, r.discord_user_id)
+            cache.setdefault(key, []).append((r.expiry_days, r.timestamp))
+    _revocation_cache = cache
+    return cache
+
+
+def invalidate_revocation_cache():
+    global _revocation_cache
+    _revocation_cache = None
+
+
 def revoke_user_access(guild_id: int, discord_user_id: int, expiry_days: int, details: str = None) -> SSORevocation:
     with base.get_session() as session:
         revocation = SSORevocation(
@@ -1053,6 +1091,7 @@ def revoke_user_access(guild_id: int, discord_user_id: int, expiry_days: int, de
         session.add(revocation)
         session.commit()
         session.expunge_all()
+    invalidate_revocation_cache()
     return revocation
 
 
@@ -1072,22 +1111,16 @@ def get_user_access_revocations(
 
 
 def is_user_access_revoked(guild_id: int, discord_user_id: int) -> bool:
-    with base.get_session() as session:
-        revocations = (
-            session.query(SSORevocation)
-            .filter(
-                SSORevocation.guild_id == guild_id,
-                SSORevocation.discord_user_id == discord_user_id,
-                SSORevocation.active == sqlalchemy.true(),
-            )
-            .all()
-        )
-        session.expunge_all()
-        for revocation in revocations:
-            if revocation.expiry_days == 0:
-                return True
-            elif datetime.datetime.now() < revocation.timestamp + datetime.timedelta(days=revocation.expiry_days):
-                return True
+    cache = _revocation_cache if _revocation_cache is not None else _load_revocation_cache()
+    entries = cache.get((guild_id, discord_user_id))
+    if not entries:
+        return False
+    now = datetime.datetime.now()
+    for expiry_days, timestamp in entries:
+        if expiry_days == 0:
+            return True
+        elif now < timestamp + datetime.timedelta(days=expiry_days):
+            return True
     return False
 
 
@@ -1105,6 +1138,7 @@ def remove_access_revocation(guild_id: int, discord_user_id: int) -> None:
         for revocation in revocations:
             revocation.active = False
         session.commit()
+    invalidate_revocation_cache()
 
 
 class SSOAuditLog(base.Base):
@@ -1132,6 +1166,10 @@ class SSOAuditLog(base.Base):
 
     # Additional information
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
+
+    __table_args__ = (
+        sqlalchemy.Index("ix_audit_rate_limit", "ip_address", "success", "timestamp"),
+    )
 
     def __init__(
         self,
