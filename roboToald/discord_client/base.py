@@ -15,11 +15,7 @@ DISCORD_INTENTS.guild_messages = True
 DISCORD_INTENTS.members = True
 DISCORD_SYNC_FLAGS = disnake.ext.commands.CommandSyncFlags.all()
 # DISCORD_SYNC_FLAGS.sync_commands_debug = True
-DISCORD_CLIENT = commands.Bot(
-    command_prefix="!",
-    command_sync_flags=DISCORD_SYNC_FLAGS,
-    intents=DISCORD_INTENTS
-)
+DISCORD_CLIENT = commands.Bot(command_prefix="!", command_sync_flags=DISCORD_SYNC_FLAGS, intents=DISCORD_INTENTS)
 DISCORD_CLIENT.load_extension("roboToald.discord_client.commands.cmd_sso")
 
 
@@ -28,8 +24,7 @@ def find_match(channel, message):
     for alert in alert_model.get_alerts_for_channel(channel):
         matches_filter = True
         if alert.alert_regex:
-            matches_filter = re.match(
-                alert.alert_regex, message.clean_content, flags=re.IGNORECASE)
+            matches_filter = re.match(alert.alert_regex, message.clean_content, flags=re.IGNORECASE)
         matches_role = True
         if alert.alert_role:
             matches_role = False
@@ -42,22 +37,18 @@ def find_match(channel, message):
             # handle if the role is @everyone
             if message.mention_everyone:
                 role_name = message.guild.get_role(alert.alert_role).mention
-                if role_name == '@everyone':
+                if role_name == "@everyone":
                     matches_role = True
         if matches_filter and matches_role:
             # Check to make sure the user has the right role to see this alert
-            if not is_user_authorized(
-                    message.guild,
-                    alert.user_id,
-                    config.get_member_role(message.guild.id)):
+            if not is_user_authorized(message.guild, alert.user_id, config.get_member_role(message.guild.id)):
                 print(f"Skipping alert #{alert.id}, user not authorized")
             elif alert.alert_url not in alerts_sent:
                 print(f"Sending alert #{alert.id}")
                 utils.send_alert(alert, message.clean_content)
                 alerts_sent.add(alert.alert_url)
             else:
-                print(f"Skipping alert #{alert.id}, already triggered for "
-                      f"this URL")
+                print(f"Skipping alert #{alert.id}, already triggered for this URL")
 
 
 def is_user_authorized(guild: disnake.Guild, user_id: int, role_id: int) -> bool:

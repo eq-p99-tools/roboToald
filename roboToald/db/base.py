@@ -14,8 +14,7 @@ class MyBase:
     def store(self):
         with get_session() as session:
             if self.__use_quota__:
-                num_objects = session.query(
-                    self.__class__).filter_by(user_id=self.user_id).count()
+                num_objects = session.query(self.__class__).filter_by(user_id=self.user_id).count()
                 if num_objects > 5:
                     raise exceptions.QuotaExceeded()
             local_object = session.merge(self)
@@ -32,9 +31,8 @@ class MyBase:
 # get_engine returns a Singleton engine object
 def get_engine(store={}) -> sqlalchemy.engine.Engine:
     if not store:
-        store['engine'] = sqlalchemy.create_engine(
-            "sqlite:///alerts.db", echo=False, future=True)
-    return store['engine']
+        store["engine"] = sqlalchemy.create_engine("sqlite:///alerts.db", echo=False, future=True)
+    return store["engine"]
 
 
 def initialize_database(run_migrations=True):
@@ -79,6 +77,5 @@ def initialize_database(run_migrations=True):
 
 @contextlib.contextmanager
 def get_session(autocommit=False) -> sqlalchemy.orm.Session:
-    with sqlalchemy.orm.Session(
-            get_engine(), autocommit=autocommit) as SESSION:
+    with sqlalchemy.orm.Session(get_engine(), autocommit=autocommit) as SESSION:
         yield SESSION

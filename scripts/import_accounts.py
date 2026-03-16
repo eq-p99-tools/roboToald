@@ -12,6 +12,7 @@ Where:
     - aliases and tags are pipe-delimited lists
     - Example: account1,password1,group1,alias1|alias2,tag1|tag2
 """
+
 import argparse
 import csv
 import os
@@ -25,9 +26,9 @@ from roboToald.db.models import sso as sso_model
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Import accounts from a CSV file into the SSO database.')
-    parser.add_argument('guild_id', type=int, help='Guild ID to import accounts into')
-    parser.add_argument('accounts_file', type=str, help='Path to the CSV file containing account data')
+    parser = argparse.ArgumentParser(description="Import accounts from a CSV file into the SSO database.")
+    parser.add_argument("guild_id", type=int, help="Guild ID to import accounts into")
+    parser.add_argument("accounts_file", type=str, help="Path to the CSV file containing account data")
     return parser.parse_args()
 
 
@@ -48,11 +49,11 @@ def process_account(
     group_name: str,
     aliases_str: str,
     tags_str: str,
-    existing_groups: list[str]
+    existing_groups: list[str],
 ) -> tuple[bool, str]:
     """
     Process a single account entry.
-    
+
     Returns:
         Tuple of (success, error_message)
     """
@@ -73,7 +74,7 @@ def process_account(
 
         # Process aliases if provided
         if aliases_str:
-            aliases = [alias.strip() for alias in aliases_str.split('|') if alias.strip()]
+            aliases = [alias.strip() for alias in aliases_str.split("|") if alias.strip()]
             for alias in aliases:
                 try:
                     print(f"Adding alias '{alias}' to account '{account_name}'...")
@@ -83,7 +84,7 @@ def process_account(
 
         # Process tags if provided
         if tags_str:
-            tags = [tag.strip() for tag in tags_str.split('|') if tag.strip()]
+            tags = [tag.strip() for tag in tags_str.split("|") if tag.strip()]
             for tag in tags:
                 try:
                     print(f"Adding tag '{tag}' to account '{account_name}'...")
@@ -106,7 +107,7 @@ def import_accounts(guild_id: int, accounts_file: str) -> None:
     error_accounts = []
 
     # Process the CSV file
-    with open(accounts_file, 'r') as csvfile:
+    with open(accounts_file, "r") as csvfile:
         reader = csv.reader(csvfile)
 
         # Track statistics
@@ -122,7 +123,7 @@ def import_accounts(guild_id: int, accounts_file: str) -> None:
                 continue
 
             # Skip header row
-            if total_accounts == 0 and row[0].lower().startswith('account'):
+            if total_accounts == 0 and row[0].lower().startswith("account"):
                 continue
             total_accounts += 1
 
@@ -137,8 +138,7 @@ def import_accounts(guild_id: int, accounts_file: str) -> None:
 
             print(f"Processing account '{account_name}'...")
             success, error_message = process_account(
-                guild_id, account_name, account_password, group_name,
-                aliases_str, tags_str, existing_groups
+                guild_id, account_name, account_password, group_name, aliases_str, tags_str, existing_groups
             )
 
             if success:
@@ -150,9 +150,9 @@ def import_accounts(guild_id: int, accounts_file: str) -> None:
     # Write error accounts to a file if there are any
     if error_accounts:
         error_file = "error_accounts.csv"
-        with open(error_file, 'w', newline='') as csvfile:
+        with open(error_file, "w", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['account_name', 'account_password', 'group_name', 'aliases', 'tags', 'error'])
+            writer.writerow(["account_name", "account_password", "group_name", "aliases", "tags", "error"])
             writer.writerows(error_accounts)
         print(f"Wrote {len(error_accounts)} failed accounts to {error_file}")
 

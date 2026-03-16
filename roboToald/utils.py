@@ -4,10 +4,8 @@ import disnake
 
 from roboToald.alert_services import squadcast
 
-SQUADCAST_WEBHOOK_REGEX_US = re.compile(
-    r"https?://api.squadcast.com/v2/incidents/api/\w+")
-SQUADCAST_WEBHOOK_REGEX_EU = re.compile(
-    r"https?://api.eu.squadcast.com/v2/incidents/api/\w+")
+SQUADCAST_WEBHOOK_REGEX_US = re.compile(r"https?://api.squadcast.com/v2/incidents/api/\w+")
+SQUADCAST_WEBHOOK_REGEX_EU = re.compile(r"https?://api.eu.squadcast.com/v2/incidents/api/\w+")
 VALID_ALERT_PREFIXES = (
     SQUADCAST_WEBHOOK_REGEX_US,
     SQUADCAST_WEBHOOK_REGEX_EU,
@@ -35,13 +33,11 @@ def send_function(url):
 def send_alert(alert, message):
     service_func = send_function(alert.alert_url)
     # Strip non-printable characters
-    message = ''.join(c for c in message if c.isprintable())
+    message = "".join(c for c in message if c.isprintable())
     if not service_func:
-        print(f"Alert ID `{alert.id}` has invalid alert_url: "
-              f"`{alert.alert_url}`")
+        print(f"Alert ID `{alert.id}` has invalid alert_url: `{alert.alert_url}`")
         return
-    print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` "
-          f"to {alert.alert_url}: {message}")
+    print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` to {alert.alert_url}: {message}")
     # Remove @everyone from the message if present
     message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)
@@ -49,21 +45,17 @@ def send_alert(alert, message):
 
 
 async def send_and_split(
-        inter: disnake.ApplicationCommandInteraction, long_message: str,
-        allowed_mentions = disnake.AllowedMentions(users=False)):
+    inter: disnake.ApplicationCommandInteraction,
+    long_message: str,
+    allowed_mentions=disnake.AllowedMentions(users=False),
+):
     # Messages can only be 2000 chars so break it up if necessary
     if len(long_message) < 2000:
-        await inter.send(
-            content=long_message,
-            allowed_mentions=allowed_mentions
-        )
+        await inter.send(content=long_message, allowed_mentions=allowed_mentions)
     else:
         messages = split_message(long_message)
         for message in messages:
-            await inter.send(
-                content=message,
-                allowed_mentions=allowed_mentions
-            )
+            await inter.send(content=message, allowed_mentions=allowed_mentions)
 
 
 def split_message(long_message: str):

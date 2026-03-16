@@ -21,9 +21,18 @@ class Timer(base.Base, base.MyBase):
     # Cached for convenience
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
 
-    def __init__(self, timer_id: str, channel_id: int, user_id: int, name: str,
-                 seconds: int, first_run: int, next_run: int, guild_id: int,
-                 repeating: bool):
+    def __init__(
+        self,
+        timer_id: str,
+        channel_id: int,
+        user_id: int,
+        name: str,
+        seconds: int,
+        first_run: int,
+        next_run: int,
+        guild_id: int,
+        repeating: bool,
+    ):
         self.id = timer_id
         self.channel_id = channel_id
         self.user_id = user_id
@@ -65,8 +74,7 @@ def get_timers_for_user(user_id: int, guild_id=None) -> List[Timer]:
     return timers
 
 
-def get_timers_for_user_in_channel(user_id: int,
-                                   channel_id: int) -> List[Timer]:
+def get_timers_for_user_in_channel(user_id: int, channel_id: int) -> List[Timer]:
     """Return timers for one user in one channel"""
     with base.get_session() as session:
         timers = session.query(Timer).filter_by(user_id=user_id)

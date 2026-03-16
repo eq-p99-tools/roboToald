@@ -7,8 +7,7 @@ from roboToald.discord_client.commands import cmd_ds_data
 from roboToald.discord_client.commands import cmd_sso
 
 BUTTON_LISTENERS = {}
-for module in (cmd_random, cmd_batphone, cmd_timer, cmd_raidtarget, cmd_ds,
-               cmd_ds_data, cmd_sso):
+for module in (cmd_random, cmd_batphone, cmd_timer, cmd_raidtarget, cmd_ds, cmd_ds_data, cmd_sso):
     try:
         bls = module.BUTTON_LISTENERS
         for bl, func in bls.items():

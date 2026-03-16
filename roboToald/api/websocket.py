@@ -1,4 +1,5 @@
 """WebSocket connection manager and delta protocol for real-time account updates."""
+
 import asyncio
 import datetime
 import logging
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 def _brief_exc_info() -> str:
     """Return a one-line summary of the current exception (type + message)."""
     import sys
+
     exc = sys.exc_info()[1]
     return f"{type(exc).__name__}: {exc}" if exc else "unknown"
 
@@ -67,19 +69,23 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
     new_keys = set(new_tree.keys())
 
     for key in sorted(new_keys - old_keys):
-        changes.append({
-            "action": "add",
-            "entity": "account",
-            "account": key,
-            "data": new_tree[key],
-        })
+        changes.append(
+            {
+                "action": "add",
+                "entity": "account",
+                "account": key,
+                "data": new_tree[key],
+            }
+        )
 
     for key in sorted(old_keys - new_keys):
-        changes.append({
-            "action": "remove",
-            "entity": "account",
-            "account": key,
-        })
+        changes.append(
+            {
+                "action": "remove",
+                "entity": "account",
+                "account": key,
+            }
+        )
 
     for key in sorted(old_keys & new_keys):
         old_data = old_tree[key]
@@ -130,12 +136,14 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
                 fields[scalar] = new_val
 
         if fields:
-            changes.append({
-                "action": "update",
-                "entity": "account",
-                "account": key,
-                "fields": fields,
-            })
+            changes.append(
+                {
+                    "action": "update",
+                    "entity": "account",
+                    "account": key,
+                    "fields": fields,
+                }
+            )
 
     return changes
 
@@ -169,9 +177,7 @@ class ConnectionManager:
 
     def unregister(self, websocket: WebSocket):
         with self._lock:
-            self._connections = [
-                c for c in self._connections if c.websocket is not websocket
-            ]
+            self._connections = [c for c in self._connections if c.websocket is not websocket]
 
     def _get_connections_for_guild(self, guild_id: int) -> list[ClientConnection]:
         with self._lock:
@@ -179,8 +185,7 @@ class ConnectionManager:
 
     # -- Public notification API (thread-safe) --------------------------------
 
-    def disconnect_user(self, guild_id: int, discord_user_id: int,
-                        code: int = 4003, reason: str = "Access revoked"):
+    def disconnect_user(self, guild_id: int, discord_user_id: int, code: int = 4003, reason: str = "Access revoked"):
         """Close all WebSocket connections for a specific user in a guild.
 
         Safe to call from any thread.
@@ -192,13 +197,9 @@ class ConnectionManager:
             self._loop,
         )
 
-    async def _disconnect_user_async(self, guild_id: int, discord_user_id: int,
-                                     code: int, reason: str):
+    async def _disconnect_user_async(self, guild_id: int, discord_user_id: int, code: int, reason: str):
         with self._lock:
-            targets = [
-                c for c in self._connections
-                if c.guild_id == guild_id and c.discord_user_id == discord_user_id
-            ]
+            targets = [c for c in self._connections if c.guild_id == guild_id and c.discord_user_id == discord_user_id]
         for conn in targets:
             try:
                 await conn.websocket.send_json({"type": "error", "detail": reason})
@@ -209,7 +210,10 @@ class ConnectionManager:
         if targets:
             logger.info(
                 "Disconnected %d WebSocket session(s) for user %s in guild %s: %s",
-                len(targets), discord_user_id, guild_id, reason,
+                len(targets),
+                discord_user_id,
+                guild_id,
+                reason,
             )
 
     def notify_guild(self, guild_id: int):
@@ -220,9 +224,7 @@ class ConnectionManager:
         if self._loop is None or self._loop.is_closed():
             logger.warning("Cannot notify guild %s: event loop not available", guild_id)
             return
-        asyncio.run_coroutine_threadsafe(
-            self._notify_guild_async(guild_id), self._loop
-        )
+        asyncio.run_coroutine_threadsafe(self._notify_guild_async(guild_id), self._loop)
 
     async def notify_guild_async(self, guild_id: int):
         """Await-able version for callers already on the uvicorn event loop."""
@@ -230,8 +232,7 @@ class ConnectionManager:
 
     # -- Internal -------------------------------------------------------------
 
-    def _filter_accessible(self, discord_user_id: int, guild_id: int,
-                           accounts: list) -> list:
+    def _filter_accessible(self, discord_user_id: int, guild_id: int, accounts: list) -> list:
         """Filter accounts to those accessible by the user's Discord roles.
 
         Relies on the ``groups`` relationship already being loaded on each
@@ -244,10 +245,7 @@ class ConnectionManager:
         if member is None:
             return []
         role_ids = {role.id for role in member.roles}
-        return [
-            a for a in accounts
-            if any(g.role_id in role_ids for g in a.groups)
-        ]
+        return [a for a in accounts if any(g.role_id in role_ids for g in a.groups)]
 
     async def _notify_guild_async(self, guild_id: int):
         connections = self._get_connections_for_guild(guild_id)
@@ -255,8 +253,7 @@ class ConnectionManager:
             return
 
         all_accounts = await asyncio.to_thread(sso_model.list_accounts, guild_id)
-        active_characters = await asyncio.to_thread(
-            sso_model.get_active_characters, guild_id)
+        active_characters = await asyncio.to_thread(sso_model.get_active_characters, guild_id)
 
         async def _safe_push(conn: ClientConnection):
             try:
@@ -264,27 +261,27 @@ class ConnectionManager:
             except WebSocketDisconnect:
                 logger.info(
                     "WS client disconnected during delta push guild=%s user=%s",
-                    guild_id, conn.discord_user_id,
+                    guild_id,
+                    conn.discord_user_id,
                 )
                 self.unregister(conn.websocket)
             except Exception:
                 logger.warning(
                     "Failed to push delta to WS client guild=%s user=%s: %s",
-                    guild_id, conn.discord_user_id,
+                    guild_id,
+                    conn.discord_user_id,
                     _brief_exc_info(),
                 )
                 self.unregister(conn.websocket)
 
         await asyncio.gather(*[_safe_push(conn) for conn in connections])
 
-    async def _push_delta(self, conn: ClientConnection, guild_id: int,
-                          all_accounts, active_characters: dict[int, str]):
+    async def _push_delta(self, conn: ClientConnection, guild_id: int, all_accounts, active_characters: dict[int, str]):
         if conn.websocket.client_state != WebSocketState.CONNECTED:
             self.unregister(conn.websocket)
             return
 
-        accessible = self._filter_accessible(
-            conn.discord_user_id, guild_id, all_accounts)
+        accessible = self._filter_accessible(conn.discord_user_id, guild_id, all_accounts)
         new_tree = build_account_tree(accessible, active_characters)
         changes = compute_diff(conn.last_sent_state, new_tree)
 
@@ -296,8 +293,7 @@ class ConnectionManager:
         """Build the full account_tree for a user (used on initial WS auth)."""
         all_accounts = sso_model.list_accounts(guild_id)
         active_characters = sso_model.get_active_characters(guild_id)
-        accessible = self._filter_accessible(
-            discord_user_id, guild_id, all_accounts)
+        accessible = self._filter_accessible(discord_user_id, guild_id, all_accounts)
         return build_account_tree(accessible, active_characters)
 
 

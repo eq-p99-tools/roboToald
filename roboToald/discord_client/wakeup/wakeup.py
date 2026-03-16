@@ -11,8 +11,7 @@ async def process_message(message: disnake.Message) -> None:
         for exclusion in config.get_wakeup_exclusions(message.guild.id):
             if exclusion in message.content.lower():
                 return
-        print(f"Playing wakeup in channel {channel_id} for message: "
-              f"{message.content}")
+        print(f"Playing wakeup in channel {channel_id} for message: {message.content}")
         voice_channel_id = config.WAKEUP_CHANNELS[channel_id]
         voice_channel = message.guild.get_channel(voice_channel_id)
         try:
@@ -26,6 +25,7 @@ async def process_message(message: disnake.Message) -> None:
 async def wakeup(channel: disnake.VoiceChannel) -> None:
     vc: disnake.voice_client.VoiceClient = await channel.connect()
     try:
+
         def finished(error):
             if error:
                 print(error)

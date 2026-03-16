@@ -11,8 +11,7 @@ from roboToald.db import base
 class PointsAudit(base.Base):
     __tablename__ = "points_audit"
 
-    id = sqlalchemy.Column(
-        sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer)
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
     event = sqlalchemy.Column(sqlalchemy.Enum(constants.Event))
@@ -20,9 +19,15 @@ class PointsAudit(base.Base):
     active = sqlalchemy.Column(sqlalchemy.Boolean, default=True)
     start_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
 
-    def __init__(self, user_id: int, guild_id: int, event: constants.Event,
-                 time: datetime.datetime, active: bool = True,
-                 start_id: int = None):
+    def __init__(
+        self,
+        user_id: int,
+        guild_id: int,
+        event: constants.Event,
+        time: datetime.datetime,
+        active: bool = True,
+        start_id: int = None,
+    ):
         self.user_id = user_id
         self.guild_id = guild_id
         self.event = event
@@ -39,8 +44,7 @@ def get_event(event_id: int) -> Optional[PointsAudit]:
 
 def get_events_for_member(user_id: int, guild_id: int) -> list[PointsAudit]:
     with base.get_session() as session:
-        events = session.query(PointsAudit).filter_by(
-            user_id=user_id, guild_id=guild_id).all()
+        events = session.query(PointsAudit).filter_by(user_id=user_id, guild_id=guild_id).all()
     return events
 
 
@@ -54,8 +58,7 @@ def get_last_event(user_id: int, guild_id: int) -> Optional[PointsAudit]:
     return last_event
 
 
-def get_active_events(
-        guild_id: int, include_0: bool = False) -> list[PointsAudit]:
+def get_active_events(guild_id: int, include_0: bool = False) -> list[PointsAudit]:
     with base.get_session() as session:
         active_events = session.query(PointsAudit)
         active_events = active_events.filter_by(guild_id=guild_id, active=True)
@@ -65,8 +68,7 @@ def get_active_events(
     return active_events
 
 
-def get_events_since_time(
-        guild_id: int, start_time: datetime.datetime) -> List[PointsAudit]:
+def get_events_since_time(guild_id: int, start_time: datetime.datetime) -> List[PointsAudit]:
     with base.get_session() as session:
         event_list = session.query(PointsAudit)
         event_list = event_list.filter_by(guild_id=guild_id)
@@ -76,8 +78,7 @@ def get_events_since_time(
     return event_list
 
 
-def get_event_pairs(events: List[PointsAudit]
-                    ) -> Dict[datetime.datetime, datetime.datetime]:
+def get_event_pairs(events: List[PointsAudit]) -> Dict[datetime.datetime, datetime.datetime]:
     event_pairs: Dict[datetime.datetime, datetime.datetime] = {}
     for event in events:
         if event.time in event_pairs.keys() or event.time in event_pairs.values():
@@ -92,16 +93,13 @@ def get_event_pairs(events: List[PointsAudit]
             continue
         else:
             with base.get_session() as session:
-                matched_event = session.query(PointsAudit).filter_by(
-                    start_id=event.id).one_or_none()
+                matched_event = session.query(PointsAudit).filter_by(start_id=event.id).one_or_none()
             event_pairs[event.time] = matched_event.time
             continue
     return event_pairs
 
 
-def get_event_pairs_split_members(
-        events: List[PointsAudit]
-) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
+def get_event_pairs_split_members(events: List[PointsAudit]) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
     event_pairs: Dict[int, Dict[datetime.datetime, datetime.datetime]] = {}
     now = datetime.datetime.now()
     for event in events:
@@ -111,9 +109,7 @@ def get_event_pairs_split_members(
             continue
         if event.active:
             # Event with no pair means ongoing (use now+10m to be safe)
-            event_pairs[event.user_id][event.time] = (
-                    now + datetime.timedelta(minutes=10)
-            )
+            event_pairs[event.user_id][event.time] = now + datetime.timedelta(minutes=10)
             continue
         if event.start_id:
             matched_event = get_event(event.start_id)
@@ -121,8 +117,7 @@ def get_event_pairs_split_members(
             continue
         else:
             with base.get_session() as session:
-                matched_event = session.query(PointsAudit).filter_by(
-                    start_id=event.id).one_or_none()
+                matched_event = session.query(PointsAudit).filter_by(start_id=event.id).one_or_none()
             if matched_event:
                 event_pairs[event.user_id][event.time] = matched_event.time
             else:
@@ -133,18 +128,19 @@ def get_event_pairs_split_members(
 
 def get_last_pop_time() -> datetime.datetime:
     with base.get_session() as session:
-        last_pop = session.query(PointsAudit).filter_by(
-            event=constants.Event.POP
-        ).order_by(sqlalchemy.desc(PointsAudit.time)).limit(1).one_or_none()
+        last_pop = (
+            session.query(PointsAudit)
+            .filter_by(event=constants.Event.POP)
+            .order_by(sqlalchemy.desc(PointsAudit.time))
+            .limit(1)
+            .one_or_none()
+        )
     if last_pop:
         return last_pop.time.astimezone()
-    return (datetime.datetime.now() -
-            datetime.timedelta(hours=18)).astimezone()
+    return (datetime.datetime.now() - datetime.timedelta(hours=18)).astimezone()
 
 
-def get_event_pairs_since_last_pop(
-        guild_id: int
-) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
+def get_event_pairs_since_last_pop(guild_id: int) -> Dict[int, Dict[datetime.datetime, datetime.datetime]]:
     last_pop_time = get_last_pop_time()
     events = get_events_since_time(guild_id, last_pop_time)
     event_pairs = get_event_pairs_split_members(events)
@@ -174,8 +170,7 @@ class PointsEarned(base.Base, base.MyBase):
     __use_quota__ = False
     __tablename__ = "points_earned"
 
-    id = sqlalchemy.Column(
-        sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer)
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
     points = sqlalchemy.Column(sqlalchemy.Integer)
@@ -183,9 +178,9 @@ class PointsEarned(base.Base, base.MyBase):
     notes = sqlalchemy.Column(sqlalchemy.Text)
     adjustor = sqlalchemy.Column(sqlalchemy.Integer)
 
-    def __init__(self, user_id: int, guild_id: int, points: int,
-                 time: datetime.datetime, notes: str = None,
-                 adjustor: int = None):
+    def __init__(
+        self, user_id: int, guild_id: int, points: int, time: datetime.datetime, notes: str = None, adjustor: int = None
+    ):
         self.user_id = user_id
         self.guild_id = guild_id
         self.points = points
@@ -196,10 +191,7 @@ class PointsEarned(base.Base, base.MyBase):
 
 def get_points_earned(guild_id: int) -> List[sqlalchemy.engine.row.Row]:
     with base.get_session() as session:
-        earned = session.query(
-            PointsEarned.user_id,
-            sqlalchemy.func.sum(PointsEarned.points).label('points')
-        )
+        earned = session.query(PointsEarned.user_id, sqlalchemy.func.sum(PointsEarned.points).label("points"))
         earned = earned.group_by(PointsEarned.user_id)
         earned = earned.filter_by(guild_id=guild_id)
         earned = earned.filter(PointsEarned.user_id != 0)
@@ -217,10 +209,7 @@ def get_points_earned_recently(guild_id: int, days: int = 14) -> List[sqlalchemy
         users = users.filter(PointsEarned.user_id != 0)
         users = users.distinct().all()
 
-        earned = session.query(
-            PointsEarned.user_id,
-            sqlalchemy.func.sum(PointsEarned.points).label('points')
-        )
+        earned = session.query(PointsEarned.user_id, sqlalchemy.func.sum(PointsEarned.points).label("points"))
         earned = earned.group_by(PointsEarned.user_id)
         earned = earned.filter_by(guild_id=guild_id)
         earned = earned.filter(PointsEarned.user_id.in_([x[0] for x in users]))
@@ -229,11 +218,9 @@ def get_points_earned_recently(guild_id: int, days: int = 14) -> List[sqlalchemy
     return earned
 
 
-
 def get_points_earned_by_member(user_id: int, guild_id: int) -> list[PointsEarned]:
     with base.get_session() as session:
-        earned = session.query(PointsEarned).filter_by(
-            user_id=user_id, guild_id=guild_id).all()
+        earned = session.query(PointsEarned).filter_by(user_id=user_id, guild_id=guild_id).all()
     return earned
 
 
@@ -241,15 +228,13 @@ class PointsSpent(base.Base, base.MyBase):
     __use_quota__ = False
     __tablename__ = "points_spent"
 
-    id = sqlalchemy.Column(
-        sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     user_id = sqlalchemy.Column(sqlalchemy.Integer)
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
     points = sqlalchemy.Column(sqlalchemy.Integer)
     time = sqlalchemy.Column(sqlalchemy.DateTime)
 
-    def __init__(self, user_id: int, guild_id: int, points: int,
-                 time: datetime.datetime):
+    def __init__(self, user_id: int, guild_id: int, points: int, time: datetime.datetime):
         self.user_id = user_id
         self.guild_id = guild_id
         self.points = points
@@ -258,13 +243,11 @@ class PointsSpent(base.Base, base.MyBase):
 
 def get_points_spent(guild_id: int) -> list[PointsSpent]:
     with base.get_session() as session:
-        spent = session.query(PointsSpent).filter_by(
-            guild_id=guild_id).order_by(sqlalchemy.asc(PointsSpent.time)).all()
+        spent = session.query(PointsSpent).filter_by(guild_id=guild_id).order_by(sqlalchemy.asc(PointsSpent.time)).all()
     return spent
 
 
 def get_points_spent_by_member(user_id: int, guild_id: int) -> list[PointsSpent]:
     with base.get_session() as session:
-        spent = session.query(PointsSpent).filter_by(
-            user_id=user_id, guild_id=guild_id).all()
+        spent = session.query(PointsSpent).filter_by(user_id=user_id, guild_id=guild_id).all()
     return spent

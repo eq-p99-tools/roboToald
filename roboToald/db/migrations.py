@@ -1,4 +1,5 @@
 """Database migration utilities for RoboToald."""
+
 import os
 import logging
 from pathlib import Path

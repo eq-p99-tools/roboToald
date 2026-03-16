@@ -9,7 +9,7 @@ from roboToald import db
 from roboToald.db.models import alert as alert_model
 from roboToald import utils
 
-BATPHONE_GUILDS = config.guilds_for_command('batphone')
+BATPHONE_GUILDS = config.guilds_for_command("batphone")
 HELP_MESSAGE = (
     "To use this service, you must have an account created with [SquadCast](https://www.squadcast.com/).\n"
     "The service is free for our use, but you cannot sign up with a Gmail account, so you may need to use a different "
@@ -25,53 +25,44 @@ HELP_MESSAGE = (
 )
 
 
-@base.DISCORD_CLIENT.slash_command(
-    description="Batphone Registration",
-    guild_ids=BATPHONE_GUILDS)
+@base.DISCORD_CLIENT.slash_command(description="Batphone Registration", guild_ids=BATPHONE_GUILDS)
 async def batphone(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
 @batphone.sub_command(description="Show batphone setup/usage tutorial.")
 async def help(inter: disnake.ApplicationCommandInteraction):
-    embed = disnake.Embed(
-        title="Batphone Setup",
-        description=HELP_MESSAGE
-    )
+    embed = disnake.Embed(title="Batphone Setup", description=HELP_MESSAGE)
     embed.set_image(url="https://i.imgur.com/LKnMHGT.png")
     await inter.send(embed=embed, ephemeral=True)
 
 
 @batphone.sub_command(description="Register for a batphone.")
-async def register(inter: disnake.ApplicationCommandInteraction,
-                   channel: disnake.TextChannel = commands.Param(
-                       description="The channel to watch for batphones."
-                   ),
-                   alert_url: str = commands.Param(
-                       description="The Webhook URL to trigger when a batphone registration triggers."
-                   ),
-                   filter_str: str = commands.Param(
-                       name="filter",
-                       description="Plain-text to match. Only one of `filter` or `filter_regex` may be used. "
-                                   "Example: `quake`",
-                       default=None,
-
-                   ),
-                   filter_regex: str = commands.Param(
-                       description="A regex to match. Only one of `filter` or `filter_regex` may be used. "
-                                   "Example: `.*(TFA|MOTG|PROG).*`",
-                       default=None
-                   ),
-                   filter_role: disnake.Role = commands.Param(
-                       description="Match any message pinging this role. This can be used with/without other filters.",
-                       default=None
-                   )):
+async def register(
+    inter: disnake.ApplicationCommandInteraction,
+    channel: disnake.TextChannel = commands.Param(description="The channel to watch for batphones."),
+    alert_url: str = commands.Param(description="The Webhook URL to trigger when a batphone registration triggers."),
+    filter_str: str = commands.Param(
+        name="filter",
+        description="Plain-text to match. Only one of `filter` or `filter_regex` may be used. Example: `quake`",
+        default=None,
+    ),
+    filter_regex: str = commands.Param(
+        description="A regex to match. Only one of `filter` or `filter_regex` may be used. "
+        "Example: `.*(TFA|MOTG|PROG).*`",
+        default=None,
+    ),
+    filter_role: disnake.Role = commands.Param(
+        description="Match any message pinging this role. This can be used with/without other filters.", default=None
+    ),
+):
     has_both_filters = filter_str and filter_regex
     has_one_filter = filter_str or filter_regex or filter_role
     if has_both_filters or not has_one_filter:
         await inter.response.send_message(
-            "ERROR: You must supply one of `filter` or `filter_regex` "
-            "(but not both), and/or `filter_role`.", ephemeral=True)
+            "ERROR: You must supply one of `filter` or `filter_regex` (but not both), and/or `filter_role`.",
+            ephemeral=True,
+        )
         return
 
     if not utils.validate_url(alert_url):
@@ -81,7 +72,7 @@ async def register(inter: disnake.ApplicationCommandInteraction,
             "services: \n"
             f"\u25b7 [SquadCast]({constants.SQUADCAST_WEBHOOK_URL})",
             # f"\u25b7 [PagerDuty]({constants.PAGERDUTY_WEBHOOK_URL})",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -99,32 +90,28 @@ async def register(inter: disnake.ApplicationCommandInteraction,
             user_id=inter.user.id,
             alert_regex=filter_regex,
             alert_url=alert_url,
-            alert_role=filter_role_id
+            alert_role=filter_role_id,
         )
         session.add(alert)
         try:
             session.commit()
         except sqlalchemy.exc.IntegrityError:
             print("User attempted to register a duplicate alert.")
-            await inter.response.send_message(
-                "Alert already exists.", ephemeral=True)
+            await inter.response.send_message("Alert already exists.", ephemeral=True)
             return
         session.flush()
         print(f"Registered Alert ID: {alert.id}")
     await inter.response.send_message(
-        f"Stored alert for <#{alert.channel_id}>: "
-        f"`{alert.alert_regex}` \u2192 {alert.alert_url}",
-        ephemeral=True)
+        f"Stored alert for <#{alert.channel_id}>: `{alert.alert_regex}` \u2192 {alert.alert_url}", ephemeral=True
+    )
 
 
 @batphone.sub_command(description="List batphone registrations.")
 async def list(inter: disnake.ApplicationCommandInteraction):
-    alerts = alert_model.get_alerts_for_user(
-        inter.user.id, guild_id=inter.guild.id)
+    alerts = alert_model.get_alerts_for_user(inter.user.id, guild_id=inter.guild.id)
 
     if not alerts:
-        await inter.response.send_message(
-            "No alerts configured.", ephemeral=True)
+        await inter.response.send_message("No alerts configured.", ephemeral=True)
         return
     footer_text = "Active (triggered {0} times) <ID: {1}>"
     first = True
@@ -136,8 +123,7 @@ async def list(inter: disnake.ApplicationCommandInteraction):
             desc += f"**Role**: <@&{alert.alert_role}>\n"
         desc += f"**URL**: {alert.alert_url}"
 
-        e = disnake.Embed(description=desc,
-                          color=disnake.Color.green())
+        e = disnake.Embed(description=desc, color=disnake.Color.green())
         e.set_footer(text=footer_text.format(alert.trigger_count, alert.id))
         if first:
             await inter.response.send_message(embed=e, ephemeral=True)
@@ -146,21 +132,15 @@ async def list(inter: disnake.ApplicationCommandInteraction):
         else:
             msg = await inter.followup.send(embed=e, wait=True, ephemeral=True)
         my_view = disnake.ui.View()
-        test_button = disnake.ui.Button(
-            label="Test", emoji=constants.TEST_EMOJI,
-            style=disnake.ButtonStyle.green)
+        test_button = disnake.ui.Button(label="Test", emoji=constants.TEST_EMOJI, style=disnake.ButtonStyle.green)
         delete_button = disnake.ui.Button(
-            label="Delete", emoji=constants.DELETE_EMOJI,
-            style=disnake.ButtonStyle.danger)
+            label="Delete", emoji=constants.DELETE_EMOJI, style=disnake.ButtonStyle.danger
+        )
         clear_count_button = disnake.ui.Button(
-            label="Clear Counter", emoji=constants.CLEAR_EMOJI,
-            style=disnake.ButtonStyle.grey)
+            label="Clear Counter", emoji=constants.CLEAR_EMOJI, style=disnake.ButtonStyle.grey
+        )
 
-        async def button_callback(button_inter,
-                                  that_message=msg,
-                                  that_alert=alert,
-                                  that_embed=e,
-                                  that_view=my_view):
+        async def button_callback(button_inter, that_message=msg, that_alert=alert, that_embed=e, that_view=my_view):
             action = button_inter.component.emoji.name
             print(f"Interacted with Alert #{that_alert.id} with {action}")
             if action == constants.DELETE_EMOJI:
@@ -174,18 +154,13 @@ async def list(inter: disnake.ApplicationCommandInteraction):
                 await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.TEST_EMOJI:
                 print(f"Testing alert {that_alert.id}!")
-                utils.send_alert(
-                    that_alert, f"Test of alert: {that_alert.alert_regex}")
-                that_embed.set_footer(
-                    text=footer_text.format(that_alert.trigger_count,
-                                            that_alert.id))
+                utils.send_alert(that_alert, f"Test of alert: {that_alert.alert_regex}")
+                that_embed.set_footer(text=footer_text.format(that_alert.trigger_count, that_alert.id))
                 await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.CLEAR_EMOJI:
                 print(f"Clearing counter for alert {that_alert.id}!")
                 that_alert.reset_counter()
-                that_embed.set_footer(
-                    text=footer_text.format(that_alert.trigger_count,
-                                            that_alert.id))
+                that_embed.set_footer(text=footer_text.format(that_alert.trigger_count, that_alert.id))
                 await that_message.edit(view=that_view, embed=that_embed)
 
             try:

@@ -2,9 +2,7 @@ import enum
 
 from dateutil import tz
 
-SQUADCAST_WEBHOOK_URL = (
-    "https://support.squadcast.com/docs/apiv2"
-    "#how-to-configure-incident-webhook")
+SQUADCAST_WEBHOOK_URL = "https://support.squadcast.com/docs/apiv2#how-to-configure-incident-webhook"
 
 TEST_EMOJI = "🧪"
 DELETE_EMOJI = "🗑"
@@ -24,8 +22,8 @@ TIMEZONES = {
 
 
 class Event(enum.Enum):
-    IN = 'IN'
-    OUT = 'OUT'
+    IN = "IN"
+    OUT = "OUT"
     COMP_START = "COMP_START"
     COMP_END = "COMP_END"
     POP = "POP"

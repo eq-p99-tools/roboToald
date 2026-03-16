@@ -1,4 +1,5 @@
 """REST API server implementation for RoboToald."""
+
 import asyncio
 import datetime
 import json
@@ -27,6 +28,7 @@ class _SuppressBareWsLifecycle(logging.Filter):
     Our application-level WebSocket logs include guild, user, and IP context,
     making these redundant.
     """
+
     _suppressed = frozenset({"connection open", "connection closed"})
 
     def filter(self, record):
@@ -62,12 +64,13 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
 
     # Check if both certfile and keyfile are provided
     use_ssl = certfile and keyfile
+
     def _run():
         log_config = uvicorn.config.LOGGING_CONFIG
         ts_fmt = "%(asctime)s %(levelprefix)s %(message)s"
         log_config["formatters"]["default"]["fmt"] = ts_fmt
         log_config["formatters"]["access"]["fmt"] = (
-            "%(asctime)s %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s"
+            '%(asctime)s %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
         )
         uvicorn_params = {
             "app": "roboToald.api.server:app",
@@ -76,7 +79,7 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             "log_level": "info",
             "log_config": log_config,
             "proxy_headers": True,
-            "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS
+            "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS,
         }
 
         # Add SSL parameters if certificates are provided
@@ -98,9 +101,11 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
     logger.info(f"API server started in thread at {protocol}://{host}:{port}")
     return thread
 
+
 # Define request and response models
 class AuthRequest(BaseModel):
     """Request model for SSO authentication."""
+
     username: str
     password: str
     client_settings: dict | None = None
@@ -108,12 +113,14 @@ class AuthRequest(BaseModel):
 
 class SSOResponse(BaseModel):
     """Response model for successful SSO authentication."""
+
     real_user: str
     real_pass: str
 
 
 class ErrorResponse(BaseModel):
     """Response model for error cases."""
+
     detail: str
 
 
@@ -137,39 +144,42 @@ class HeartbeatRequest(BaseModel):
 @app.get("/")
 async def root(request: Request):
     """Root endpoint for API health check."""
-    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
     if discord_client is None:
         return {"status": "warning", "service": "RoboToald API", "message": "Discord client not initialized"}
     return {"status": "ok", "service": "RoboToald API", "message": "API server is running"}
 
 
-@app.post("/auth", response_model=Union[SSOResponse, ErrorResponse],
-          status_code=status.HTTP_200_OK,
-          responses={
-              400: {"model": ErrorResponse, "description": "Character not found"},
-              401: {"model": ErrorResponse, "description": "Authentication failed"},
-              410: {"model": ErrorResponse, "description": "Tag temporarily empty"},
-              422: {"model": ErrorResponse, "description": "Client settings rejected"},
-              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
-          })
+@app.post(
+    "/auth",
+    response_model=Union[SSOResponse, ErrorResponse],
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Character not found"},
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+        410: {"model": ErrorResponse, "description": "Tag temporarily empty"},
+        422: {"model": ErrorResponse, "description": "Client settings rejected"},
+        # 429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+    },
+)
 async def authenticate(auth_data: AuthRequest, request: Request):
     """
     Authenticate a user based on username and password.
-    
+
     # Access the Discord client from app.state
     discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
     # You can now use discord_client in this route if needed
-    
+
     The authentication process:
     1. Check if the client IP is rate limited
     2. Check the provided password is a valid access key, otherwise return access denied
     3. Find an account associated with the provided username, otherwise return access denied
     4. Check if the user has access to the requested account, otherwise return access denied
     5. Return the real credentials if authorized
-    
+
     Note: For security reasons, all authentication failures return the same error code
     to avoid leaking information about what accounts exist in the system.
-    
+
     Rate limiting:
     - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
     """
@@ -205,11 +215,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
                 discord_user_id=discord_user_id,
                 account_id=None,
                 guild_id=guild_id,
-                details="Access revoked"
+                details="Access revoked",
             )
             raise_auth_failed()
 
-        discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+        discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
 
         guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
         min_ver = guild_settings.get("min_client_version")
@@ -221,7 +231,10 @@ async def authenticate(auth_data: AuthRequest, request: Request):
                 )
                 logger.info(
                     "Rejecting /auth: client %s below minimum %s [account: %s, guild: %s]",
-                    client_ver, min_ver, auth_data.username, guild_id,
+                    client_ver,
+                    min_ver,
+                    auth_data.username,
+                    guild_id,
                 )
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -234,7 +247,11 @@ async def authenticate(auth_data: AuthRequest, request: Request):
             login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
             logger.info(
                 "Rejecting /auth due to client settings: %s [account: %s, guild: %s, user: %s (%s)]",
-                settings_error, auth_data.username, guild_id, discord_user_id, login_name or "unknown",
+                settings_error,
+                auth_data.username,
+                guild_id,
+                discord_user_id,
+                login_name or "unknown",
             )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -260,7 +277,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
             discord_user_id=None,
             account_id=None,
             guild_id=None,
-            details=details
+            details=details,
         )
         raise_auth_failed()
 
@@ -279,7 +296,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         raise_invalid_character()
 
     # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
-    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
 
     # Check if the discord user has access to this account
     if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account_id]):
@@ -294,7 +311,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
             discord_user_id=discord_user_id,
             account_id=account_id,
             guild_id=guild_id,
-            details=details
+            details=details,
         )
         raise_auth_failed()
 
@@ -320,21 +337,18 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         discord_user_id=discord_user_id,
         account_id=account_id,
         guild_id=guild_id,
-        details=auth_detail
+        details=auth_detail,
     )
 
     # Return the real credentials
-    return SSOResponse(
-        real_user=account.real_user,
-        real_pass=account.real_pass
-    )
+    return SSOResponse(real_user=account.real_user, real_pass=account.real_pass)
 
 
 def _get_client_ip(request: Request) -> str:
     """Extract the real client IP, respecting X-Forwarded-For from trusted proxies."""
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
+        return forwarded_for.split(",")[0].strip()
     return request.client.host
 
 
@@ -373,7 +387,7 @@ def _check_auth(request: Request, access_key_in: str, query_type: str | None):
                 discord_user_id=None,
                 account_id=None,
                 guild_id=None,
-                details=details
+                details=details,
             )
         raise_auth_failed()
 
@@ -388,42 +402,42 @@ def _check_auth(request: Request, access_key_in: str, query_type: str | None):
                 discord_user_id=discord_user_id,
                 account_id=None,
                 guild_id=guild_id,
-                details="Access revoked"
+                details="Access revoked",
             )
         raise_auth_failed()
 
-    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
     return discord_client, discord_user_id, guild_id, client_ip
 
 
-@app.post("/list_accounts", status_code=status.HTTP_200_OK,
-          responses={
-              401: {"model": ErrorResponse, "description": "Authentication failed"},
-              #429: {"model": ErrorResponse, "description": "Too many failed attempts"}
-          })
+@app.post(
+    "/list_accounts",
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+        # 429: {"model": ErrorResponse, "description": "Too many failed attempts"}
+    },
+)
 async def list_accounts(access_data: ListAccountsRequest, request: Request):
     """
     Returns a list of accounts, aliases, and tags that the user with the given access key has access to.
     """
-    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
-        request, access_data.access_key, "list_accounts")
+    discord_client, discord_user_id, guild_id, client_ip = _check_auth(request, access_data.access_key, "list_accounts")
 
     # Get all accounts for this guild
     all_accounts = sso_model.list_accounts(guild_id)
 
     # Filter accounts based on user access
-    accessible_accounts = user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id for account in all_accounts])
+    accessible_accounts = user_has_access_to_accounts(
+        discord_client, discord_user_id, guild_id, [account.id for account in all_accounts]
+    )
 
     ### Build v2/v3 response data
     active_characters = sso_model.get_active_characters(guild_id)
     account_tree = {
         account.real_user: {
-            "aliases": [
-                alias.alias for alias in account.aliases
-            ],
-            "tags": [
-                tag.tag for tag in account.tags
-            ],
+            "aliases": [alias.alias for alias in account.aliases],
+            "tags": [tag.tag for tag in account.tags],
             # Added in v3
             "characters": {
                 character.name: {
@@ -431,7 +445,8 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
                     "bind": character.bind_location,
                     "park": character.park_location,
                     "level": character.level,
-                } for character in account.characters
+                }
+                for character in account.characters
             },
             # Added in v3
             "last_login": (
@@ -441,7 +456,8 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
             ),
             "last_login_by": account.last_login_by,
             "active_character": active_characters.get(account.id),
-        } for account in accessible_accounts
+        }
+        for account in accessible_accounts
     }
 
     dynamic_tag_zones, dynamic_tag_classes = sso_model.get_dynamic_tags()
@@ -461,23 +477,27 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
         discord_user_id=discord_user_id,
         account_id=None,
         guild_id=guild_id,
-        details="Successfully retrieved resources list"
+        details="Successfully retrieved resources list",
     )
 
     return response
 
 
-@app.post("/update_location", status_code=status.HTTP_200_OK,
-          responses={
-              400: {"model": ErrorResponse, "description": "Character not found"},
-              401: {"model": ErrorResponse, "description": "Authentication failed"},
-          })
+@app.post(
+    "/update_location",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Character not found"},
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+    },
+)
 async def update_location(location_data: UpdateLocationRequest, request: Request):
     """
     Update the bind/park location of a character assuming the access key has access to it.
     """
     discord_client, discord_user_id, guild_id, client_ip = _check_auth(
-        request, location_data.access_key, "update_location")
+        request, location_data.access_key, "update_location"
+    )
 
     # Get the account for the character
     account = sso_model.find_account_by_character(guild_id, location_data.character_name)
@@ -489,8 +509,9 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
     if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id]):
         # Log with specific reason but return generic error
         details = "Access denied"
-        logger.warning(f"Authentication failed: {details} for user {discord_user_id} "
-                       f"to character {location_data.character_name}")
+        logger.warning(
+            f"Authentication failed: {details} for user {discord_user_id} to character {location_data.character_name}"
+        )
         # Create audit log entry before raising exception
         sso_model.create_audit_log(
             username=location_data.character_name,
@@ -499,7 +520,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
             discord_user_id=discord_user_id,
             account_id=account.id,
             guild_id=guild_id,
-            details=details
+            details=details,
         )
         raise_auth_failed()
 
@@ -525,25 +546,27 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
         account_id=account.id,
         guild_id=guild_id,
         details=f"Successfully updated location: "
-                f"bind = {location_data.bind_location is not None}, "
-                f"park = {location_data.park_location is not None}, "
-                f"level = {location_data.level}"
+        f"bind = {location_data.bind_location is not None}, "
+        f"park = {location_data.park_location is not None}, "
+        f"level = {location_data.level}",
     )
 
-    return {'status': 'success'}
+    return {"status": "success"}
 
 
-@app.post("/heartbeat", status_code=status.HTTP_200_OK,
-          responses={
-              400: {"model": ErrorResponse, "description": "Character not found"},
-              401: {"model": ErrorResponse, "description": "Authentication failed"},
-          })
+@app.post(
+    "/heartbeat",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Character not found"},
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+    },
+)
 async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
     """
     Authenticates and updates last_login for the character's account.
     """
-    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
-        request, heartbeat_data.access_key, None)
+    discord_client, discord_user_id, guild_id, client_ip = _check_auth(request, heartbeat_data.access_key, None)
 
     account = sso_model.find_account_by_character(guild_id, heartbeat_data.character_name)
     if not account:
@@ -554,10 +577,9 @@ async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
 
     login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
-    sso_model.record_heartbeat_session(
-        guild_id, account.id, heartbeat_data.character_name, discord_user_id)
+    sso_model.record_heartbeat_session(guild_id, account.id, heartbeat_data.character_name, discord_user_id)
 
-    return {'status': 'success'}
+    return {"status": "success"}
 
 
 WS_PING_INTERVAL = 30
@@ -604,7 +626,7 @@ async def websocket_accounts(websocket: WebSocket):
             discord_user_id=None,
             account_id=None,
             guild_id=None,
-            details="Invalid access key (WebSocket)"
+            details="Invalid access key (WebSocket)",
         )
         await _ws_close(websocket, 4003, "Invalid access key")
         return
@@ -677,13 +699,15 @@ async def websocket_accounts(websocket: WebSocket):
     ws_manager.register(conn)
 
     try:
-        await websocket.send_json({
-            "type": "full_state",
-            "account_tree": account_tree,
-            "count": len(account_tree),
-            "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
-            "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
-        })
+        await websocket.send_json(
+            {
+                "type": "full_state",
+                "account_tree": account_tree,
+                "count": len(account_tree),
+                "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
+                "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
+            }
+        )
         logger.info("WebSocket connected: %s (%d accounts)", ws_label, len(account_tree))
 
         # --- Phase 3: listen for client messages + send keepalive pings ---
@@ -733,18 +757,13 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     if not account:
         return
 
-    if not user_has_access_to_accounts(
-        ws_manager._discord_client, conn.discord_user_id,
-        conn.guild_id, [account.id]
-    ):
+    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
         return
 
     login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
-    sso_model.record_heartbeat_session(
-        conn.guild_id, account.id, character_name, conn.discord_user_id)
-    sso_model.expire_other_sessions(
-        conn.guild_id, conn.discord_user_id, account.id)
+    sso_model.record_heartbeat_session(conn.guild_id, account.id, character_name, conn.discord_user_id)
+    sso_model.expire_other_sessions(conn.guild_id, conn.discord_user_id, account.id)
     await ws_manager.notify_guild_async(conn.guild_id)
 
 
@@ -757,18 +776,13 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     if not account:
         return
 
-    if not user_has_access_to_accounts(
-        ws_manager._discord_client, conn.discord_user_id,
-        conn.guild_id, [account.id]
-    ):
+    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
         return
 
     login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
     sso_model.update_last_login(account.id, login_by=login_name)
-    sso_model.record_heartbeat_session(
-        conn.guild_id, account.id, character_name, conn.discord_user_id)
-    sso_model.expire_other_sessions(
-        conn.guild_id, conn.discord_user_id, account.id)
+    sso_model.record_heartbeat_session(conn.guild_id, account.id, character_name, conn.discord_user_id)
+    sso_model.expire_other_sessions(conn.guild_id, conn.discord_user_id, account.id)
     sso_model.update_account_character(
         guild_id=conn.guild_id,
         name=character_name,
@@ -858,17 +872,13 @@ def _validate_client_settings(
 
     guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
 
-    if (guild_settings.get("require_log")
-            and "log_enabled" in client_settings
-            and not client_settings["log_enabled"]):
+    if guild_settings.get("require_log") and "log_enabled" in client_settings and not client_settings["log_enabled"]:
         return (
             "Logging must be enabled in eqclient.ini (Log=TRUE in [Defaults] section). "
             "The login proxy attempted to set this automatically but the file may be read-only."
         )
 
-    if (guild_settings.get("block_rustle")
-            and "rustle_present" in client_settings
-            and client_settings["rustle_present"]):
+    if guild_settings.get("block_rustle") and "rustle_present" in client_settings and client_settings["rustle_present"]:
         exempt_roles = guild_settings.get("block_rustle_exempt_roles", [])
         if not exempt_roles or not user_role_ids or not any(r in exempt_roles for r in user_role_ids):
             return (
@@ -881,29 +891,24 @@ def _validate_client_settings(
 
 def raise_auth_failed():
     """Helper function to raise a consistent authentication failure exception."""
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication failed"
-    )
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
 
 
 def raise_invalid_character():
     """Helper function to raise a consistent authentication failure exception."""
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Character not found"
-    )
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Character not found")
 
 
 def raise_tag_temporarily_empty():
     """Helper function to raise a consistent authentication failure exception."""
     raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Tag is empty (possibly temporarily, due to inactivity requirements)"
+        status_code=status.HTTP_410_GONE, detail="Tag is empty (possibly temporarily, due to inactivity requirements)"
     )
 
 
-def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_ids: list[int]) -> list[sso_model.SSOAccount]:
+def user_has_access_to_accounts(
+    discord_client: commands.Bot, discord_user_id: int, guild_id: int, account_ids: list[int]
+) -> list[sso_model.SSOAccount]:
     """Return the subset of *account_ids* accessible to the Discord user.
 
     Uses a single bulk query instead of per-account/per-group lookups.
@@ -917,25 +922,32 @@ def user_has_access_to_accounts(discord_client: commands.Bot, discord_user_id: i
     with base.get_session() as session:
         try:
             accessible_ids = {
-                row[0] for row in session.query(
-                    sso_model.account_group_mapping.c.account_id
-                ).join(
+                row[0]
+                for row in session.query(sso_model.account_group_mapping.c.account_id)
+                .join(
                     sso_model.SSOAccountGroup,
                     sso_model.account_group_mapping.c.group_id == sso_model.SSOAccountGroup.id,
-                ).filter(
+                )
+                .filter(
                     sso_model.account_group_mapping.c.account_id.in_(account_ids),
                     sso_model.SSOAccountGroup.guild_id == guild_id,
                     sso_model.SSOAccountGroup.role_id.in_(role_ids),
-                ).all()
+                )
+                .all()
             }
             if not accessible_ids:
                 return []
-            accounts = session.query(sso_model.SSOAccount).options(
-                sqlalchemy.orm.joinedload(sso_model.SSOAccount.groups),
-                sqlalchemy.orm.joinedload(sso_model.SSOAccount.characters),
-                sqlalchemy.orm.joinedload(sso_model.SSOAccount.tags),
-                sqlalchemy.orm.joinedload(sso_model.SSOAccount.aliases),
-            ).filter(sso_model.SSOAccount.id.in_(accessible_ids)).all()
+            accounts = (
+                session.query(sso_model.SSOAccount)
+                .options(
+                    sqlalchemy.orm.joinedload(sso_model.SSOAccount.groups),
+                    sqlalchemy.orm.joinedload(sso_model.SSOAccount.characters),
+                    sqlalchemy.orm.joinedload(sso_model.SSOAccount.tags),
+                    sqlalchemy.orm.joinedload(sso_model.SSOAccount.aliases),
+                )
+                .filter(sso_model.SSOAccount.id.in_(accessible_ids))
+                .all()
+            )
             session.expunge_all()
             return accounts
         except Exception as e:

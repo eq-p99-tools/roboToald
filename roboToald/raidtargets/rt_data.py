@@ -68,8 +68,7 @@ class RaidWindow:
         passed_time = datetime.timedelta(seconds=now - self.start)
         return passed_time.total_seconds() / self.duration.total_seconds()
 
-    def get_status(self, now: float = None,
-                   soon_threshold: int = None) -> RaidWindowStatus:
+    def get_status(self, now: float = None, soon_threshold: int = None) -> RaidWindowStatus:
         if not now:
             now = time.time()
         if soon_threshold is None:
@@ -99,44 +98,43 @@ class RaidTargets:
     @classmethod
     def get_targets(cls, guild_id: int) -> list[RaidTarget]:
         cls.load(guild_id)
-        return cls._cache.get(guild_id, {}).get('targets', [])
+        return cls._cache.get(guild_id, {}).get("targets", [])
 
     @classmethod
     def get_all_names(cls, guild_id: int) -> list[str]:
         cls.load(guild_id)
-        return cls._cache.get(guild_id, {}).get('names', [])
+        return cls._cache.get(guild_id, {}).get("names", [])
 
     @classmethod
     def get_by_name(cls, name: str, guild_id: int) -> RaidTarget:
         cls.load(guild_id)
-        for target in cls._cache.get(guild_id, {}).get('targets', []):
+        for target in cls._cache.get(guild_id, {}).get("targets", []):
             if target.name_matches(name):
                 return target
 
     @classmethod
     def load(cls, guild_id: int) -> None:
         cached = cls._cache.get(guild_id)
-        if cached and cached['time'] > (time.time() - 60):
+        if cached and cached["time"] > (time.time() - 60):
             return
 
         endpoint = config.get_raidtargets_endpoint(guild_id)
         if not endpoint:
-            cls._cache[guild_id] = {
-                'time': time.time(), 'targets': [], 'names': []}
+            cls._cache[guild_id] = {"time": time.time(), "targets": [], "names": []}
             return
 
         headers = {}
         authkey = config.get_raidtargets_authkey(guild_id)
         if authkey:
-            headers['AuthorizationKey'] = authkey
+            headers["AuthorizationKey"] = authkey
 
         r = requests.get(endpoint, headers=headers)
         data = r.json(cls=JSONDecoder)
         targets = data if isinstance(data, list) else []
         cls._cache[guild_id] = {
-            'time': time.time(),
-            'targets': targets,
-            'names': [t.name for t in targets],
+            "time": time.time(),
+            "targets": targets,
+            "names": [t.name for t in targets],
         }
 
 
@@ -151,7 +149,7 @@ class RaidTarget:
     def __init__(self, name, shortName, aliases, era, zone, windows):
         self.name = name
         self.short_name = shortName
-        self.aliases = aliases.split(',')
+        self.aliases = aliases.split(",")
         self.era = era
         self.zone = zone
         self.windows = windows
@@ -163,13 +161,10 @@ class RaidTarget:
             return True
         return False
 
-    def get_time_until(self, now: float = None,
-                       soon_threshold: int = None) -> datetime.timedelta:
-        return self.get_active_window(
-            now, soon_threshold=soon_threshold).get_time_until(now)
+    def get_time_until(self, now: float = None, soon_threshold: int = None) -> datetime.timedelta:
+        return self.get_active_window(now, soon_threshold=soon_threshold).get_time_until(now)
 
-    def get_active_window(self, now: float = None,
-                          soon_threshold: int = None) -> RaidWindow:
+    def get_active_window(self, now: float = None, soon_threshold: int = None) -> RaidWindow:
         if not now:
             now = time.time()
         sorted_windows = collections.OrderedDict()
@@ -181,13 +176,10 @@ class RaidTarget:
                 window.target = self
                 return window
 
-    def get_active_window_status(self, now: float = None,
-                                 soon_threshold: int = None) -> RaidWindowStatus:
+    def get_active_window_status(self, now: float = None, soon_threshold: int = None) -> RaidWindowStatus:
         if not now:
             now = time.time()
-        return self.get_active_window(
-            now, soon_threshold=soon_threshold).get_status(
-            soon_threshold=soon_threshold)
+        return self.get_active_window(now, soon_threshold=soon_threshold).get_status(soon_threshold=soon_threshold)
 
     def get_next_window(self, current: RaidWindow) -> RaidWindow:
         for window in self.windows:
@@ -203,13 +195,12 @@ class RaidTarget:
 # Mutated from https://github.com/AlexisGomes/JsonEncoder/
 class JSONDecoder(json.JSONDecoder):
     def __init__(self, *args, **kwargs):
-        json.JSONDecoder.__init__(
-            self, object_hook=self.object_hook, *args, **kwargs)
+        json.JSONDecoder.__init__(self, object_hook=self.object_hook, *args, **kwargs)
 
     def object_hook(self, obj):  # pylint: disable=method-hidden
         if isinstance(obj, dict):
-            if 'raidTargets' in obj:
-                return obj['raidTargets']
+            if "raidTargets" in obj:
+                return obj["raidTargets"]
             try:
                 return RaidTarget.from_json(**obj)
             except TypeError:

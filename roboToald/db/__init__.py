@@ -1,1 +1,1 @@
-from roboToald.db.base import *
+from roboToald.db.base import *  # noqa: F403
