@@ -33,9 +33,9 @@ API_HOST = CONF.get("sso", "host", fallback="127.0.0.1")
 FORWARDED_ALLOW_IPS = CONF.get("sso", "forwarded_allow_ips", fallback="127.0.0.1")
 FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(",")]
 SSO_INACTIVITY_SECONDS = CONF.getint("sso", "inactivity_seconds", fallback=62)
-RATE_LIMIT_MAX_ATTEMPTS = CONF.getint("sso", "rate_limit_max_attempts", fallback=20)
+RATE_LIMIT_MAX_ATTEMPTS = CONF.getint("sso", "rate_limit_max_attempts", fallback=10)
 RATE_LIMIT_WINDOW_MINUTES = CONF.getint("sso", "rate_limit_window_minutes", fallback=30)
-AUDIT_RETENTION_DAYS = CONF.getint("sso", "audit_retention_days", fallback=90)
+AUDIT_RETENTION_DAYS = CONF.getint("sso", "audit_retention_days", fallback=180)
 AUDIT_ARCHIVE_DIR = CONF.get("sso", "audit_archive_dir", fallback="audit_archives")
 
 WAKEUP_CHANNELS = {}
