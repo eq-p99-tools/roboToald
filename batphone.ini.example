@@ -10,6 +10,9 @@ port = 443
 # Rate limiting: block an IP after this many failed auth attempts within the window
 #rate_limit_max_attempts = 20
 #rate_limit_window_minutes = 30
+# Audit log archival: rows older than this are exported to CSV and deleted on startup
+#audit_retention_days = 90
+#audit_archive_dir = audit_archives
 
 [raidtargets]
 endpoint = http://path/to/raidtarget.json

@@ -17,42 +17,52 @@ from roboToald import words
 class CachedEncryptedType(sqlalchemy_utils.EncryptedType):
     cache_ok = True
 
+
 # Custom exceptions for different entity types
 class SSOEntityNotFoundError(sqlalchemy.exc.NoResultFound):
     """Base exception for SSO entities not found"""
     pass
 
+
 class SSOAccountNotFoundError(SSOEntityNotFoundError):
     """Raised when an SSOAccount is not found"""
     pass
+
 
 class SSOAccountGroupNotFoundError(SSOEntityNotFoundError):
     """Raised when an SSOAccountGroup is not found"""
     pass
 
+
 class SSOAccountTagNotFoundError(SSOEntityNotFoundError):
     """Raised when an SSOAccountTag is not found"""
     pass
+
 
 class SSOAccountAliasNotFoundError(SSOEntityNotFoundError):
     """Raised when an SSOAccountAlias is not found"""
     pass
 
+
 class SSOAccessKeyNotFoundError(SSOEntityNotFoundError):  # unused?
     """Raised when an SSOAccessKey is not found"""
     pass
+
 
 class SSORevocationNotFoundError(SSOEntityNotFoundError):  # unused?
     """Raised when an SSORevocation is not found"""
     pass
 
+
 class SSOCharacterAlreadyExistsError(Exception):
     """Raised when an SSOCharacter already exists"""
     pass
 
+
 class SSOTagTemporarilyEmptyError(Exception):
     """Raised when an SSOAccountTag is temporarily empty due to activity"""
     pass
+
 
 class CharacterClass(enum.Enum):
     Bard = "Bard"
@@ -1415,3 +1425,88 @@ def get_sessions_in_range(guild_id: int, start: datetime.datetime,
         ).order_by(SSOCharacterSession.first_seen).all()
         session.expunge_all()
     return sessions
+
+
+def archive_old_records(retention_days: int = 90,
+                        archive_dir: str = "audit_archives") -> tuple[int, int]:
+    """Export audit logs and character sessions older than *retention_days* to
+    CSV files, then delete them from the database.
+
+    Returns (audit_count, session_count) of archived rows.
+    """
+    import csv
+    import logging
+    import os
+
+    logger = logging.getLogger(__name__)
+    cutoff = datetime.datetime.now() - datetime.timedelta(days=retention_days)
+
+    audit_count = 0
+    session_count = 0
+
+    with base.get_session() as session:
+        old_audits = session.query(SSOAuditLog).filter(
+            SSOAuditLog.timestamp < cutoff,
+        ).order_by(SSOAuditLog.timestamp).all()
+
+        old_sessions = session.query(SSOCharacterSession).filter(
+            SSOCharacterSession.last_seen < cutoff,
+        ).order_by(SSOCharacterSession.first_seen).all()
+
+        if not old_audits and not old_sessions:
+            return 0, 0
+
+        os.makedirs(archive_dir, exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if old_audits:
+            path = os.path.join(archive_dir, f"audit_log_{ts}.csv")
+            audit_cols = [
+                "id", "timestamp", "ip_address", "username", "success",
+                "discord_user_id", "guild_id", "account_id", "rate_limit",
+                "details",
+            ]
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(audit_cols)
+                for row in old_audits:
+                    writer.writerow([
+                        row.id, row.timestamp, row.ip_address, row.username,
+                        row.success, row.discord_user_id, row.guild_id,
+                        row.account_id, row.rate_limit, row.details,
+                    ])
+            audit_count = len(old_audits)
+            audit_ids = [row.id for row in old_audits]
+            session.query(SSOAuditLog).filter(
+                SSOAuditLog.id.in_(audit_ids),
+            ).delete(synchronize_session="fetch")
+            logger.info("Archived %d audit log rows to %s", audit_count, path)
+
+        if old_sessions:
+            path = os.path.join(archive_dir, f"character_session_{ts}.csv")
+            session_cols = [
+                "id", "guild_id", "account_id", "character_name",
+                "discord_user_id", "first_seen", "last_seen",
+            ]
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(session_cols)
+                for row in old_sessions:
+                    writer.writerow([
+                        row.id, row.guild_id, row.account_id,
+                        row.character_name, row.discord_user_id,
+                        row.first_seen, row.last_seen,
+                    ])
+            session_count = len(old_sessions)
+            sess_ids = [row.id for row in old_sessions]
+            session.query(SSOCharacterSession).filter(
+                SSOCharacterSession.id.in_(sess_ids),
+            ).delete(synchronize_session="fetch")
+            logger.info(
+                "Archived %d character session rows to %s",
+                session_count, path,
+            )
+
+        session.commit()
+
+    return audit_count, session_count

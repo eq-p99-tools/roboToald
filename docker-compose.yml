@@ -8,6 +8,7 @@ services:
       - ./alerts.db:/app/alerts.db
       - ./batphone.ini:/app/batphone.ini
       - ./certs:/app/certs  # Bind local certs directory
+      - ./audit_archives:/app/audit_archives
 
     restart: always
     ports:

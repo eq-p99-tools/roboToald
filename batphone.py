@@ -18,7 +18,18 @@ if __name__ == '__main__':
     # Initialize database and run migrations
     print("Initializing database and running migrations...")
     base.initialize_database()
-    
+
+    from roboToald.db.models import sso as sso_model
+    audit_archived, sessions_archived = sso_model.archive_old_records(
+        retention_days=config.AUDIT_RETENTION_DAYS,
+        archive_dir=config.AUDIT_ARCHIVE_DIR,
+    )
+    if audit_archived or sessions_archived:
+        logging.getLogger(__name__).info(
+            "Archived %d audit log entries and %d session records",
+            audit_archived, sessions_archived,
+        )
+
     # Start API server in background thread
     server.run_api_server(
         discord_client.DISCORD_CLIENT,
