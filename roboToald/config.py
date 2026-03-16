@@ -22,10 +22,6 @@ SKP_MINIMUM = CONF.getint(
 SKP_PLATEAU_MINUTE = CONF.getint(
     'ds', 'skp_plateau_minute', fallback=20 * 60)
 
-# OFFHOURS_MULTIPLIER = CONF.getfloat(
-#     'ds', 'offhours_multiplier', fallback=2)
-# QUAKE_MULTIPLIER = CONF.getfloat(
-#     'ds', 'quake_multiplier', fallback=3)
 QUAKE_BONUS = CONF.getint(
     'ds', 'quake_bonus', fallback=150)
 OFFHOURS_START = CONF.getint(

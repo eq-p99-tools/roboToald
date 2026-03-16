@@ -57,73 +57,6 @@ async def ds(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-@ds.sub_command(description="Enable/disable quake mode.")
-async def quake(
-        inter: disnake.ApplicationCommandInteraction,
-        enabled: bool = commands.Param(
-            description="Is the camp in quake mode?"),
-        backdate: int = commands.Param(
-            default=0,
-            ge=0,
-            description="Backdate entry by <X> minutes.")
-):
-    last_pop_time = points_model.get_last_pop_time()
-    last = points_model.get_last_event(0, inter.guild_id)
-    last_was_quake = last and last.event in (constants.Event.COMP_START, constants.Event.COMP_END)
-    event_time = datetime.datetime.now() - datetime.timedelta(minutes=backdate)
-    discord_time = int(time.mktime(event_time.timetuple()))
-    discord_last_time = int(time.mktime(last.time.timetuple()))
-    backdate_message = f", backdated {backdate} minutes" if backdate > 0 else ""
-    message = f"`Quake Mode -> {enabled}` at <t:{discord_time}>{backdate_message}."
-
-    if enabled:
-        if last_was_quake and last.active and not backdate:
-            await inter.send("Quake mode is already active.", ephemeral=True)
-            return
-        elif event_time.astimezone() < last_pop_time:
-            await inter.send("Cannot start quake mode before last ToD "
-                             f"(<t:{int(time.mktime(last_pop_time.timetuple()))}:R>).", ephemeral=True)
-            return
-        elif last_was_quake and last.active:
-            message = f"`Quake Mode -> {enabled}` at <t:{discord_time}> (was <t:{discord_last_time}>)."
-            last.time = event_time
-            points_model.update_event(last)
-        else:
-            start_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
-                time=event_time, active=True)
-            points_model.start_event(start_event)
-    else:
-        if not last_was_quake:
-            await inter.send("Quake mode is not active.", ephemeral=True)
-            return
-        elif not last.active and not backdate:
-            await inter.send("Quake mode is already inactive.", ephemeral=True)
-            return
-
-        if not last.active:
-            last_quake_start_time = points_model.get_event(last.start_id).time
-        else:
-            last_quake_start_time = last.time
-
-        if event_time < last_quake_start_time:
-            await inter.send("Cannot stop quake mode before last quake start "
-                             f"(<t:{int(time.mktime(last_quake_start_time.timetuple()))}:R>).", ephemeral=True)
-            return
-        elif not last.active:
-            message = f"`Quake Mode -> {enabled}` at <t:{discord_time}> (was <t:{discord_last_time}>)."
-            last.time = event_time
-            points_model.update_event(last)
-        else:
-            last.active = False
-            stop_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
-                time=event_time, active=False, start_id=last.id)
-            points_model.close_event(last, stop_event)
-
-    await inter.send(message)
-
-
 @ds.sub_command(description="Start recording time in camp.")
 async def start(
         inter: disnake.ApplicationCommandInteraction,
@@ -220,69 +153,9 @@ def calculate_points_for_session(
     # end up with:
     # {member1: [(start1, stop1), (start2, stop2)], member2: []}
 
-    # Normalize quake windows to start_time = 0
-    # quake_windows = points_model.get_quake_windows(
-    #     guild_id, start_time, stop_time)
-    # normalized_windows = []
-    # for start_window, stop_window in quake_windows:
-    #     norm_start = round((start_window - start_time).total_seconds() / 60)
-    #     norm_stop = round((stop_window - start_time).total_seconds() / 60)
-    #     normalized_windows.append((
-    #         max(0, norm_start),
-    #         min(standard_minutes, norm_stop)
-    #     ))
-
-    # Normalize offhours to start_time = 0
-    # This is likely not the most efficient way to do this (I'm VERY tired)
-    # today_midnight_eastern = start_time.replace(
-    #     hour=0, minute=0, second=0, microsecond=0,
-    #     tzinfo=config.OFFHOURS_ZONE
-    #     # Subtract 1 day just to be safe, we will add days later if needed
-    # ) - datetime.timedelta(days=1)
-
-    # Find the offhours start and end time
-    # offhours_start = today_midnight_eastern + datetime.timedelta(
-    #     minutes=config.OFFHOURS_START)
-    # offhours_end = today_midnight_eastern + datetime.timedelta(
-    #     minutes=config.OFFHOURS_END)
-
-    # To be the current window, the end time has to be AFTER this start time
-    # while offhours_end < start_time:
-    #     offhours_end = offhours_end + datetime.timedelta(days=1)
-    #     offhours_start = offhours_start + datetime.timedelta(days=1)
-
-    # Now normalize the same way we did for the windows
-    # norm_oh_start = round((offhours_start - start_time).total_seconds() / 60)
-    # norm_oh_stop = round((offhours_end - start_time).total_seconds() / 60)
-
     points_earned_by_rate = {}
     for minute in range(standard_minutes):
-        ### THE OLD WAY
-        # Start with a standard value for one minute of time
-        # point_value = config.POINTS_PER_MINUTE
-        # quake_minute = False
-        # offhours_minute = norm_oh_start <= (minute % (24*60)) <= norm_oh_stop
-
-        # Check if quake mode
-        # for c_start_window, c_stop_window in normalized_windows:
-        #     if c_start_window <= minute <= c_stop_window:
-        #         quake_minute = True
-        #         break
-
-        # Adjust points for offhours / quake
-        # if quake_minute and offhours_minute:
-        #     point_value *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
-        # elif quake_minute:
-        #     point_value *= config.QUAKE_MULTIPLIER
-        # elif offhours_minute:
-        #     point_value *= config.OFFHOURS_MULTIPLIER
-
-        ### THE NEW WAY
         point_value = get_point_value((minute + ramp_offset) % (24 * 60))
-
-        # Round off point_value only if it is within 0.1 of an integer
-        # if abs(point_value - round(point_value)) < 0.1:
-        #     point_value = round(point_value)
 
         # Iterate through event pairs and find active ones
         active_players = []
@@ -379,53 +252,16 @@ async def status(
             description="Show detailed point data.")):
     await inter.response.defer()
     active_events = points_model.get_active_events(inter.guild_id)
-    # last_window = points_model.get_last_event(
-    #     user_id=0, guild_id=inter.guild_id)
-    # is_quake = last_window and last_window.active
-    # is_offhours = False
     now = datetime.datetime.now().replace(second=0)
-    # tznow = now.astimezone(config.OFFHOURS_ZONE)
 
     points_for_session = calculate_points_for_session(
         guild_id=inter.guild_id, stop_time=now)
     points_per_member = sum_points_by_member(points_for_session)
 
-    # Find the offhours start and end time
-    # today_midnight_eastern = tznow.replace(
-    #     hour=0, minute=0, second=0, microsecond=0
-    #     # Subtract 1 day just to be safe, we will add days later if needed
-    # ) - datetime.timedelta(days=1)
-
-    # offhours_start = today_midnight_eastern + datetime.timedelta(
-    #     minutes=config.OFFHOURS_START)
-    # offhours_end = today_midnight_eastern + datetime.timedelta(
-    #     minutes=config.OFFHOURS_END)
-    # day_diff = (tznow - offhours_start).days
-    # offhours_start += datetime.timedelta(days=day_diff)
-    # offhours_end += datetime.timedelta(days=day_diff)
-    # if offhours_start < tznow < offhours_end:
-    #     is_offhours = True
-
     start_time = get_effective_pop_time(inter.guild_id)
     time_at_camp = datetime.datetime.now().astimezone() - start_time
     minute = math.ceil(time_at_camp.total_seconds() / 60) % (60 * 24)
     current_rate = get_point_value(minute)
-
-    # current_rate = config.POINTS_PER_MINUTE
-    # mode_message = "normal"
-    # if is_quake and is_offhours:
-    #     current_rate *= max(config.QUAKE_MULTIPLIER, config.OFFHOURS_MULTIPLIER)
-    #     mode_message = "offhours quake"
-    # elif is_quake:
-    #     current_rate *= config.QUAKE_MULTIPLIER
-    #     mode_message = "quake"
-    # elif is_offhours:
-    #     current_rate *= config.OFFHOURS_MULTIPLIER
-    #     mode_message = "offhours"
-
-    # Round off point_value only if it is within 0.1 of an integer
-    # if abs(current_rate - round(current_rate)) < 0.1:
-    #     current_rate = round(current_rate)
 
     # TODO: Make sure active_events can't be more than active_members below
     # and if it can, clean this up so the rate is based on active_members, or
@@ -553,20 +389,12 @@ async def points(
 @ds.sub_command(description="Run this when DS dies to stop all tracking.")
 async def tod(
         inter: disnake.ApplicationCommandInteraction,
-        # backdate: int = commands.Param(
-        #     default=0,
-        #     ge=0,
-        #     description="Backdate DS pop by <X> minutes."),
         is_quake: bool = commands.Param(
             default=False,
-            description="Quake?"
-        )
+            description="Grant quake bonus to active members?"),
 ):
-    # Disable backdating for now since it seems to break things
-    backdate=0
-
     now_time = datetime.datetime.now()
-    stop_time = now_time - datetime.timedelta(minutes=backdate)
+    stop_time = now_time
     recent_ds = None
     time_since_pop = now_time.astimezone() - points_model.get_last_pop_time()
     if time_since_pop < datetime.timedelta(minutes=5):
@@ -580,33 +408,17 @@ async def tod(
         await inter.send(message, ephemeral=True)
         return
 
-    message = "DS ToD recorded"
-    if backdate > 0:
-        message += f" (backdated {backdate} minutes ago)"
-    # message += ". Stopped camp time for the following members:\n"
-    message += ". Stopped camp time for the following members:\n"
+    message = "DS ToD recorded. Stopped camp time for the following members:\n"
 
-    active_events = points_model.get_active_events(
-        inter.guild_id, include_0=True)
+    active_events = points_model.get_active_events(inter.guild_id)
     active_members = 0
     for event in active_events:
-        if event.user_id == 0:
-            event.active = False
-            stop_event = points_model.PointsAudit(
-                user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_END,
-                time=stop_time, active=False, start_id=event.id)
-            points_model.close_event(event, stop_event)
-            continue
         close_event(event, stop_time)
-        # message += f"<@{event.user_id}> stopped.\n"
         message += f"<@{event.user_id}>\n"
         active_members += 1
 
     if active_members < 1:
-        message = "DS ToD recorded"
-        if backdate > 0:
-            message += f" (backdated {backdate} minutes)"
-        message += ". No members active.\n"
+        message = "DS ToD recorded. No members active.\n"
 
     all_points_for_session = calculate_points_for_session(
         guild_id=inter.guild_id, stop_time=stop_time)
@@ -625,8 +437,6 @@ async def tod(
     if is_quake and active_members > 0:
         message += f"\nQuake Bonus of {config.QUAKE_BONUS} granted to active members: "
         for event in active_events:
-            if event.user_id == 0:
-                continue
             bonus_points = points_model.PointsEarned(
                 user_id=event.user_id, guild_id=inter.guild_id,
                 points=config.QUAKE_BONUS, time=stop_time,
@@ -641,20 +451,6 @@ async def tod(
         user_id=0, guild_id=inter.guild_id, event=constants.Event.POP,
         time=stop_time, active=False)
     points_model.start_event(pop_event)
-
-    ### In current meta, restart previously active members because people don't leave
-    # for event in active_events:
-    #     if event.user_id == 0:
-    #         ### In the current meta, don't stop comp on ToD (used for quake time)
-    #         start_event = points_model.PointsAudit(
-    #             user_id=0, guild_id=inter.guild_id, event=constants.Event.COMP_START,
-    #             time=stop_time + datetime.timedelta(seconds=1), active=True)
-    #         points_model.start_event(start_event)
-    #         continue
-    #     start_event = points_model.PointsAudit(
-    #         user_id=event.user_id, guild_id=inter.guild_id, event=constants.Event.IN,
-    #         time=stop_time + datetime.timedelta(seconds=1), active=True)
-    #     points_model.start_event(start_event)
 
     await utils.send_and_split(inter, message)
 
@@ -676,7 +472,7 @@ async def tod(
         name="DS Spawn",
         hours=24,
         minutes=1,
-        delay_minutes=backdate * -1 - 1,
+        delay_minutes=-1,
         repeating=True)
 
 

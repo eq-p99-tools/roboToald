@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Tuple, Dict, Optional
+from typing import List, Dict, Optional
 
 import sqlalchemy
 import sqlalchemy.orm
@@ -149,34 +149,6 @@ def get_event_pairs_since_last_pop(
     events = get_events_since_time(guild_id, last_pop_time)
     event_pairs = get_event_pairs_split_members(events)
     return event_pairs
-
-
-def get_quake_windows(
-        guild_id: int, start_time: datetime.datetime,
-        end_time: datetime.datetime
-) -> List[Tuple[datetime.datetime, datetime.datetime]]:
-    with base.get_session() as session:
-        # Get the windows that started or ended within our time period
-        events_query = session.query(PointsAudit)
-        events_query = events_query.filter_by(user_id=0, guild_id=guild_id)
-        events_query = events_query.filter(PointsAudit.event != constants.Event.POP)
-        events_query = events_query.filter(PointsAudit.time >= start_time)
-        events_query = events_query.filter(PointsAudit.time <= end_time)
-        active_events: List[PointsAudit] = events_query.all()
-        # Add in the currently active window no matter when it started
-        events_query = session.query(PointsAudit)
-        events_query = events_query.filter_by(
-            user_id=0, guild_id=guild_id, active=True)
-        active_events.extend(events_query.all())
-
-    event_pairs = get_event_pairs(active_events)
-
-    windows = []
-    for start, end in event_pairs.items():
-        windows.append((start.astimezone(),
-                        end.replace(tzinfo=start.astimezone().tzinfo)))
-
-    return windows
 
 
 def start_event(start: PointsAudit) -> None:
