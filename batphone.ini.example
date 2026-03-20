@@ -7,6 +7,12 @@ ssl_certfile = <path_to_cert_file>
 ssl_keyfile = <path_to_key_file>
 host = 0.0.0.0
 port = 443
+# Rate limiting: block an IP after this many failed auth attempts within the window
+#rate_limit_max_attempts = 20
+#rate_limit_window_minutes = 30
+# Audit log archival: rows older than this are exported to CSV and deleted on startup
+#audit_retention_days = 90
+#audit_archive_dir = audit_archives
 
 [raidtargets]
 endpoint = http://path/to/raidtarget.json
@@ -39,6 +45,23 @@ enable_random = false
 
 # Wakeup channel mappings
 wakeup_channels = textchannel_id1:voicechannel_id1, textchannel_id2:voicechannel_id2
+
+# Minimum SSO client version required to connect (optional, omit to allow any version)
+# Clients below this version are rejected with client_update_message shown as a popup
+#min_client_version = 1.2.0
+#client_update_message = Your SSO client is outdated. Please download the latest version.
+
+# Require EQ logging to be enabled (Log=TRUE in eqclient.ini).
+# Older clients that don't send client_settings are allowed through regardless.
+# Pair with min_client_version to enforce this for all users.
+#require_log = true
+
+# Block clients that have the Rustle UI skin in their uifiles directory.
+# Older clients that don't send client_settings are allowed through regardless.
+# Pair with min_client_version to enforce this for all users.
+#block_rustle = true
+# Discord roles exempt from the Rustle block (comma-separated role IDs)
+#block_rustle_exempt_roles = 123456789, 987654321
 
 [guild.67890]
 # Raid Subscription commands will be unusable.

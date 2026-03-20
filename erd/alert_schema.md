@@ -1,49 +1,48 @@
-# RoboToald Alert Database Schema
+# Alert (BatPhone) Database Schema
 
-## Tables and Relationships
+> **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-### 1. Alert
-- **Description**: Represents user-defined alerts for monitoring channel messages
-- **Columns**:
-  - `id` (Integer, Primary Key)
-  - `channel_id` (Integer)
-  - `user_id` (Integer)
-  - `alert_regex` (String(255))
-  - `alert_role` (Integer)
-  - `alert_url` (String(100))
-  - `trigger_count` (Integer)
-  - `guild_id` (Integer)
-- **Indexes**:
-  - Unique Constraint on (`user_id`, `channel_id`, `alert_regex`, `alert_url`)
+Source: `roboToald/db/models/alert.py`
 
 ## Entity Relationship Diagram
 
-The Alert schema consists of a single table. Please refer to the [Alert ERD](./alert_erd.svg) for a visual representation.
+```mermaid
+erDiagram
+    Alert {
+        int id PK
+        int channel_id
+        int user_id
+        string alert_regex
+        int alert_role
+        string alert_url
+        int trigger_count
+        int guild_id
+    }
+```
 
-## Key Database Operations
+## Table
 
-1. **Alert Management**:
-   - Users can create, update, and delete alerts
-   - Alerts are tied to specific channels and users
-   - Each alert has a regex pattern to match against messages
+### Alert
 
-2. **Alert Triggering**:
-   - When a message matches an alert's regex pattern, the alert is triggered
-   - The system can notify users or roles when alerts are triggered
-   - The `trigger_count` tracks how many times an alert has been activated
+Each row is a user-registered webhook alert that fires when a message in a specific channel matches a regex pattern.
 
-3. **Alert Querying**:
-   - Alerts can be queried by user, channel, or guild
-   - Multiple helper functions exist for retrieving alerts based on different criteria
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK | |
+| `channel_id` | Integer | | Discord channel to monitor |
+| `user_id` | Integer | | Discord user who registered the alert |
+| `alert_regex` | String(255) | | Regex pattern to match against message content |
+| `alert_role` | Integer | | Discord role ID to ping when triggered (0 = no ping) |
+| `alert_url` | String(100) | | Webhook URL to POST when triggered (e.g. SquadCast) |
+| `trigger_count` | Integer | | Number of times this alert has fired (initialized to 0) |
+| `guild_id` | Integer | | Discord guild |
 
-## Implementation Notes
+**Unique constraint:** `(user_id, channel_id, alert_regex, alert_url)`
 
-The Alert model inherits from both `base.Base` (SQLAlchemy declarative base) and `base.MyBase` (custom base class with helper methods). This provides additional functionality for querying and managing alerts beyond basic ORM operations.
+## How Alerts Trigger
 
-## Usage Examples
+1. The bot's `on_message` handler (in `discord_client/base.py`) checks every incoming message against all alerts registered for that channel.
+2. For each alert whose `alert_regex` matches the message content, the bot POSTs the message to `alert_url` (SquadCast webhook format) and optionally pings `alert_role`.
+3. The `trigger_count` is incremented on each match.
 
-Alerts are typically used to notify users when specific keywords or patterns appear in Discord channels. For example:
-
-- Monitoring for raid announcements in an MMO
-- Tracking when specific items are mentioned in a marketplace channel
-- Notifying when certain events are scheduled or discussed
+Registered channels are cached via `get_registered_channels()` so that `on_message` can skip channels with no alerts.

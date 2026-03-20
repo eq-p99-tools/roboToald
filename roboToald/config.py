@@ -1,98 +1,110 @@
 import configparser
 from typing import List
+import zoneinfo
 
-CONFIG_FILENAME = 'batphone.ini'
+CONFIG_FILENAME = "batphone.ini"
 
 CONF = configparser.ConfigParser()
 CONF.read(CONFIG_FILENAME)
 
-DISCORD_TOKEN = CONF.get('discord', 'token')
+DISCORD_TOKEN = CONF.get("discord", "token")
 TEST_GUILDS = []
 for section in CONF.sections():
     if section.startswith("guild."):
-        TEST_GUILDS.append(int(section.split('.')[-1]))
+        TEST_GUILDS.append(int(section.split(".")[-1]))
 
-RT_ENDPOINT = CONF.get('raidtargets', 'endpoint')
-SOON_THRESHOLD = CONF.getint(
-    'raidtargets', 'soon_threshold',
-    fallback=48 * 60 * 60)  # Default: 48 hours
+SKP_STARTTIME = CONF.getint("ds", "skp_starttime", fallback=8 * 60)
+SKP_BASELINE = CONF.getint("ds", "skp_baseline", fallback=46)
+SKP_MINIMUM = CONF.getint("ds", "skp_minimum", fallback=1)
+SKP_PLATEAU_MINUTE = CONF.getint("ds", "skp_plateau_minute", fallback=20 * 60)
 
-POINTS_PER_MINUTE = CONF.getint(
-    'ds', 'points_per_minute', fallback=3)
-CONTESTED_MULTIPLIER = CONF.getint(
-    'ds', 'contested_multiplier', fallback=3)
-QUAKE_BONUS = CONF.getint(
-    'ds', 'quake_bonus', fallback=150)
+QUAKE_BONUS = CONF.getint("ds", "quake_bonus", fallback=150)
+OFFHOURS_START = CONF.getint("ds", "offhours_start", fallback=1 * 60)  # Default 1am ET
+OFFHOURS_END = CONF.getint("ds", "offhours_end", fallback=8 * 60)  # Default 8am ET
+OFFHOURS_ZONE = zoneinfo.ZoneInfo(CONF.get("ds", "offhours_zone", fallback="America/New_York"))
 
-WAKEUP_AUDIOFILE = CONF.get(
-    'wakeup', 'audiofile', fallback='wakeup.wav')
+WAKEUP_AUDIOFILE = CONF.get("wakeup", "audiofile", fallback="wakeup.wav")
 
-ENCRYPTION_KEY = CONF.get(
-    'sso', 'encryption_key')
-API_CERTFILE = CONF.get('sso', 'ssl_certfile', fallback=None)
-API_KEYFILE = CONF.get('sso', 'ssl_keyfile', fallback=None)
-API_PORT = CONF.getint('sso', 'port', fallback=8080)
-API_HOST = CONF.get('sso', 'host', fallback='127.0.0.1')
-FORWARDED_ALLOW_IPS = CONF.get('sso', 'forwarded_allow_ips', fallback='127.0.0.1')
-FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(',')]
+ENCRYPTION_KEY = CONF.get("sso", "encryption_key")
+API_CERTFILE = CONF.get("sso", "ssl_certfile", fallback=None)
+API_KEYFILE = CONF.get("sso", "ssl_keyfile", fallback=None)
+API_PORT = CONF.getint("sso", "port", fallback=8080)
+API_HOST = CONF.get("sso", "host", fallback="127.0.0.1")
+FORWARDED_ALLOW_IPS = CONF.get("sso", "forwarded_allow_ips", fallback="127.0.0.1")
+FORWARDED_ALLOW_IPS = [ip.strip() for ip in FORWARDED_ALLOW_IPS.split(",")]
+SSO_INACTIVITY_SECONDS = CONF.getint("sso", "inactivity_seconds", fallback=62)
+RATE_LIMIT_MAX_ATTEMPTS = CONF.getint("sso", "rate_limit_max_attempts", fallback=10)
+RATE_LIMIT_WINDOW_MINUTES = CONF.getint("sso", "rate_limit_window_minutes", fallback=30)
+AUDIT_RETENTION_DAYS = CONF.getint("sso", "audit_retention_days", fallback=180)
+AUDIT_ARCHIVE_DIR = CONF.get("sso", "audit_archive_dir", fallback="audit_archives")
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
     GUILD_SETTINGS[guild] = {
-        'member_role': CONF.getint(
-            f"guild.{guild}", 'member_role', fallback=0),
-        'enable_random': CONF.getboolean(
-            f"guild.{guild}", 'enable_random', fallback=True),
-        'enable_timer': CONF.getboolean(
-            f"guild.{guild}", 'enable_timer', fallback=True),
-        'enable_batphone': CONF.getboolean(
-            f"guild.{guild}", 'enable_batphone', fallback=False),
-        'enable_raidtarget': CONF.getboolean(
-            f"guild.{guild}", 'enable_raidtarget', fallback=False),
-        'enable_sso': CONF.getboolean(
-            f"guild.{guild}", 'enable_sso', fallback=False),
-        'sso_admin_roles': [int(x) for x in CONF.get(
-            f"guild.{guild}", 'sso_admin_roles', fallback="0").split(",")],
-        'enable_ds': CONF.getboolean(
-            f"guild.{guild}", 'enable_ds', fallback=False),
-        'ds_tod_channel': CONF.getint(
-            f"guild.{guild}", 'ds_tod_channel', fallback=0),
-        'ds_schedule_channel': CONF.getint(
-            f"guild.{guild}", 'ds_schedule_channel', fallback=0),
-        'ds_admin_role': CONF.getint(
-            f"guild.{guild}", 'ds_admin_role', fallback=0),
-        'wakeup_channels': CONF.get(
-            f"guild.{guild}", 'wakeup_channels', fallback=None),
-        'wakeup_exclusions': CONF.get(
-            f"guild.{guild}", 'wakeup_exclusions', fallback=None),
+        "member_role": CONF.getint(f"guild.{guild}", "member_role", fallback=0),
+        "enable_random": CONF.getboolean(f"guild.{guild}", "enable_random", fallback=True),
+        "enable_timer": CONF.getboolean(f"guild.{guild}", "enable_timer", fallback=True),
+        "enable_batphone": CONF.getboolean(f"guild.{guild}", "enable_batphone", fallback=False),
+        "enable_raidtarget": CONF.getboolean(f"guild.{guild}", "enable_raidtarget", fallback=False),
+        "enable_sso": CONF.getboolean(f"guild.{guild}", "enable_sso", fallback=False),
+        "sso_admin_roles": [int(x) for x in CONF.get(f"guild.{guild}", "sso_admin_roles", fallback="0").split(",")],
+        "enable_ds": CONF.getboolean(f"guild.{guild}", "enable_ds", fallback=False),
+        "ds_tod_channel": CONF.getint(f"guild.{guild}", "ds_tod_channel", fallback=0),
+        "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),
+        "ds_admin_role": CONF.getint(f"guild.{guild}", "ds_admin_role", fallback=0),
+        "wakeup_channels": CONF.get(f"guild.{guild}", "wakeup_channels", fallback=None),
+        "wakeup_exclusions": CONF.get(f"guild.{guild}", "wakeup_exclusions", fallback=None),
+        "min_client_version": CONF.get(f"guild.{guild}", "min_client_version", fallback=None),
+        "client_update_message": CONF.get(f"guild.{guild}", "client_update_message", fallback=None),
+        "require_log": CONF.getboolean(f"guild.{guild}", "require_log", fallback=False),
+        "block_rustle": CONF.getboolean(f"guild.{guild}", "block_rustle", fallback=False),
+        "block_rustle_exempt_roles": [
+            int(x) for x in CONF.get(f"guild.{guild}", "block_rustle_exempt_roles", fallback="").split(",") if x.strip()
+        ],
+        "raidtargets_endpoint": CONF.get(f"guild.{guild}", "raidtargets_endpoint", fallback=None),
+        "raidtargets_authkey": CONF.get(f"guild.{guild}", "raidtargets_authkey", fallback=None),
+        "raidtargets_soon_threshold": CONF.getint(
+            f"guild.{guild}", "raidtargets_soon_threshold", fallback=48 * 60 * 60
+        ),
     }
-    if GUILD_SETTINGS[guild]['wakeup_channels']:
-        for x in GUILD_SETTINGS[guild]['wakeup_channels'].split(','):
-            text_channel, voice_channel = x.split(':')
+    if GUILD_SETTINGS[guild]["wakeup_channels"]:
+        for x in GUILD_SETTINGS[guild]["wakeup_channels"].split(","):
+            text_channel, voice_channel = x.split(":")
             WAKEUP_CHANNELS[int(text_channel)] = int(voice_channel)
-    if GUILD_SETTINGS[guild]['wakeup_exclusions']:
-        GUILD_SETTINGS[guild]['wakeup_exclusions'] = [
-            x.strip().lower()
-            for x in GUILD_SETTINGS[guild]['wakeup_exclusions'].split(',')
+    if GUILD_SETTINGS[guild]["wakeup_exclusions"]:
+        GUILD_SETTINGS[guild]["wakeup_exclusions"] = [
+            x.strip().lower() for x in GUILD_SETTINGS[guild]["wakeup_exclusions"].split(",")
         ]
     else:
-        GUILD_SETTINGS[guild]['wakeup_exclusions'] = []
+        GUILD_SETTINGS[guild]["wakeup_exclusions"] = []
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
 
 
 def get_member_role(guild_id: int) -> int:
-    return GUILD_SETTINGS[guild_id].get('member_role')
+    return GUILD_SETTINGS[guild_id].get("member_role")
 
 
 def get_wakeup_exclusions(guild_id: int) -> List[str]:
-    return GUILD_SETTINGS[guild_id].get('wakeup_exclusions', [])
+    return GUILD_SETTINGS[guild_id].get("wakeup_exclusions", [])
 
 
 def guilds_for_command(command_name: str) -> List[int]:
     guild_list = []
     for guild_entry in GUILD_SETTINGS:
-        if GUILD_SETTINGS[guild_entry].get(f'enable_{command_name}', False):
+        if GUILD_SETTINGS[guild_entry].get(f"enable_{command_name}", False):
             guild_list.append(guild_entry)
     return guild_list
+
+
+def get_raidtargets_endpoint(guild_id: int) -> str | None:
+    return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_endpoint")
+
+
+def get_raidtargets_authkey(guild_id: int) -> str | None:
+    return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_authkey")
+
+
+def get_raidtargets_soon_threshold(guild_id: int) -> int:
+    return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_soon_threshold", 48 * 60 * 60)

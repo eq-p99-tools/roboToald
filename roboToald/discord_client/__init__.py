@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import time
 
 import disnake
@@ -26,9 +25,11 @@ async def announce_subscriptions_task():
 async def on_ready():
     global SUBSCRIPTION_TASK
 
-    print(f'Logged in as: {DISCORD_CLIENT.user.name}')
+    print(f"Logged in as: {DISCORD_CLIENT.user.name}")
     await commands.cmd_timer.load_timers()
     print("Loaded timers from DB.")
+    await commands.cmd_ds.restore_spawn_overrides()
+    print("Restored DS spawn overrides from timers.")
     await commands.cmd_ds.schedule_messages()
     print("Scheduled DS messages.")
     SUBSCRIPTION_TASK = asyncio.create_task(announce_subscriptions_task())

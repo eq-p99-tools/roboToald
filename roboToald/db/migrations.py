@@ -1,36 +1,46 @@
 """Database migration utilities for RoboToald."""
+
 import os
 import logging
+from pathlib import Path
+
 from alembic import command
 from alembic.config import Config
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 def get_alembic_config():
     """Get Alembic configuration."""
-    # Get the project root directory
     project_root = Path(__file__).parent.parent.parent.absolute()
-    
-    # Create Alembic config
     alembic_cfg = Config(os.path.join(project_root, "alembic.ini"))
-    
-    # Set the script location
-    alembic_cfg.set_main_option("script_location", os.path.join(project_root, "migrations"))
-    
+    alembic_cfg.set_main_option(
+        "script_location",
+        os.path.join(project_root, "migrations"),
+    )
     return alembic_cfg
+
 
 def upgrade_database():
     """Upgrade database schema to latest version."""
-    try:
-        logger.info("Checking for database schema updates...")
-        alembic_cfg = get_alembic_config()
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Database schema is up to date.")
-    except Exception as e:
-        logger.error(f"Error upgrading database schema: {e}")
-        # Don't raise the exception - we want the application to continue
-        # even if migrations fail, as the schema might already be up to date
+    logger.info("Checking for database schema updates...")
+    alembic_cfg = get_alembic_config()
+    command.upgrade(alembic_cfg, "head")
+    logger.info("Database schema is up to date.")
+
+
+def stamp_database(revision="head"):
+    """Stamp the database with a revision without running migrations.
+
+    Used to mark a database (created by create_all or pre-Alembic) as
+    being at a specific revision so that future upgrade calls start from
+    the correct point.
+    """
+    logger.info("Stamping database at revision '%s'...", revision)
+    alembic_cfg = get_alembic_config()
+    command.stamp(alembic_cfg, revision)
+    logger.info("Database stamped successfully.")
+
 
 def create_migration(message):
     """Create a new migration with the given message."""

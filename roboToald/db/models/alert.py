@@ -19,13 +19,9 @@ class Alert(base.Base, base.MyBase):
     # Cached for convenience
     guild_id = sqlalchemy.Column(sqlalchemy.Integer)
 
-    __table_args__ = (
-        sqlalchemy.UniqueConstraint(
-            'user_id', 'channel_id', 'alert_regex', 'alert_url', name='uc1'),
-    )
+    __table_args__ = (sqlalchemy.UniqueConstraint("user_id", "channel_id", "alert_regex", "alert_url", name="uc1"),)
 
-    def __init__(self, channel_id, user_id, alert_regex, alert_url,
-                 guild_id, alert_role):
+    def __init__(self, channel_id, user_id, alert_regex, alert_url, guild_id, alert_role):
         self.channel_id = channel_id
         self.user_id = user_id
         self.alert_regex = alert_regex
@@ -76,9 +72,7 @@ def get_alerts_for_user(user_id: int, guild_id: int = None) -> List[Alert]:
 
 def get_registered_channels():
     with base.get_session() as session:
-        result = session.execute(
-            sqlalchemy.select(Alert.channel_id)
-        )
+        result = session.execute(sqlalchemy.select(Alert.channel_id))
         channels = set()
         for row in result:
             channels.add(row[0])

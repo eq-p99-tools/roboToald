@@ -1,4 +1,9 @@
+import base64
 import datetime
+import hashlib
+import re
+import time
+import zoneinfo
 
 import disnake
 from disnake.ext import commands
@@ -6,14 +11,10 @@ import sqlalchemy.exc
 import io
 
 from roboToald import config
+from roboToald.api.websocket import manager as ws_manager
 from roboToald.db.models import sso as sso_model
 
-SSO_GUILDS = config.guilds_for_command('sso')
-
-# TEMPORARY: This is a temporary solution to get the current function name
-import inspect
-def get_current_function_name():
-    return inspect.currentframe().f_back.f_code.co_name
+SSO_GUILDS = config.guilds_for_command("sso")
 
 USER_HELP_TEXT = """
 # P99LoginProxy SSO System User Help
@@ -86,6 +87,10 @@ Review access and changes to the SSO system.
 - `/sso_admin audit failed` - View recent failed authentication attempts
 """
 
+
+EVENT_CHANNEL_MATCHER = re.compile(r".*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$")
+
+
 # Autocomplete function for account names
 async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
     """Autocomplete function for account names available to the user."""
@@ -96,7 +101,7 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
 
         # Get all accounts for this guild
         all_accounts = sso_model.list_accounts(inter.guild_id)
-        
+
         # Filter accounts based on user's roles and access permissions
         available_accounts = []
         for account in all_accounts:
@@ -109,22 +114,67 @@ async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, str
                     if group.role_id in user_roles:
                         has_access = True
                         break
-            
+
             # If no groups or has access, add to available accounts
             if has_access:
                 available_accounts.append(account)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_accounts = [
-                account.real_user for account in available_accounts 
-                if string.lower() in account.real_user.lower()
+                account.real_user for account in available_accounts if string.lower() in account.real_user.lower()
             ]
         else:
             filtered_accounts = [account.real_user for account in available_accounts]
-        
+
         # Return up to 50 choices
         return filtered_accounts[:25]
+    except Exception:
+        # In case of error, return an empty list
+        return []
+
+
+async def character_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete function for character names available to the user."""
+    try:
+        # Get the user's roles
+        user_roles = [role.id for role in inter.author.roles]
+        user_is_admin = is_admin(user_roles, inter.guild_id)
+
+        # Get all accounts for this guild
+        all_accounts = sso_model.list_accounts(inter.guild_id)
+
+        # Filter accounts based on user's roles and access permissions
+        available_accounts = []
+        for account in all_accounts:
+            # Check if account is in a group that the user has access to
+            has_access = False
+            if user_is_admin:
+                has_access = True
+            else:
+                for group in account.groups:
+                    if group.role_id in user_roles:
+                        has_access = True
+                        break
+
+            # If no groups or has access, add to available accounts
+            if has_access:
+                available_accounts.append(account)
+
+        # Get all the character names from the accounts
+        character_names = []
+        for account in available_accounts:
+            for character in account.characters:
+                character_names.append(character.name)
+
+        # Filter by the input string if provided
+        if string:
+            filtered_characters = [name for name in character_names if string.lower() in name.lower()]
+        else:
+            filtered_characters = character_names
+
+        # Return up to 50 choices
+        return filtered_characters[:25]
     except Exception:
         # In case of error, return an empty list
         return []
@@ -136,10 +186,10 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all aliases for this guild
         all_aliases = sso_model.list_account_aliases(inter.guild_id)
-        
+
         # Filter aliases based on user's roles and access permissions
         available_aliases = []
         for alias in all_aliases:
@@ -152,20 +202,17 @@ async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
                     if group.role_id in user_roles:
                         has_access = True
                         break
-            
+
             # If has access, add to available aliases
             if has_access:
                 available_aliases.append(alias)
-        
+
         # Filter by the input string if provided
         if string:
-            filtered_aliases = [
-                alias.alias for alias in available_aliases 
-                if string.lower() in alias.alias.lower()
-            ]
+            filtered_aliases = [alias.alias for alias in available_aliases if string.lower() in alias.alias.lower()]
         else:
             filtered_aliases = [alias.alias for alias in available_aliases]
-        
+
         # Return up to 50 choices
         return filtered_aliases[:25]
     except Exception:
@@ -178,7 +225,8 @@ async def account_and_alias_autocomplete(inter: disnake.ApplicationCommandIntera
     try:
         accounts = await account_autocomplete(inter, string)
         aliases = await alias_autocomplete(inter, string)
-        return (accounts + aliases)[:25]
+        characters = await character_autocomplete(inter, string)
+        return (accounts + aliases + characters)[:25]
     except Exception:
         # In case of error, return an empty list
         return []
@@ -190,39 +238,33 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all groups for this guild
         all_groups = sso_model.list_account_groups(inter.guild_id)
-        
+
         # Filter groups based on user's roles and access permissions
         available_groups = []
         for group in all_groups:
             # Check if group has role-based access
             has_access = False
-            if user_is_admin:
+            if user_is_admin or group.role_id in user_roles:
                 has_access = True
-            else:
-                for role in user_roles:
-                    if role in group.role_id:
-                        has_access = True
-                        break
-    
+
             # If has access, add to available groups
             if has_access:
                 available_groups.append(group)
-        
+
         # Filter by the input string if provided
         if string:
             filtered_groups = [
-                group.group_name for group in available_groups 
-                if string.lower() in group.group_name.lower()
+                group.group_name for group in available_groups if string.lower() in group.group_name.lower()
             ]
         else:
             filtered_groups = [group.group_name for group in available_groups]
-        
+
         # Return up to 50 choices
         return filtered_groups[:25]
-    except Exception as e:
+    except Exception:
         # In case of error, return an empty list
         return []
 
@@ -233,10 +275,10 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
         # Get the user's roles
         user_roles = [role.id for role in inter.author.roles]
         user_is_admin = is_admin(user_roles, inter.guild_id)
-        
+
         # Get all tags for this guild
         all_tags = sso_model.list_tags(inter.guild_id)
-        
+
         # Filter tags based on user's roles and access permissions
         available_tags = []
 
@@ -255,13 +297,13 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
         tag_remove = False
         tag_add = False
         tag_username = None
-        if 'tag' in inter.options:
-            if 'remove' in inter.options['tag']:
+        if "tag" in inter.options:
+            if "remove" in inter.options["tag"]:
                 tag_remove = True
-                tag_username = inter.options['tag']['remove']['username']
-            if 'add' in inter.options['tag']:
+                tag_username = inter.options["tag"]["remove"]["username"]
+            if "add" in inter.options["tag"]:
                 tag_add = True
-                tag_username = inter.options['tag']['add']['username']
+                tag_username = inter.options["tag"]["add"]["username"]
         for tag in all_tags:
             # Check if tag is on an account that the user has access to
             has_access = False
@@ -282,29 +324,35 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
                         if group.role_id in user_roles:
                             has_access = True
                             break
-            
+
             # If has access, add to available tags
             if has_access and valid_tag:
                 available_tags.append(tag)
-        
+
         # Filter by the input string if provided
         if string:
-            filtered_tags = [
-                tag for tag in available_tags 
-                if string.lower() in tag.lower()
-            ]
+            filtered_tags = [tag for tag in available_tags if string.lower() in tag.lower()]
         else:
             filtered_tags = [tag for tag in available_tags]
-        
+
         # Return up to 50 choices
         return filtered_tags[:25]
-    except Exception as e:
+    except Exception:
         # In case of error, return an empty list
         return []
 
 
+def hash_ip(ip_address: str, length: int = 14) -> str:
+    # Hash the IP address using SHA-256
+    hash_bytes = hashlib.sha256(ip_address.encode("utf-8")).digest()
+    # Encode the hash in URL-safe Base64 and truncate
+    hash_b64 = base64.urlsafe_b64encode(hash_bytes).decode("utf-8")
+    # Return the first 'length' characters
+    return hash_b64[:length]
+
+
 def is_admin(user_roles, guild_id):
-    admin_roles = config.GUILD_SETTINGS.get(guild_id, {}).get('sso_admin_roles')
+    admin_roles = config.GUILD_SETTINGS.get(guild_id, {}).get("sso_admin_roles")
     for admin_role in admin_roles:
         if admin_role in user_roles:
             return True
@@ -316,12 +364,13 @@ def only_allow_admin():
         if not is_admin([role.id for role in inter.author.roles], inter.guild_id):
             return False
         return True
+
     return commands.check(predicate)
 
 
 async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: list = None):
     """Send a message, splitting it into chunks if it's too long.
-    
+
     Args:
         send_fn: The function to use for sending (e.g., inter.send)
         message: The message content to send
@@ -330,32 +379,30 @@ async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: 
     """
     max_length = 2000
     lines = message.splitlines(keepends=True)
-    current_chunk = ''
+    current_chunk = ""
     chunks = []
-    
+
     # Collect all chunks
     for line in lines:
         if len(current_chunk) + len(line) > max_length:
             chunks.append(current_chunk)
-            current_chunk = ''
+            current_chunk = ""
         current_chunk += line
     if current_chunk:
         chunks.append(current_chunk)
-    
+
     # Send all chunks except the last one
     for i in range(len(chunks) - 1):
-        await send_fn(content=chunks[i], ephemeral=ephemeral,
-                      allowed_mentions=disnake.AllowedMentions.none())
-    
+        await send_fn(content=chunks[i], ephemeral=ephemeral, allowed_mentions=disnake.AllowedMentions.none())
+
     # Send the last chunk with files if provided
     if chunks:
         if files:
-            await send_fn(content=chunks[-1], ephemeral=ephemeral,
-                          allowed_mentions=disnake.AllowedMentions.none(),
-                          files=files)
+            await send_fn(
+                content=chunks[-1], ephemeral=ephemeral, allowed_mentions=disnake.AllowedMentions.none(), files=files
+            )
         else:
-            await send_fn(content=chunks[-1], ephemeral=ephemeral,
-                          allowed_mentions=disnake.AllowedMentions.none())
+            await send_fn(content=chunks[-1], ephemeral=ephemeral, allowed_mentions=disnake.AllowedMentions.none())
 
 
 class SSOCommands(commands.Cog):
@@ -368,8 +415,7 @@ class SSOCommands(commands.Cog):
         else:
             raise error
 
-    @commands.slash_command(description="SSO User commands",
-                            guild_ids=SSO_GUILDS)
+    @commands.slash_command(description="SSO User commands", guild_ids=SSO_GUILDS)
     async def sso(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -391,8 +437,7 @@ class SSOCommands(commands.Cog):
         await inter.send(content=f"🔑 **Access key reset:** `{access_key.access_key}`", ephemeral=True)
 
     @only_allow_admin()
-    @commands.slash_command(description="SSO related commands",
-                            guild_ids=SSO_GUILDS)
+    @commands.slash_command(description="SSO related commands", guild_ids=SSO_GUILDS)
     async def sso_admin(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -406,38 +451,45 @@ class SSOCommands(commands.Cog):
         pass
 
     @account.sub_command(description="Show account details", name="show")
-    async def account_show(self, inter: disnake.ApplicationCommandInteraction,
-                           username: str = commands.Param(
-                               description="Account username to show details for",
-                               autocomplete=account_and_alias_autocomplete
-                           )):
+    async def account_show(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to show details for", autocomplete=account_and_alias_autocomplete
+        ),
+    ):
         # Implement account show logic
         try:
             account = sso_model.find_account_by_username(username, inter.guild_id)
             if not account:
                 raise sso_model.SSOAccountNotFoundError
-            group_names = '\n'.join([f'• `{group.group_name}`' for group in account.groups])
+            group_names = "\n".join([f" * `{group.group_name}`" for group in account.groups])
             group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
-            tag_names = '\n'.join([f'• `{tag.tag}`' for tag in account.tags])
+            tag_names = "\n".join([f" * `{tag.tag}`" for tag in account.tags])
             tag_string = f"\n🏷️ Tags:\n{tag_names}" if tag_names else ""
-            alias_names = '\n'.join([f'• `{alias.alias}`' for alias in account.aliases])
+            alias_names = "\n".join([f" * `{alias.alias}`" for alias in account.aliases])
             alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
-            await inter.send(content=f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}", ephemeral=True)
+            character_names = "\n".join(
+                [f" * `{character.name}` ({character.klass.value})" for character in account.characters]
+            )
+            character_string = f"\n🧍 Characters:\n{character_names}" if character_names else ""
+            await send_and_split(
+                inter.send,
+                f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}{character_string}",
+                ephemeral=True,
+            )
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @account.sub_command(description="List accounts", name="list")
-    async def account_list(self, inter: disnake.ApplicationCommandInteraction,
-                           group: str = commands.Param(
-                               description="Group to filter accounts by",
-                               autocomplete=group_autocomplete,
-                               default=None
-                           ),
-                           tag: str = commands.Param(
-                               description="Tag to filter accounts by",
-                               autocomplete=tag_autocomplete,
-                               default=None
-                           )):
+    async def account_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = commands.Param(
+            description="Group to filter accounts by", autocomplete=group_autocomplete, default=None
+        ),
+        tag: str = commands.Param(description="Tag to filter accounts by", autocomplete=tag_autocomplete, default=None),
+    ):
         # Implement account list logic
         account_list = sso_model.list_accounts(inter.guild_id, group, tag)
         if not account_list:
@@ -447,15 +499,15 @@ class SSOCommands(commands.Cog):
         for account in account_list:
             formatted_accounts += f"🤖 **{account.real_user}**:\n"
             if account.groups:
-                group_names = ', '.join([f"{group.group_name}" for group in account.groups])
+                group_names = ", ".join([f"{group.group_name}" for group in account.groups])
                 group_string = f"🗂️ Groups: {group_names}"
                 formatted_accounts += f"  →  {group_string}\n"
             if account.tags:
-                tag_names = ', '.join([f"{tag.tag}" for tag in account.tags])
+                tag_names = ", ".join([f"{tag.tag}" for tag in account.tags])
                 tag_string = f"🏷️ Tags: {tag_names}"
                 formatted_accounts += f"  →  {tag_string}\n"
             if account.aliases:
-                alias_names = ', '.join([f"{alias.alias}" for alias in account.aliases])
+                alias_names = ", ".join([f"{alias.alias}" for alias in account.aliases])
                 alias_string = f"🔗 Aliases: {alias_names}"
                 formatted_accounts += f"  →  {alias_string}\n"
             if not account.groups and not account.tags and not account.aliases:
@@ -466,53 +518,84 @@ class SSOCommands(commands.Cog):
     async def admin_account(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
+    @admin_account.sub_command(description="List accounts with no characters", name="list_no_characters")
+    async def account_list_no_characters(self, inter: disnake.ApplicationCommandInteraction):
+        accounts = sso_model.list_accounts(inter.guild_id)
+        accounts_no_characters = []
+        for account in accounts:
+            # Defensive: check for 'characters' attribute and that it's empty
+            chars = getattr(account, "characters", None)
+            if chars is None or len(chars) == 0:
+                accounts_no_characters.append(account)
+        if not accounts_no_characters:
+            await inter.send(content="✅ **All accounts have at least one character.**", ephemeral=True)
+            return
+        formatted = "\n".join(
+            [
+                f" * `{account.real_user}`{': ' + ', '.join(a.alias for a in account.aliases) if account.aliases else ''}"
+                for account in accounts_no_characters
+            ]
+        )
+        await send_and_split(inter.send, f"**🤖 Accounts with NO characters:**\n{formatted}", ephemeral=True)
+
     @admin_account.sub_command(description="Create a new account", name="create")
-    async def account_create(self, inter: disnake.ApplicationCommandInteraction,
-                             username: str = commands.Param(
-                                 description="Username for the new account",
-                             ),
-                             password: str = commands.Param(
-                                 description="Password for the new account"
-                             ),
-                             group: str = commands.Param(
-                                 description="Group to add the account to",
-                                 autocomplete=group_autocomplete,
-                                 default=None
-                             )):
+    async def account_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Username for the new account",
+        ),
+        password: str = commands.Param(description="Password for the new account"),
+        group: str = commands.Param(
+            description="Group to add the account to", autocomplete=group_autocomplete, default=None
+        ),
+    ):
         # Implement account creation logic
         try:
             account = sso_model.create_account(inter.guild_id, username, password, group)
-            await inter.send(content=f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}")
+            message = f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}"
+            await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
+            await inter.channel.send(
+                f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
+            )
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
-
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group}`", ephemeral=True)
 
     @admin_account.sub_command(description="Update account password", name="update")
-    async def account_update(self, inter: disnake.ApplicationCommandInteraction,
-                             username: str = commands.Param(
-                               description="Account username to update password for",
-                               autocomplete=account_autocomplete
-                             ),
-                             new_password: str = commands.Param(
-                               description="New password for the account"
-                             )):
+    async def account_update(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to update password for", autocomplete=account_autocomplete
+        ),
+        new_password: str = commands.Param(description="New password for the account"),
+    ):
         # Implement account update logic
         try:
-            account = sso_model.update_account(inter.guild_id, username, new_password)
-            await inter.send(content=f"🔑🤖 **Updated password** for account `{username}`")
+            sso_model.update_account(inter.guild_id, username, new_password)
+            message = f"🔑🤖 **Updated password** for account `{username}`"
+            await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
+            await inter.channel.send(
+                f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
+            )
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @admin_account.sub_command(description="Delete an account", name="delete")
-    async def account_delete(self, inter: disnake.ApplicationCommandInteraction,
-                             username: str = commands.Param(
-                               description="Account username to delete",
-                               autocomplete=account_autocomplete
-                            )):
+    async def account_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username to delete", autocomplete=account_autocomplete),
+    ):
         # Implement account delete logic
         try:
             sso_model.delete_account(inter.guild_id, username)
             await inter.send(content=f"🗑️🤖 **Deleted account** `{username}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.NoResultFound:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
@@ -527,38 +610,35 @@ class SSOCommands(commands.Cog):
         if not tags:
             await inter.send(content="ℹ️ **No tags found in this server.**", ephemeral=True)
             return
-        formatted = '\n'.join([f"🏷️ **{tag}**" for tag in tags])
+        formatted = "\n".join([f"🏷️ **{tag}**" for tag in tags])
         await send_and_split(inter.send, f"**Tags:**\n{formatted}", ephemeral=True)
 
     @tag.sub_command(description="Show a tag", name="show")
-    async def tag_show(self, inter: disnake.ApplicationCommandInteraction,
-                       tag: str = commands.Param(
-                         description="Tag to show",
-                         autocomplete=tag_autocomplete
-                       )):
+    async def tag_show(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        tag: str = commands.Param(description="Tag to show", autocomplete=tag_autocomplete),
+    ):
         # Implement tag show logic
         tags = sso_model.get_tag(inter.guild_id, tag)
         if not tags:
-            await inter.send(content=f"⚠️ **Tag not found:** `{tag}`", ephemeral=True)
+            await inter.send(content=f"⚠️🏷️ **Tag not found:** `{tag}`", ephemeral=True)
             return
-            
+
         formatted = f"🏷️ **{tag}:**\n"
         files = []
-        
+
         for tag_obj in tags:
             formatted += f"  →  🤖 `{tag_obj.account.real_user}`\n"
             # Check if this tag has a UI macro and we haven't already added it to files
             if tag_obj.ui_macro and not files:
                 # Create a file object from the binary data
-                macro_file = disnake.File(
-                    fp=io.BytesIO(tag_obj.ui_macro.ui_macro_data),
-                    filename=f"{tag}_macro.ini"
-                )
+                macro_file = disnake.File(fp=io.BytesIO(tag_obj.ui_macro.ui_macro_data), filename=f"{tag}_macro.ini")
                 files.append(macro_file)
 
         if files:
             formatted += "  →  📄 UI Macro (attached)\n"
-                
+
         # Send the response with any attached files
         await send_and_split(inter.send, formatted, files=files, ephemeral=True)
 
@@ -567,43 +647,40 @@ class SSOCommands(commands.Cog):
         pass
 
     @admin_tag.sub_command(description="Add a tag to an account", name="add")
-    async def tag_add(self, inter: disnake.ApplicationCommandInteraction,
-                      username: str = commands.Param(
-                               description="Account username to create alias for",
-                               autocomplete=account_autocomplete
-                      ), tag: str = commands.Param(
-                        description="Tag to add to the account",
-                        autocomplete=tag_autocomplete
-                      )):
+    async def tag_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to create alias for", autocomplete=account_autocomplete
+        ),
+        tag: str = commands.Param(description="Tag to add to the account", autocomplete=tag_autocomplete),
+    ):
         # Implement tag add logic
         try:
             tag = sso_model.tag_account(inter.guild_id, username, tag)
             await inter.send(content=f"✨🏷️ **Tagged account** `{tag.account.real_user}` with tag `{tag.tag}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🏷️ **Tag already exists** for account `{username}`", ephemeral=True)
 
     @admin_tag.sub_command(description="Update a tag", name="update")
-    async def tag_update(self, inter: disnake.ApplicationCommandInteraction,
-                         tag: str = commands.Param(
-                               description="Tag to update",
-                               autocomplete=tag_autocomplete
-                         ), new_name: str = commands.Param(
-                               description="New tag name",
-                               default=None
-                         ), new_ui_macro_data: disnake.Attachment = commands.Param(
-                               description="New UI macro data",
-                               default=None
-                         )):
+    async def tag_update(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        tag: str = commands.Param(description="Tag to update", autocomplete=tag_autocomplete),
+        new_name: str = commands.Param(description="New tag name", default=None),
+        new_ui_macro_data: disnake.Attachment = commands.Param(description="New UI macro data", default=None),
+    ):
         if new_ui_macro_data:
             if new_ui_macro_data.size > 1024 * 1024:
-                await inter.send(content="⚠️ **Attachment too large** (max 1MB)", ephemeral=True)
+                await inter.send(content="⚠️🏷️ **Attachment too large** (max 1MB)", ephemeral=True)
                 return
             new_ui_macro_data = await new_ui_macro_data.read()
         if new_name:
             new_name = new_name.lower()
             existing_tags = sso_model.list_tags(inter.guild_id)
             if new_name in existing_tags:
-                await inter.send(content=f"⚠️ **Tag already exists:** `{new_name}`", ephemeral=True)
+                await inter.send(content=f"⚠️🏷️ **Tag already exists:** `{new_name}`", ephemeral=True)
                 return
         if new_name is None and new_ui_macro_data is None:
             await inter.send(content="⚠️ **No changes specified, no action taken.**", ephemeral=True)
@@ -618,22 +695,24 @@ class SSOCommands(commands.Cog):
                 message += " with new UI macro data"
             message += "."
             await inter.send(content=message)
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountTagNotFoundError:
             await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{tag}`", ephemeral=True)
 
     @admin_tag.sub_command(description="Remove a tag from an account", name="remove")
-    async def tag_remove(self, inter: disnake.ApplicationCommandInteraction,
-                         username: str = commands.Param(
-                               description="Account username to create alias for",
-                               autocomplete=account_autocomplete
-                         ), tag: str = commands.Param(
-                               description="Tag to remove from the account",
-                               autocomplete=tag_autocomplete
-                         )):
+    async def tag_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to create alias for", autocomplete=account_autocomplete
+        ),
+        tag: str = commands.Param(description="Tag to remove from the account", autocomplete=tag_autocomplete),
+    ):
         # Implement tag remove logic
         try:
             sso_model.untag_account(inter.guild_id, username, tag)
             await inter.send(content=f"🗑️🏷️ **Untagged account** `{username}` from tag `{tag}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🏷️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sso_model.SSOAccountTagNotFoundError:
@@ -644,26 +723,29 @@ class SSOCommands(commands.Cog):
         pass
 
     @group.sub_command(description="Show group details", name="show")
-    async def group_show(self, inter: disnake.ApplicationCommandInteraction,
-                         name: str = commands.Param(
-                             description="Group name to show details for",
-                             autocomplete=group_autocomplete
-                         )):
+    async def group_show(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(description="Group name to show details for", autocomplete=group_autocomplete),
+    ):
         # Implement group show logic
         try:
             account_group = sso_model.get_account_group(inter.guild_id, name)
-            account_names = '\n'.join([f'• `{account.real_user}`' for account in account_group.accounts])
-            await inter.send(content=f"🗂️ **Group:** `{account_group.group_name}`\n"
-                                     f" → 🤖 Accounts:\n{account_names}", ephemeral=True)
+            account_names = "\n".join([f" * `{account.real_user}`" for account in account_group.accounts])
+            await send_and_split(
+                inter.send,
+                f"🗂️ **Group:** `{account_group.group_name}`\n → 🤖 Accounts:\n{account_names}",
+                ephemeral=True,
+            )
         except sqlalchemy.exc.NoResultFound:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
 
     @group.sub_command(description="List groups", name="list")
-    async def group_list(self, inter: disnake.ApplicationCommandInteraction,
-                         role: disnake.Role = commands.Param(
-                             description="Role required for access to this group.",
-                             default=None)
-                         ):
+    async def group_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        role: disnake.Role = commands.Param(description="Role required for access to this group.", default=None),
+    ):
         # Implement group list logic
         account_groups = sso_model.list_account_groups(inter.guild_id, role.id if role else None)
         if not account_groups:
@@ -672,7 +754,7 @@ class SSOCommands(commands.Cog):
             else:
                 await inter.send(content="ℹ️ **No groups found in this server.**", ephemeral=True)
             return
-        formatted = '\n'.join([f"🗂️ `{group.group_name}` → <@&{group.role_id}>" for group in account_groups])
+        formatted = "\n".join([f"🗂️ `{group.group_name}` → <@&{group.role_id}>" for group in account_groups])
         await send_and_split(inter.send, f"**Groups:**\n{formatted}", ephemeral=True)
 
     @sso_admin.sub_command_group(description="Group related commands", name="group")
@@ -680,72 +762,80 @@ class SSOCommands(commands.Cog):
         pass
 
     @admin_group.sub_command(description="Create a new group", name="create")
-    async def group_create(self, inter: disnake.ApplicationCommandInteraction,
-                           name: str = commands.Param(
-                               description="Name for the new group"),
-                           role: disnake.Role = commands.Param(
-                               description="Role required for access to this group.")
-                           ):
+    async def group_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(description="Name for the new group"),
+        role: disnake.Role = commands.Param(description="Role required for access to this group."),
+    ):
         # Implement group create logic
         try:
             account_group = sso_model.create_account_group(inter.guild_id, name, role.id)
-            await inter.send(content=f"✨🗂️ **Created group** `{account_group.group_name}` accessible by role <@&{role.id}>.",
-                             allowed_mentions=disnake.AllowedMentions.none())
+            await inter.send(
+                content=f"✨🗂️ **Created group** `{account_group.group_name}` accessible by role <@&{role.id}>.",
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🗂️ **Group already exists:** `{name}`", ephemeral=True)
 
     @admin_group.sub_command(description="Add a user to a group", name="add")
-    async def group_add(self, inter: disnake.ApplicationCommandInteraction,
-                        group_name: str = commands.Param(
-                            description="Group name to add user to",
-                            autocomplete=group_autocomplete
-                        ),
-                        username: str = commands.Param(
-                            description="Account username to add to the group",
-                            autocomplete=account_autocomplete
-                        )):
+    async def group_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group_name: str = commands.Param(description="Group name to add user to", autocomplete=group_autocomplete),
+        username: str = commands.Param(
+            description="Account username to add to the group", autocomplete=account_autocomplete
+        ),
+    ):
         # Implement group add logic
         try:
             sso_model.add_account_to_group(inter.guild_id, group_name, username)
             await inter.send(content=f"✨🤖🗂️ **Added user** `{username}` to group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sqlalchemy.exc.IntegrityError:
-            await inter.send(content=f"⚠️🤖🗂️ **Account/group mapping already exists:** `{username}` : `{group_name}`", ephemeral=True)
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Account/group mapping already exists:** `{username}` : `{group_name}`", ephemeral=True
+            )
 
     @admin_group.sub_command(description="Remove a user from a group", name="remove")
-    async def group_remove(self, inter: disnake.ApplicationCommandInteraction,
-                           group_name: str = commands.Param(
-                               description="Group name to remove user from",
-                               autocomplete=group_autocomplete
-                           ),
-                           username: str = commands.Param(
-                               description="Account username to remove from the group",
-                               autocomplete=account_autocomplete
-                           )):
+    async def group_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group_name: str = commands.Param(description="Group name to remove user from", autocomplete=group_autocomplete),
+        username: str = commands.Param(
+            description="Account username to remove from the group", autocomplete=account_autocomplete
+        ),
+    ):
         # Implement group remove logic
         try:
             sso_model.remove_account_from_group(inter.guild_id, group_name, username)
             await inter.send(content=f"🗑️🤖🗂️ **Removed user** `{username}` from group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sqlalchemy.exc.IntegrityError:
-            await inter.send(content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{username}` : `{group_name}`", ephemeral=True)
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{username}` : `{group_name}`", ephemeral=True
+            )
 
     @admin_group.sub_command(description="Delete a group", name="delete")
-    async def group_delete(self, inter: disnake.ApplicationCommandInteraction,
-                           name: str = commands.Param(
-                               description="Group name to delete",
-                               autocomplete=group_autocomplete
-                           )):
+    async def group_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(description="Group name to delete", autocomplete=group_autocomplete),
+    ):
         # Implement group delete logic
         try:
             sso_model.delete_account_group(inter.guild_id, name)
             await inter.send(content=f"🗑️🗂️ **Deleted group** `{name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
 
@@ -758,43 +848,45 @@ class SSOCommands(commands.Cog):
         # Implement alias list logic
         aliases = sso_model.list_account_aliases(inter.guild_id)
         if not aliases:
-            await inter.send(content="ℹ️ **No aliases found on this server.**", ephemeral=True)
+            await inter.send(content="ℹ️ **No aliases found in this server.**", ephemeral=True)
             return
-        formatted = '\n'.join([f"🔗 `{alias.alias}` → `{alias.account.real_user}`" for alias in aliases])
-        await send_and_split(inter.send, f"🔗 **Aliases:**\n{formatted}", ephemeral=True)
+        formatted = "\n".join([f"🔗 `{alias.alias}` → `{alias.account.real_user}`" for alias in aliases])
+        await send_and_split(inter.send, f"**Aliases:**\n{formatted}", ephemeral=True)
 
     @sso_admin.sub_command_group(description="Alias related commands", name="alias")
     async def admin_alias(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
     @admin_alias.sub_command(description="Create an alias for an account", name="create")
-    async def alias_create(self, inter: disnake.ApplicationCommandInteraction,
-                           username: str = commands.Param(
-                               description="Account username to create alias for",
-                               autocomplete=account_autocomplete
-                           ),
-                           alias: str = commands.Param(
-                               description="Alias to create"
-                           )):
+    async def alias_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to create alias for", autocomplete=account_autocomplete
+        ),
+        alias: str = commands.Param(description="Alias to create"),
+    ):
         # Implement alias create logic
         try:
             sso_model.create_account_alias(inter.guild_id, username, alias)
             await inter.send(content=f"✨🔗 **Created alias** `{alias}` for account `{username}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🔗 **Alias already exists:** `{alias}`", ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
 
     @admin_alias.sub_command(description="Delete an alias", name="delete")
-    async def alias_delete(self, inter: disnake.ApplicationCommandInteraction,
-                           alias: str = commands.Param(
-                               description="Alias to delete",
-                               autocomplete=alias_autocomplete
-                           )):
+    async def alias_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        alias: str = commands.Param(description="Alias to delete", autocomplete=alias_autocomplete),
+    ):
         # Implement alias delete logic
         try:
             account_name = sso_model.delete_account_alias(inter.guild_id, alias)
             await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{account_name}`")
+            ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountAliasNotFoundError:
             await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
 
@@ -803,81 +895,84 @@ class SSOCommands(commands.Cog):
         pass
 
     @audit.sub_command(description="Audit an account", name="account")
-    async def audit_account(self, inter: disnake.ApplicationCommandInteraction, 
-                           username: str = commands.Param(
-                               description="Account username to audit",
-                               autocomplete=account_autocomplete
-                           ),
-                           max_records: int = commands.Param(
-                               default=10,
-                               description="Maximum number of records to display",
-                               min_value=1,
-                               max_value=50
-                           )):
+    async def audit_account(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to audit", autocomplete=account_and_alias_autocomplete
+        ),
+        max_records: int = commands.Param(
+            default=10, description="Maximum number of records to display", min_value=1, max_value=50
+        ),
+    ):
         """Show audit logs for a specific account."""
         try:
-            account = sso_model.get_account(inter.guild_id, username)
+            account = sso_model.find_account_by_username(username, inter.guild_id)
             if not account:
-                await inter.send(content=f"📋 **Account not found:** `{username}`", ephemeral=True)
-                return
+                raise sso_model.SSOAccountNotFoundError
 
             # Get audit logs for this username
-            logs = sso_model.get_audit_logs(
-                limit=max_records,
-                username=username,
-                success=None
-            )
-            
+            logs = sso_model.get_audit_logs(limit=max_records, username=account.real_user, success=None)
+
             if not logs:
-                await inter.send(content=f"📋 **No audit logs found for account:** `{username}`", ephemeral=True)
+                await inter.send(
+                    content=f"📋 **No audit logs found for account:** `{account.real_user}`", ephemeral=True
+                )
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             success_count = 0
             failed_count = 0
-            
+
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 if log.success:
                     status = "✅"
                     success_count += 1
                 else:
                     status = "❌"
                     failed_count += 1
-                    
-                ip = log.ip_address if log.ip_address else "N/A"
+
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
-                
-                formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
+
+                formatted_log = (
+                    f"{status}\u2003🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
+                )
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
-            response = f"# 📋 Audit Logs for Account: `{username}`\n"
-            response += f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)._\n\n"
+            response = f"# 📋 Audit Logs for Account: `{account.real_user}`\n"
+            response += (
+                f"_{len(logs)} authentication attempts ({success_count} successful, {failed_count} failed)._\n\n"
+            )
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
-            await inter.send(content=response, ephemeral=True)
+            await send_and_split(inter.send, response, ephemeral=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
     @audit.sub_command(description="Audit a user", name="user")
-    async def audit_user(self, inter: disnake.ApplicationCommandInteraction, 
-                         user: disnake.User = commands.Param(
-                            None,
-                            description="Discord user to audit (defaults to yourself)",
-                         )):
+    async def audit_user(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        user: disnake.User = commands.Param(
+            None,
+            description="Discord user to audit (defaults to yourself)",
+        ),
+    ):
         """Show audit logs for a specific Discord user."""
         try:
             # If no user is provided, use the current user
             if user is None:
                 user = inter.author
-                
+
             user_id = user.id
             user_mention = user.mention
 
@@ -886,103 +981,114 @@ class SSOCommands(commands.Cog):
             if not logs:
                 await inter.send(content=f"📋 **No audit logs found for user:** {user_mention}", ephemeral=True)
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 status = "✅" if log.success else "❌"
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
-                ip = log.ip_address if log.ip_address else "N/A"
-                
-                formatted_log = f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
+
+                formatted_log = (
+                    f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
+                )
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
             response = f"# 📋 Audit Logs for User: {user_mention}\n"
             response += f"_Showing the {len(logs)} most recent authentication attempts_\n\n"
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
     @audit.sub_command(description="View failed authentication attempts", name="failed")
-    async def audit_failed(self, inter: disnake.ApplicationCommandInteraction,
-                           max_records: int = commands.Param(
-                              default=10,
-                              description="Maximum number of records to display",
-                              min_value=1,
-                              max_value=50
-                           ),
-                           hours: int = commands.Param(
-                              default=24*7,
-                              description=f"Show attempts from the last N hours (default: {24*7} hours = 1 week)",
-                              min_value=1,
-                              max_value=24 * 365  # 1 year
-                           )):
+    async def audit_failed(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        max_records: int = commands.Param(
+            default=10, description="Maximum number of records to display", min_value=1, max_value=50
+        ),
+        hours: int = commands.Param(
+            default=24 * 7,
+            description=f"Show attempts from the last N hours (default: {24 * 7} hours = 1 week)",
+            min_value=1,
+            max_value=24 * 365,  # 1 year
+        ),
+    ):
         """Show recent failed authentication attempts across all accounts."""
         try:
             # Calculate the time threshold for filtering
             since = None
             if hours > 0:
                 since = datetime.datetime.now() - datetime.timedelta(hours=hours)
-            
+
             # Get failed audit logs for all accounts in this guild
             logs = sso_model.get_audit_logs(
                 limit=max_records,
                 success=False,
-                since=since
+                since=since,
+                include_list=True,
             )
 
             accounts = sso_model.list_accounts(inter.guild_id)
-            account_names = [account.real_user for account in accounts]
+            account_names = {account.real_user for account in accounts}
 
-            # Filter by either guild_id or account.guild_id
-            logs = [log for log in logs if log.guild_id == inter.guild_id or log.username in account_names]
-            
+            # Include entries that belong to this guild, match a known
+            # account, or have no guild (e.g. invalid access key attempts).
+            logs = [
+                log
+                for log in logs
+                if log.guild_id == inter.guild_id or log.guild_id is None or log.username in account_names
+            ]
+
             if not logs:
-                await inter.send(content=f"📋 **No unacknowledged failed authentication attempts found in the last {hours} hours.**", ephemeral=True)
+                await inter.send(
+                    content=f"📋 **No unacknowledged failed authentication attempts found in the last {hours} hours.**",
+                    ephemeral=True,
+                )
                 return
-                
+
             # Format the logs for display
             formatted_logs = []
             ip_counts = {}  # Track counts by IP for potential attack detection
-            
+
             for log in logs:
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                
+
                 username = log.username if log.username else "Unknown"
-                ip = log.ip_address if log.ip_address else "N/A"
+                ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
 
                 # Track IP addresses for potential attack detection
                 if ip != "N/A":
                     ip_counts[ip] = ip_counts.get(ip, 0) + 1
-                
+
                 formatted_log = f"🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
-                
+
             # Create the response message
-            response = f"# 📋 Failed Authentication Attempts\n"
+            response = "# 📋 Failed Authentication Attempts\n"
             response += f"_Showing {len(logs)} failed authentication attempts from the last {hours} hours._\n\n"
-            
+
             # Add warning for potential attacks (multiple failures from same IP)
             potential_attacks = [f"`{ip}` ({count} attempts)" for ip, count in ip_counts.items() if count > 2]
             if potential_attacks:
                 response += "⚠️ **Potential attacks detected from:**\n"
                 response += ", ".join(potential_attacks) + "\n\n"
-            
+
             response += "\n".join(formatted_logs)
-            
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit logs:** `{str(e)}`", ephemeral=True)
 
@@ -993,28 +1099,28 @@ class SSOCommands(commands.Cog):
             # Get all audit logs for this guild
             all_logs = sso_model.get_audit_logs(
                 limit=5000,  # Get a large sample for statistics
-                guild_id=inter.guild_id
+                guild_id=inter.guild_id,
             )
-            
+
             if not all_logs:
                 await inter.send(content="📊 **No audit logs found for this guild**", ephemeral=True)
                 return
-                
+
             # Calculate statistics
             total_attempts = len(all_logs)
             successful_attempts = sum(1 for log in all_logs if log.success)
             failed_attempts = total_attempts - successful_attempts
-            
+
             # Get unique usernames and IP addresses
             unique_usernames = set(log.username for log in all_logs if log.username)
             unique_ips = set(log.ip_address for log in all_logs if log.ip_address)
-            
+
             # Get the most recent logs
             recent_logs = all_logs[:10]  # Assuming logs are already sorted by timestamp desc
-            
+
             # Calculate success rate
             success_rate = (successful_attempts / total_attempts) * 100 if total_attempts > 0 else 0
-            
+
             # Format the statistics
             response = "# 📊 SSO Audit Statistics\n\n"
             response += "## Summary\n"
@@ -1023,25 +1129,25 @@ class SSOCommands(commands.Cog):
             response += f"❌ **Failed Attempts:** `{failed_attempts}`\n"
             response += f"🤖 **Unique Usernames Used:** `{len(unique_usernames)}`\n"
             response += f"🌐 **Unique IP Addresses:** `{len(unique_ips)}`\n\n"
-            
+
             # Add recent activity
             response += "## Recent Activity\n"
             if recent_logs:
                 for log in recent_logs:
                     discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
-                    
+
                     status = "✅" if log.success else "❌"
                     username = log.username if log.username else "Unknown"
-                    ip = log.ip_address if log.ip_address else "N/A"
+                    ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                     discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
-                    
+
                     response += f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
             else:
                 response += "_No recent activity_\n"
-                
+
             # Send the response
             await send_and_split(inter.send, response, ephemeral=True)
-            
+
         except Exception as e:
             await inter.send(content=f"⚠️ **Error retrieving audit statistics:** `{str(e)}`", ephemeral=True)
 
@@ -1050,64 +1156,396 @@ class SSOCommands(commands.Cog):
         pass
 
     @admin_revocation.sub_command(description="Revoke access from a user", name="add")
-    async def revocation_add(self, inter: disnake.ApplicationCommandInteraction,
-                            user: disnake.Member = commands.Param(
-                                description="Member to audit."),
-                            expiry_days: int = commands.Param(
-                                default=0,
-                                description="Number of days to revoke access for. 0 = permanent"),
-                            details: str = commands.Param(
-                                default=None,
-                                description="Reason for revoking access.")
-                            ):
+    async def revocation_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        user: disnake.Member = commands.Param(description="Member to audit."),
+        expiry_days: int = commands.Param(default=0, description="Number of days to revoke access for. 0 = permanent"),
+        details: str = commands.Param(default=None, description="Reason for revoking access."),
+    ):
         try:
-            sso_model.revoke_user_access(inter.guild_id, inter.user.id, expiry_days, details)
+            sso_model.revoke_user_access(inter.guild_id, user.id, expiry_days, details)
             message = f"❌🔑 **Revoked access to user:** <@{user.id}>"
             message += f"\n* **Days:** {expiry_days if expiry_days > 0 else 'Permanent'}"
             if details:
                 message += f"\n* **Reason:** {details}"
             await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
+            ws_manager.disconnect_user(inter.guild_id, user.id)
+            ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n{e}", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to revoke access to user:** <@{user.id}>\n`{e}`", ephemeral=True)
 
     @admin_revocation.sub_command(description="List access revocations", name="list")
-    async def revocation_list(self, inter: disnake.ApplicationCommandInteraction,
-                              user: disnake.Member = commands.Param(
-                                description="Member to list access revocations for.",
-                                default=None)):
-        revocations = sso_model.get_user_access_revocations(guild_id=inter.guild_id, discord_user_id=user.id)
+    async def revocation_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        user: disnake.Member = commands.Param(description="Member to list access revocations for.", default=None),
+    ):
+        revocations = sso_model.get_user_access_revocations(
+            guild_id=inter.guild_id, discord_user_id=user.id if user else None
+        )
         if not revocations:
             await inter.send(content="ℹ️ **No access revocations found.**", ephemeral=True)
             return
         formatted = ""
         for revocation in revocations:
-            expiry_str = f"{revocation.expiry_days} day{'s' if revocation.expiry_days > 1 else ''}" if revocation.expiry_days > 0 else 'Permanent'
+            expiry_str = (
+                f"{revocation.expiry_days} day{'s' if revocation.expiry_days > 1 else ''}"
+                if revocation.expiry_days > 0
+                else "Permanent"
+            )
             reason_str = f": `{revocation.details}`" if revocation.details else ""
             formatted += f"* <@{revocation.discord_user_id}> ({expiry_str}){reason_str}\n"
-        await inter.send(content=f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
-    
+        await send_and_split(inter.send, f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
+
     @admin_revocation.sub_command(description="Remove access revocation", name="remove")
-    async def revocation_remove(self, inter: disnake.ApplicationCommandInteraction,
-                                user: disnake.Member = commands.Param(
-                                description="Member to remove access revocation.")):
+    async def revocation_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        user: disnake.Member = commands.Param(description="Member to remove access revocation."),
+    ):
         try:
             sso_model.remove_access_revocation(inter.guild_id, user.id)
-            await inter.send(content=f"🔑 **Access revocations disabled for user:** <@{user.id}>", allowed_mentions=disnake.AllowedMentions.none())
+            await inter.send(
+                content=f"🔑 **Access revocations disabled for user:** <@{user.id}>",
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            ws_manager.notify_guild(inter.guild_id)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n{e}", ephemeral=True)
+            await inter.send(
+                content=f"❌🔑 **Failed to disable access revocations for user:** <@{user.id}>\n`{e}`", ephemeral=True
+            )
 
-    @sso_admin.sub_command(description="Reset rate limit for an IP address", name="reset_rate_limit")
-    async def reset_rate_limit(self, inter: disnake.ApplicationCommandInteraction,
-                                     ip_address: str = commands.Param(
-                                        description="IP address to reset rate limit for.")):
+    @sso_admin.sub_command(description="Show currently rate-limited IPs", name="rate_limited")
+    async def rate_limited(self, inter: disnake.ApplicationCommandInteraction):
         try:
+            rows = sso_model.get_rate_limited_ips(
+                config.RATE_LIMIT_MAX_ATTEMPTS,
+                config.RATE_LIMIT_WINDOW_MINUTES,
+            )
+            if not rows:
+                await inter.send(
+                    content="ℹ️ **No IPs are currently rate-limited.**",
+                    ephemeral=True,
+                )
+                return
+            lines = []
+            for ip, count in rows:
+                hashed = hash_ip(ip)
+                lines.append(f"🌐 `{hashed}` — **{count}** failures")
+            header = (
+                f"# 🚫 Rate-Limited IPs\n"
+                f"_Threshold: {config.RATE_LIMIT_MAX_ATTEMPTS} failures "
+                f"in {config.RATE_LIMIT_WINDOW_MINUTES} min_\n\n"
+            )
+            await send_and_split(
+                inter.send,
+                header + "\n".join(lines),
+                ephemeral=True,
+            )
+        except Exception as e:
+            await inter.send(
+                content=f"⚠️ **Error:** `{e}`",
+                ephemeral=True,
+            )
+
+    @sso_admin.sub_command(description="Reset rate limit for an IP (real or hashed)", name="reset_rate_limit")
+    async def reset_rate_limit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        ip_address: str = commands.Param(description="Real IP or hashed IP to reset rate limit for."),
+    ):
+        try:
+            # Try the raw value first (real IP)
             updated = sso_model.clear_rate_limit(ip_address)
             if updated > 0:
-                await inter.send(content=f"🔑 **Rate limit reset for IP:** `{ip_address}` *({updated} records found)*")
-            else:
-                await inter.send(content=f"🔑 **No rate limit entries found for IP:** `{ip_address}`", ephemeral=True)
+                await inter.send(
+                    content=f"🔑 **Rate limit reset for IP:** `{hash_ip(ip_address)}` *({updated} records cleared)*"
+                )
+                return
+
+            # No match — treat input as a hashed IP and scan for the real one
+            rows = sso_model.get_rate_limited_ips(
+                config.RATE_LIMIT_MAX_ATTEMPTS,
+                config.RATE_LIMIT_WINDOW_MINUTES,
+            )
+            for real_ip, _ in rows:
+                if hash_ip(real_ip) == ip_address:
+                    updated = sso_model.clear_rate_limit(real_ip)
+                    await inter.send(
+                        content=f"🔑 **Rate limit reset for IP:** `{ip_address}` *({updated} records cleared)*"
+                    )
+                    return
+
+            await inter.send(content=f"🔑 **No rate limit entries found for:** `{ip_address}`", ephemeral=True)
         except Exception as e:
-            await inter.send(content=f"❌🔑 **Failed to reset rate limit for IP:** `{ip_address}`\n{e}", ephemeral=True)
+            await inter.send(content=f"❌🔑 **Failed to reset rate limit:** `{e}`", ephemeral=True)
+
+    @staticmethod
+    async def _get_reconcile_embed_response(
+        channel: disnake.TextChannel, inter: disnake.ApplicationCommandInteraction = None
+    ) -> list[disnake.Embed] | None:
+        # Get the latest Status message in this channel
+        status_embed = None
+        async for message in channel.history(limit=50):
+            if message.embeds and message.embeds[0].title == "Raid Status":
+                status_embed = message.embeds[0]
+                break
+        if not status_embed:
+            await channel.send(content="$status")
+        retries = 10
+        while not status_embed and retries > 0:
+            time.sleep(1)
+            retries -= 1
+            async for message in channel.history(limit=5):
+                if message.embeds and message.embeds[0].title == "Raid Status":
+                    status_embed = message.embeds[0]
+                    break
+
+        if not status_embed:
+            if inter:
+                await inter.send(content="⚠️ **No Raid Status message found in this channel.**", ephemeral=True)
+            return
+
+        # Parse the attendee list out of the status message
+        # attendee_field = ([f for f in status_embed.fields if f.name == "Attendees"] or [None])[0]
+        # if not attendee_field:
+        #     await inter.send(content="Could not find Attendees field in Raid Status message.", ephemeral=True)
+        #     return
+        # attendee_list = attendee_field.value.splitlines()[1:-1]
+        # attendee_list = [x.split(" ")[1] for x in attendee_list]
+
+        # Parse the exact event time out of the status message (the line containing " added at ")
+        event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
+        if not event_field:
+            if inter:
+                await inter.send(
+                    content="⚠️ **Could not find Event Review field in Raid Status message.**", ephemeral=True
+                )
+            return
+        event_header = event_field.value.splitlines()[1]
+        event_time = event_header.split(" added at ")[1]
+        event_time = " ".join(event_time.split(" ")[:3])
+
+        # Convert the event time to a datetime object
+        try:
+            event_time = datetime.datetime.strptime(event_time, "%Y-%m-%d %I:%M %p")
+            print(f"Got original event time: {event_time}")
+            event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo("America/New_York"))
+            print(f"Replaced timezone on event time: {event_time}")
+        except ValueError:
+            if inter:
+                await inter.send(content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True)
+            return
+
+        if not event_time:
+            if inter:
+                await inter.send(content="⚠️ **Could not find event time in Raid Status message.**", ephemeral=True)
+            return
+
+        # Get character sessions overlapping the event window (-30 min to +1 hour)
+        start_time = event_time - datetime.timedelta(minutes=30)
+        end_time = event_time + datetime.timedelta(hours=1)
+
+        local_tz = datetime.datetime.now().astimezone().tzinfo
+
+        sessions = sso_model.get_sessions_in_range(
+            guild_id=channel.guild.id,
+            start=start_time.astimezone(local_tz).replace(tzinfo=None),
+            end=end_time.astimezone(local_tz).replace(tzinfo=None),
+        )
+        logins = []
+        for s in sessions:
+            first = int(s.first_seen.timestamp())
+            last = int(s.last_seen.timestamp())
+            logins.append(f"<t:{first}:T>–<t:{last}:T> <@{s.discord_user_id}>: `{s.character_name}`")
+        logins.sort()
+
+        def split_fields(lines, maxlen=1024):
+            chunks = []
+            current = []
+            current_len = 0
+            for line in lines:
+                # +1 for the newline character
+                add_len = len(line) + 1
+                if current_len + add_len > maxlen:
+                    chunks.append("\n".join(current))
+                    current = [line]
+                    current_len = add_len
+                else:
+                    current.append(line)
+                    current_len += add_len
+            if current:
+                chunks.append("\n".join(current))
+            return chunks
+
+        # Format response message
+        embed_title = "SSO Reconciliation"
+        embeds = []
+        current_embed = disnake.Embed(title=embed_title)
+        current_size = len(embed_title)
+        current_fields = 0
+        # Add Event Time field first
+        event_time_field = ("Event Time", f"<t:{int(event_time.timestamp())}:F>")
+        current_embed.add_field(name=event_time_field[0], value=event_time_field[1], inline=False)
+        current_size += len(event_time_field[0]) + len(event_time_field[1])
+        current_fields += 1
+        # Chunk logins into field-sized groups
+        login_chunks = split_fields(logins)
+        # Add login_chunks fields
+        for i, chunk in enumerate(login_chunks, 1):
+            field_name = f"Active Sessions {i}" if len(login_chunks) > 1 else "Active Sessions"
+            field_value = chunk
+            field_size = len(field_name) + len(field_value)
+            # 6000 char limit per embed and 25 fields per embed
+            if current_size + field_size > 6000 or current_fields >= 25:
+                embeds.append(current_embed)
+                current_embed = disnake.Embed(title=embed_title)
+                current_size = len(embed_title)
+                current_fields = 0
+            current_embed.add_field(name=field_name, value=field_value, inline=False)
+            current_size += field_size
+            current_fields += 1
+        if not login_chunks:
+            no_logs_value = f"No active sessions for period <t:{int(start_time.timestamp())}:T> to <t:{int(end_time.timestamp())}:T>."
+            if current_size + len("Active Sessions") + len(no_logs_value) > 6000 or current_fields >= 25:
+                embeds.append(current_embed)
+                current_embed = disnake.Embed(title=embed_title)
+                current_size = len(embed_title)
+                current_fields = 0
+            current_embed.add_field(name="Active Sessions", value=no_logs_value, inline=False)
+            current_size += len("Active Sessions") + len(no_logs_value)
+            current_fields += 1
+        # Append last embed if it has fields
+        if len(current_embed.fields) > 0:
+            embeds.append(current_embed)
+        return embeds
+
+    @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
+    async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
+        # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
+
+        if not EVENT_CHANNEL_MATCHER.match(inter.channel.name):
+            await inter.send(content="⚠️ **Reconcile can only be used in an event channel.**", ephemeral=True)
+            return
+
+        await inter.response.defer()
+        embeds = await self._get_reconcile_embed_response(channel=inter.channel, inter=inter)
+
+        if embeds:
+            for embed in embeds:
+                await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+
+    @sso.sub_command_group(description="Character commands", name="character")
+    async def character(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @sso_admin.sub_command_group(description="Admin character commands", name="character")
+    async def character_admin(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @character_admin.sub_command(description="Add a character to an account", name="add")
+    async def character_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to add character for", autocomplete=account_autocomplete
+        ),
+        character_name: str = commands.Param(
+            description="Character to add to the account",
+        ),
+        character_class: sso_model.CharacterClass = commands.Param(
+            description="Class of the character",
+        ),
+    ):
+        try:
+            character_name = character_name.lower().capitalize()
+            char = sso_model.add_account_character(
+                guild_id=inter.guild_id, real_user=username, name=character_name, klass=character_class
+            )
+            message = f"✨🧍 **Added character** `{char.name}` *({char.klass.value})* on account 🤖 `{username}`."
+        except sso_model.SSOAccountNotFoundError:
+            message = f"⚠️🤖 **Account not found:** `{username}`"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except sso_model.SSOCharacterAlreadyExistsError:
+            message = f"⚠️🧍 **Character already exists:** `{character_name}`"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except Exception as e:
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
+            await inter.send(content=message, ephemeral=True)
+            return
+
+        await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id)
+
+    @character_admin.sub_command(description="Remove a character from an account", name="remove")
+    async def character_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(
+            description="Character name to remove from the account", autocomplete=character_autocomplete
+        ),
+    ):
+        try:
+            character_name = character_name.lower().capitalize()
+            removed = sso_model.remove_account_character(guild_id=inter.guild_id, name=character_name)
+            if removed:
+                message = f"🗑️🧍 **Deleted character:** `{character_name}`"
+            else:
+                message = f"⚠️🧍 **Character not found:** `{character_name}`"
+                await inter.send(content=message, ephemeral=True)
+                return
+        except Exception as e:
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
+            await inter.send(content=message, ephemeral=True)
+            return
+        await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id)
+
+    @character.sub_command(description="List all characters for an account", name="list")
+    async def character_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(
+            description="Account username to list characters for", autocomplete=account_autocomplete, default=None
+        ),
+    ):
+        try:
+            characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
+            if characters:
+                desc = "\n".join(
+                    f" * `{c.name}` ({c.klass.value}){'' if username else f' on `{c.account.real_user}`'}"
+                    for c in characters
+                )
+            else:
+                desc = "\nNo characters found in this server."
+            if username:
+                message = f"**🧍Characters for `{username}`:**\n{desc}"
+            else:
+                message = f"**🧍Characters:**\n{desc}"
+        except sso_model.SSOAccountNotFoundError:
+            message = f"⚠️🤖 **Account not found:** `{username}`"
+            await inter.send(content=message, ephemeral=True)
+            return
+        except Exception as e:
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
+            await inter.send(content=message, ephemeral=True)
+            return
+        await send_and_split(inter.send, message, True)
+
+    # @commands.Cog.listener()
+    # async def on_guild_channel_create(self, channel):
+    #     if EVENT_CHANNEL_MATCHER.match(channel.name):
+    #         # Run our own reconcile slash command
+    #         embed = await self._get_reconcile_embed_response(channel=channel)
+    #         if embed:
+    #             print(f"Reconciling new event channel: {channel.name} in {channel.guild.name}")
+    #             time.sleep(5)
+    #             await channel.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+    #         else:
+    #             print(f"Failed to reconcile on new event channel: {channel.name} in {channel.guild.name}")
 
 
 def setup(bot):

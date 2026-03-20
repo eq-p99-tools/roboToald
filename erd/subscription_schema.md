@@ -1,53 +1,58 @@
-# RoboToald Subscription Database Schema
+# Subscription Database Schema
 
-## Tables and Relationships
+> **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-### 1. Subscription
-- **Description**: Represents user subscriptions to various targets with expiry tracking
-- **Columns**:
-  - `user_id` (Integer, Part of Primary Key)
-  - `target` (String(255), Part of Primary Key)
-  - `expiry` (Integer, Not Null)
-  - `last_notified` (Integer, Default: 0)
-  - `lead_time` (Integer, Default: 1800, Not Null)
-  - `last_window_start` (Integer, Default: 0)
-  - `guild_id` (Integer, Not Null)
-- **Indexes**:
-  - Primary Key Constraint: `pk_user_id_target` on (`user_id`, `target`)
+Source: `roboToald/db/models/subscription.py`
+
+Used by the raid-window subscription system (`/raidtarget` commands).
 
 ## Entity Relationship Diagram
 
-Please refer to the [Subscription ERD](./subscription_erd.svg) for a visual representation of this table.
+```mermaid
+erDiagram
+    Subscription {
+        int user_id PK
+        string target PK
+        int guild_id PK
+        int expiry
+        int last_notified
+        int lead_time
+        int last_window_start
+    }
+```
 
-## Key Database Operations
+## Table
 
-1. **Subscription Management**:
-   - Users can create, update, and delete subscriptions to various targets
-   - Each subscription is uniquely identified by the combination of user_id and target
-   - Subscriptions are associated with specific guilds
+### Subscription
 
-2. **Expiry Tracking**:
-   - The system tracks when subscriptions expire using the `expiry` field
-   - Users can be notified before expiry based on the `lead_time` setting
-   - The `last_notified` field prevents duplicate notifications
+Each row is a user's subscription to a specific raid target. The user receives DM notifications when the target's raid window opens or is approaching.
 
-3. **Notification Windows**:
-   - The `last_window_start` field helps manage notification periods
-   - Notifications can be scheduled at appropriate intervals before expiry
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `user_id` | Integer | PK (composite) | Discord user ID |
+| `target` | String(255) | PK (composite) | Raid target name |
+| `guild_id` | Integer | PK (composite), NOT NULL | Discord guild |
+| `expiry` | Integer | NOT NULL | Unix timestamp when this subscription expires |
+| `last_notified` | Integer | default `0` | Unix timestamp of last notification sent |
+| `lead_time` | Integer | NOT NULL, default `1800` | Seconds before window open to send notification (default 30 minutes) |
+| `last_window_start` | Integer | default `0` | Unix timestamp of the last window start that triggered a notification |
 
-## Implementation Notes
+**Primary key:** `(user_id, target, guild_id)` -- a user can subscribe to the same target in different guilds but cannot have duplicate subscriptions within a guild.
 
-The Subscription model inherits from both `base.Base` (SQLAlchemy declarative base) and `base.MyBase` (custom base class with helper methods). This provides additional functionality for querying and managing subscriptions beyond basic ORM operations.
+## Notification Flow
 
-The composite primary key (`user_id`, `target`) ensures that a user can only have one subscription to a specific target, preventing duplicate subscriptions.
+1. A background task (`announce_subscriptions_task`) runs every ~60 seconds.
+2. It fetches raid target data from the configured `raidtargets_endpoint` for each guild.
+3. For each subscription, it checks:
+   - Has the subscription expired? If so, it is cleaned up.
+   - Is a raid window currently open or within `lead_time` seconds of opening?
+   - Has a notification already been sent for this specific window (`last_window_start` match)?
+4. If conditions are met, the bot DMs the user with the raid target details.
+5. `last_notified` and `last_window_start` are updated to prevent duplicate notifications.
 
-## Usage Examples
+## Expiry and Renewal
 
-Subscriptions are typically used to track time-limited resources or events, such as:
-
-- Game subscription renewals
-- Event registrations with deadlines
-- Limited-time access to resources
-- Membership renewals
-
-The system can notify users when their subscriptions are approaching expiry, allowing them to take action before access is lost.
+- Subscriptions are created with a 30-day expiry (`time.time() + 30 days`).
+- When a notification is sent, it includes a "Refresh" button that extends the expiry by another 30 days.
+- An "Unsubscribe" button is also included for easy removal.
+- Expired subscriptions are cleaned up by `clean_expired_subscriptions()`.

@@ -1,4 +1,4 @@
-disnake
+disnake>=2.11.0
 requests
 sqlalchemy
 sqlalchemy-utils
@@ -9,5 +9,6 @@ python-dateutil
 pynacl
 fastapi
 uvicorn
+websockets
 pydantic
 alembic

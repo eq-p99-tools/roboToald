@@ -10,174 +10,144 @@ from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
 
-RAIDTARGET_GUILDS = config.guilds_for_command('raidtarget')
+RAIDTARGET_GUILDS = config.guilds_for_command("raidtarget")
 MAX_AC_RESULTS = 25
 
 
-@base.DISCORD_CLIENT.slash_command(
-    description="Raid Target commands",
-    guild_ids=RAIDTARGET_GUILDS)
+@base.DISCORD_CLIENT.slash_command(description="Raid Target commands", guild_ids=RAIDTARGET_GUILDS)
 async def raidtarget(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-def autocomplete_raid_target(
-        inter: disnake.ApplicationCommandInteraction,
-        user_input: str):
-    return [target_name for target_name in rt_data.RaidTargets.get_all_names()
-            if user_input.lower() in target_name.lower()][:MAX_AC_RESULTS]
+def autocomplete_raid_target(inter: disnake.ApplicationCommandInteraction, user_input: str):
+    names = rt_data.RaidTargets.get_all_names(inter.guild_id)
+    return [name for name in names if user_input.lower() in name.lower()][:MAX_AC_RESULTS]
 
 
-def autocomplete_existing_subscription(
-        inter: disnake.ApplicationCommandInteraction,
-        user_input: str):
-    subs = sub_model.get_subscriptions_for_user(inter.user.id)
+def autocomplete_existing_subscription(inter: disnake.ApplicationCommandInteraction, user_input: str):
+    subs = sub_model.get_subscriptions_for_user(inter.user.id, guild_id=inter.guild_id)
     return [sub.target for sub in subs]
 
 
-@raidtarget.sub_command(
-    description="Subscribe to a raid target timer", name="subscribe")
+@raidtarget.sub_command(description="Subscribe to a raid target timer", name="subscribe")
 async def subscribe(
-        inter: disnake.ApplicationCommandInteraction,
-        target: str = commands.Param(
-            autocomplete=autocomplete_raid_target,
-            description="The name of the raid target"),
-        lead_time_minutes: int = commands.Param(
-            default=30,
-            description="Number of minutes before the window to send the "
-                        "notification")
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="The name of the raid target"),
+    lead_time_minutes: int = commands.Param(
+        default=30, description="Number of minutes before the window to send the notification"
+    ),
 ):
     lead_time = int(lead_time_minutes * 60)
-    if base.is_user_authorized(
-            guild=inter.guild,
-            user_id=inter.user.id,
-            role_id=config.get_member_role(inter.guild_id)):
-        sub_db = sub_model.Subscription(
-            user_id=inter.user.id,
-            target=target,
-            expiry=int(
-                time.time() + datetime.timedelta(days=30).total_seconds()),
-            guild_id=inter.guild_id,
-            lead_time=lead_time
-        )
-        try:
-            sub_db.store()
-            message = f"Subscribed to `{target}`."
-        except:
-            message = (
-                f"Failed to subscribe to `{target}`. Either this subscription "
-                f"already exists, or something went *horribly wrong* "
-                f"and everything is about to be on fire.")
-    else:
-        message = "You are not authorized to subscribe to raid _targets."
+    if not base.is_user_authorized(
+        guild=inter.guild, user_id=inter.user.id, role_id=config.get_member_role(inter.guild_id)
+    ):
+        await inter.send(content="You are not authorized to subscribe to raid targets.", ephemeral=True)
+        return
 
-    await inter.send(
-        content=message,
-        ephemeral=True
+    valid_names = rt_data.RaidTargets.get_all_names(inter.guild_id)
+    if target not in valid_names:
+        await inter.send(content=f"`{target}` is not a valid raid target for this server.", ephemeral=True)
+        return
+
+    sub_db = sub_model.Subscription(
+        user_id=inter.user.id,
+        target=target,
+        expiry=int(time.time() + datetime.timedelta(days=30).total_seconds()),
+        guild_id=inter.guild_id,
+        lead_time=lead_time,
     )
+    try:
+        sub_db.store()
+        message = f"Subscribed to `{target}`."
+    except Exception:
+        message = (
+            f"Failed to subscribe to `{target}`. Either this subscription "
+            f"already exists, or something went *horribly wrong* "
+            f"and everything is about to be on fire."
+        )
+
+    await inter.send(content=message, ephemeral=True)
 
 
-@raidtarget.sub_command(
-    description="Unsubscribe from a raid target timer", name="unsubscribe")
+@raidtarget.sub_command(description="Unsubscribe from a raid target timer", name="unsubscribe")
 async def unsubscribe(
-        inter: disnake.ApplicationCommandInteraction,
-        target: str = commands.Param(
-            autocomplete=autocomplete_existing_subscription,
-            description="The name of the raid target")
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(
+        autocomplete=autocomplete_existing_subscription, description="The name of the raid target"
+    ),
 ):
     try:
-        sub_model.delete_subscription(user_id=inter.user.id, target=target)
+        sub_model.delete_subscription(user_id=inter.user.id, target=target, guild_id=inter.guild_id)
         message = f"Unsubscribed from `{target}`."
-    except:
+    except Exception:
         message = (
             f"Failed to unsubscribe from `{target}`. Either this subscription "
             f"doesn't exist, or something went *horribly wrong* "
-            f"and everything is about to be on fire.")
+            f"and everything is about to be on fire."
+        )
 
-    await inter.send(
-        content=message,
-        ephemeral=True
-    )
+    await inter.send(content=message, ephemeral=True)
 
 
-@raidtarget.sub_command(
-    description="Unsubscribe from a raid target timer", name="subscriptions")
+@raidtarget.sub_command(description="Unsubscribe from a raid target timer", name="subscriptions")
 async def subscriptions(inter: disnake.ApplicationCommandInteraction):
-    user_subs = sub_model.get_subscriptions_for_user(inter.user.id)
+    user_subs = sub_model.get_subscriptions_for_user(inter.user.id, guild_id=inter.guild_id)
 
     embeds = []
     for sub in user_subs:
         embeds.append(make_subscription_embed(sub))
 
     dm = None
-    s = 's' if len(embeds) > 1 else ''
+    s = "s" if len(embeds) > 1 else ""
     if embeds:
         dm = await inter.user.send(content=f"Subscription{s}:")
     for embed in embeds:
         await inter.user.send(
             embed=embed,
             components=[
-                disnake.ui.Button(
-                    label="Unsubscribe",
-                    style=disnake.ButtonStyle.danger,
-                    custom_id="unsubscribe"),
-                disnake.ui.Button(
-                    label="Refresh",
-                    style=disnake.ButtonStyle.success,
-                    custom_id="refresh"),
-            ]
+                disnake.ui.Button(label="Unsubscribe", style=disnake.ButtonStyle.danger, custom_id="unsubscribe"),
+                disnake.ui.Button(label="Refresh", style=disnake.ButtonStyle.success, custom_id="refresh"),
+            ],
         )
 
     if embeds:
         message = f"Sent {len(embeds)} subscription{s} via DM: {dm.jump_url}"
     else:
         message = "No active subscriptions found."
-    await inter.send(
-        content=message,
-        ephemeral=True
-    )
+    await inter.send(content=message, ephemeral=True)
 
 
 def make_subscription_embed(sub_obj: sub_model.Subscription) -> disnake.Embed:
-    last_notified = (f"<t:{sub_obj.last_notified}:R>"
-                     if sub_obj.last_notified else "Never")
-    embed = disnake.Embed(
-        title=sub_obj.target
-    )
-    embed.add_field("Lead Time", "{:0>8}".format(
-        str(datetime.timedelta(seconds=sub_obj.lead_time))))
+    last_notified = f"<t:{sub_obj.last_notified}:R>" if sub_obj.last_notified else "Never"
+    embed = disnake.Embed(title=sub_obj.target)
+    embed.add_field("Lead Time", "{:0>8}".format(str(datetime.timedelta(seconds=sub_obj.lead_time))))
     embed.add_field("Last Notification", last_notified)
     embed.add_field("Expires", f"<t:{sub_obj.expiry}:R>")
+    embed.set_footer(text=str(sub_obj.guild_id))
     return embed
 
 
 async def refresh_listener(inter: disnake.MessageInteraction):
     target = inter.message.embeds[0].title
     user_id = inter.user.id
-    new_sub = sub_model.refresh_subscription(user_id=user_id, target=target)
+    guild_id = int(inter.message.embeds[0].footer.text)
+    new_sub = sub_model.refresh_subscription(user_id=user_id, target=target, guild_id=guild_id)
     if new_sub:
-        await inter.message.edit(
-            content="Refreshed.",
-            embeds=[make_subscription_embed(sub_obj=new_sub)]
-        )
+        await inter.message.edit(content="Refreshed.", embeds=[make_subscription_embed(sub_obj=new_sub)])
     await inter.response.defer()
 
 
 async def unsubscribe_listener(inter: disnake.MessageInteraction):
     target = inter.message.embeds[0].title
     user_id = inter.user.id
-    deleted = sub_model.delete_subscription(user_id=user_id, target=target)
+    guild_id = int(inter.message.embeds[0].footer.text)
+    deleted = sub_model.delete_subscription(user_id=user_id, target=target, guild_id=guild_id)
     if deleted:
-        await inter.message.edit(
-            content=f"Unsubscribed from target `{target}`.",
-            embeds=[],
-            components=[]
-        )
+        await inter.message.edit(content=f"Unsubscribed from target `{target}`.", embeds=[], components=[])
     await inter.response.defer()
 
 
-def make_announce_embed(
-        active_window: rt_data.RaidWindow) -> disnake.Embed:
+def make_announce_embed(active_window: rt_data.RaidWindow) -> disnake.Embed:
     embed = disnake.Embed()
     target = active_window.target
     embed.title = f":boom:** {target.name} **:boom:"
@@ -190,62 +160,53 @@ def make_announce_embed(
 
 
 async def announce_subscriptions():
-    # print("Running subscription notification task.")
     sub_model.clean_expired_subscriptions()
     subs_for_notify = sub_model.get_subscriptions_for_notification()
-    sub_map = {}
+
+    guild_sub_map: dict[int, dict[str, list]] = {}
     for sub in subs_for_notify:
-        if sub.target not in sub_map:
-            sub_map[sub.target] = [sub]
-        else:
-            sub_map[sub.target].append(sub)
+        guild_subs = guild_sub_map.setdefault(sub.guild_id, {})
+        guild_subs.setdefault(sub.target, []).append(sub)
 
     now = time.time()
     messages = []
-    raid_targets = rt_data.RaidTargets.get_targets()
-    for target in raid_targets:
-        if target.name not in sub_map:
-            continue
-        active_window = target.get_active_window(now)
-        if not active_window:
-            continue
-        time_until = active_window.get_time_until(now)
-        embed = make_announce_embed(active_window)
-        for sub in sub_map[target.name]:
-            within_lead = time_until <= datetime.timedelta(seconds=sub.lead_time)
-            already_notified = sub.last_window_start == active_window.start
-            if within_lead and not already_notified:
-                if base.is_user_authorized(
+
+    for guild_id, sub_map in guild_sub_map.items():
+        soon_threshold = config.get_raidtargets_soon_threshold(guild_id)
+        raid_targets = rt_data.RaidTargets.get_targets(guild_id)
+
+        for target in raid_targets:
+            if target.name not in sub_map:
+                continue
+            active_window = target.get_active_window(now, soon_threshold=soon_threshold)
+            if not active_window:
+                continue
+            time_until = active_window.get_time_until(now)
+            embed = make_announce_embed(active_window)
+            for sub in sub_map[target.name]:
+                within_lead = time_until <= datetime.timedelta(seconds=sub.lead_time)
+                already_notified = sub.last_window_start == active_window.start
+                if within_lead and not already_notified:
+                    if base.is_user_authorized(
                         guild=base.DISCORD_CLIENT.get_guild(sub.guild_id),
                         user_id=sub.user_id,
-                        role_id=config.get_member_role(sub.guild_id)):
-                    user = base.DISCORD_CLIENT.get_user(sub.user_id)
-                    if user:
-                        messages.append(user.send(embed=embed))
-                        sub_model.mark_subscription_sent(
-                            sub.user_id, target.name,
-                            start_time=active_window.start
-                        )
+                        role_id=config.get_member_role(sub.guild_id),
+                    ):
+                        user = base.DISCORD_CLIENT.get_user(sub.user_id)
+                        if user:
+                            messages.append(user.send(embed=embed))
+                            sub_model.mark_subscription_sent(
+                                sub.user_id, target.name, guild_id=sub.guild_id, start_time=active_window.start
+                            )
+                        else:
+                            print(f"Could not load user for DM: {sub.user_id}")
                     else:
-                        print(f"Could not load user for DM: {sub.user_id}")
-                else:
-                    print(f"User `{sub.user_id}` did not have the required "
-                          f"role, removing watch `{target.name}`.")
-                    sub_model.delete_subscription(sub.user_id, target.name)
-            # elif within_lead:
-            #     print(f'Already notified {sub.user_id} about this '
-            #           f'{target.name} window.')
-            # else:
-            #     ttn = time_until - datetime.timedelta(seconds=sub.lead_time)
-            #     print(f'Not yet time to notify about {target.name} for '
-            #           f'{sub.user_id} ({ttn} to notification)')
+                        print(f"User `{sub.user_id}` did not have the required role, removing watch `{target.name}`.")
+                        sub_model.delete_subscription(sub.user_id, target.name, guild_id=sub.guild_id)
 
     await asyncio.gather(*messages)
     if messages:
         print(f"Sent {len(messages)} subscription notifications.")
 
 
-BUTTON_LISTENERS = {
-    'unsubscribe': unsubscribe_listener,
-    'refresh': refresh_listener
-}
+BUTTON_LISTENERS = {"unsubscribe": unsubscribe_listener, "refresh": refresh_listener}

@@ -13,11 +13,8 @@ async def data(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-@data.sub_command(
-    name="calendar",
-    description="Render a calendar of urn purchases.")
-async def calendar_cmd(
-        inter: disnake.ApplicationCommandInteraction):
+@data.sub_command(name="calendar", description="Render a calendar of urn purchases.")
+async def calendar_cmd(inter: disnake.ApplicationCommandInteraction):
     # Defer the response to avoid timeouts
     await inter.response.defer()
 
@@ -61,14 +58,14 @@ async def calendar_cmd(
     cal_message = ""
     for i, month_group in enumerate(month_groups):
         if i % 2 == 0 and i != 0:
-            await inter.send(content=f'```{cal_message}```')
+            await inter.send(content=f"```{cal_message}```")
             cal_message = ""
         horizontal_line = ""
         if i % 2 != 0:
             horizontal_line = "\n\n" + "=" * len(month_group.splitlines()[0]) + "\n\n"
         cal_message += f"{horizontal_line}" + month_group
     if cal_message:
-        await inter.send(content=f'```{cal_message}```')
+        await inter.send(content=f"```{cal_message}```")
 
 
 def combine_months(months, num_cols):
@@ -93,10 +90,10 @@ def combine_months(months, num_cols):
             for month in month_set:
                 try:
                     line += month.splitlines()[i] + " || "
-                except IndexError as e:
+                except IndexError:
                     line += " " * len(month.splitlines()[0]) + " || "
             one_set.append(line[:-4])
-        combined_months.append('\n'.join(one_set))
+        combined_months.append("\n".join(one_set))
     return combined_months
 
 
@@ -118,8 +115,7 @@ def mark_date(cal_month, day):
 
 
 @data.sub_command(description="Show urn purchase history.")
-async def purchases(
-        inter: disnake.ApplicationCommandInteraction):
+async def purchases(inter: disnake.ApplicationCommandInteraction):
     # Defer the response to avoid timeouts
     await inter.response.defer()
 
@@ -139,8 +135,7 @@ async def purchases(
 
 
 @data.sub_command(description="Show a historical overview of the DS camp.")
-async def overview(
-        inter: disnake.ApplicationCommandInteraction):
+async def overview(inter: disnake.ApplicationCommandInteraction):
     # Defer the response to avoid timeouts
     await inter.response.defer()
 
@@ -161,8 +156,7 @@ async def overview(
     # Get total number of minutes spent
     minutes_by_member = {}
     total_minutes = 0
-    all_audits = points_model.get_events_since_time(
-        inter.guild_id, datetime.datetime.fromtimestamp(0))
+    all_audits = points_model.get_events_since_time(inter.guild_id, datetime.datetime.fromtimestamp(0))
     all_audits_by_member = points_model.get_event_pairs_split_members(all_audits)
     for member, member_audits in all_audits_by_member.items():
         minutes = 0
@@ -236,10 +230,9 @@ async def overview(
             f"* <@{member}> earned `{points_earned} points` over "
             f"`{member_minutes} minutes`, and spent a total of "
             f"`{points_spent} points` on `{num_urns} urn{'s' if num_urns != 1 else ''}`"
-            f"{average_string}.\n")
+            f"{average_string}.\n"
+        )
 
-    await inter.send(
-        content=message_camp, allowed_mentions=disnake.AllowedMentions(users=False)
-    )
+    await inter.send(content=message_camp, allowed_mentions=disnake.AllowedMentions(users=False))
 
     await utils.send_and_split(inter, message_members)
