@@ -107,7 +107,7 @@ batphone.py (entry point)
     └── discord_client.DISCORD_CLIENT.run()
         ├── on_ready                     # Restore timers, DS state, subscriptions
         ├── on_message                   # Alert matching, wakeup triggers
-        ├── on_button_click              # Subscription refresh/unsubscribe
+        ├── on_button_click              # BUTTON_LISTENERS (prefix match on custom_id)
         └── slash commands               # /sso, /sso_admin, /ds, /batphone, /timer, /raidtarget, /random
 ```
 

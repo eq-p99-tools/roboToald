@@ -158,7 +158,9 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 |---|---|
 | `subscribe` | Subscribe to a raid target |
 | `unsubscribe` | Unsubscribe |
-| `subscriptions` | List your subscriptions |
+| `subscriptions` | List your subscriptions (DM includes Refresh / Unsubscribe buttons) |
+
+When a raid window is within your lead time, the bot DMs you with window times, how long until the subscription expires, and the same Refresh / Unsubscribe buttons. Button actions use encoded `custom_id` values (`action:target:guild_id`).
 
 ### `/random`
 
