@@ -1,7 +1,9 @@
 __pycache__
 .idea
 .pyc
-alerts.db*
+*.db
+*.sqlite3
+*.json
 batphone.ini*
 .python-version
 certs

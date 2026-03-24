@@ -47,7 +47,7 @@ Each row is a user's subscription to a specific raid target. The user receives D
    - Has the subscription expired? If so, it is cleaned up.
    - Is a raid window currently open or within `lead_time` seconds of opening?
    - Has a notification already been sent for this specific window (`last_window_start` match)?
-4. If conditions are met, the bot DMs the user with the raid target details.
+4. If conditions are met, the bot DMs the user with the raid window details (start/end/next), subscription expiry and lead time, and **Refresh** / **Unsubscribe** buttons. Button `custom_id` values encode `action:target:guild_id` so handlers do not rely on embed footers.
 5. `last_notified` and `last_window_start` are updated to prevent duplicate notifications.
 
 ## Expiry and Renewal

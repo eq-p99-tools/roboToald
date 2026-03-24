@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import time
+from typing import Optional, Tuple
 
 import disnake
 from disnake.ext import commands
@@ -93,28 +94,70 @@ async def unsubscribe(
 async def subscriptions(inter: disnake.ApplicationCommandInteraction):
     user_subs = sub_model.get_subscriptions_for_user(inter.user.id, guild_id=inter.guild_id)
 
-    embeds = []
-    for sub in user_subs:
-        embeds.append(make_subscription_embed(sub))
-
     dm = None
-    s = "s" if len(embeds) > 1 else ""
-    if embeds:
+    s = "s" if len(user_subs) > 1 else ""
+    if user_subs:
         dm = await inter.user.send(content=f"Subscription{s}:")
-    for embed in embeds:
+    for sub in user_subs:
+        embed = make_subscription_embed(sub)
         await inter.user.send(
             embed=embed,
-            components=[
-                disnake.ui.Button(label="Unsubscribe", style=disnake.ButtonStyle.danger, custom_id="unsubscribe"),
-                disnake.ui.Button(label="Refresh", style=disnake.ButtonStyle.success, custom_id="refresh"),
-            ],
+            components=_subscription_dm_buttons(sub.target, sub.guild_id),
         )
 
-    if embeds:
-        message = f"Sent {len(embeds)} subscription{s} via DM: {dm.jump_url}"
+    if user_subs:
+        message = f"Sent {len(user_subs)} subscription{s} via DM: {dm.jump_url}"
     else:
         message = "No active subscriptions found."
     await inter.send(content=message, ephemeral=True)
+
+
+def _make_button_id(action: str, target: str, guild_id: int) -> str:
+    return f"{action}:{target}:{guild_id}"
+
+
+def _subscription_dm_buttons(target: str, guild_id: int) -> list[disnake.ui.Button]:
+    """Unsubscribe / Refresh row for subscription DMs."""
+    return [
+        disnake.ui.Button(
+            label="Unsubscribe",
+            style=disnake.ButtonStyle.danger,
+            custom_id=_make_button_id("unsubscribe", target, guild_id),
+        ),
+        disnake.ui.Button(
+            label="Refresh",
+            style=disnake.ButtonStyle.success,
+            custom_id=_make_button_id("refresh", target, guild_id),
+        ),
+    ]
+
+
+def _parse_button_id(custom_id: str) -> Optional[Tuple[str, int]]:
+    parts = custom_id.split(":", 2)
+    if len(parts) == 3 and parts[0] in ("unsubscribe", "refresh"):
+        try:
+            return parts[1], int(parts[2])
+        except ValueError:
+            return None
+    return None
+
+
+def _resolve_target_guild_from_interaction(inter: disnake.MessageInteraction) -> Optional[Tuple[str, int]]:
+    parsed = _parse_button_id(inter.component.custom_id)
+    if parsed:
+        return parsed
+    # Legacy DMs: bare custom_id + target in embed title, guild_id in footer
+    if inter.component.custom_id not in ("unsubscribe", "refresh"):
+        return None
+    if not inter.message.embeds:
+        return None
+    embed = inter.message.embeds[0]
+    if not embed.title or not embed.footer or not embed.footer.text:
+        return None
+    try:
+        return embed.title, int(embed.footer.text)
+    except ValueError:
+        return None
 
 
 def make_subscription_embed(sub_obj: sub_model.Subscription) -> disnake.Embed:
@@ -123,39 +166,80 @@ def make_subscription_embed(sub_obj: sub_model.Subscription) -> disnake.Embed:
     embed.add_field("Lead Time", "{:0>8}".format(str(datetime.timedelta(seconds=sub_obj.lead_time))))
     embed.add_field("Last Notification", last_notified)
     embed.add_field("Expires", f"<t:{sub_obj.expiry}:R>")
-    embed.set_footer(text=str(sub_obj.guild_id))
     return embed
 
 
+def _copy_embed_update_expiry(old: disnake.Embed, new_sub: sub_model.Subscription) -> disnake.Embed:
+    """Duplicate the message embed and only change the Expires field (subscription refresh)."""
+    data = old.to_dict()
+    fields = list(data.get("fields") or [])
+    expiry_str = f"<t:{new_sub.expiry}:R>"
+    updated = False
+    for field in fields:
+        if field.get("name") == "Expires":
+            field["value"] = expiry_str
+            updated = True
+            break
+    if not updated:
+        fields.append({"name": "Expires", "value": expiry_str, "inline": False})
+    data["fields"] = fields
+    return disnake.Embed.from_dict(data)
+
+
 async def refresh_listener(inter: disnake.MessageInteraction):
-    target = inter.message.embeds[0].title
+    resolved = _resolve_target_guild_from_interaction(inter)
+    if not resolved:
+        await inter.response.defer()
+        return
+    target, guild_id = resolved
     user_id = inter.user.id
-    guild_id = int(inter.message.embeds[0].footer.text)
     new_sub = sub_model.refresh_subscription(user_id=user_id, target=target, guild_id=guild_id)
     if new_sub:
-        await inter.message.edit(content="Refreshed.", embeds=[make_subscription_embed(sub_obj=new_sub)])
+        old_embed = inter.message.embeds[0] if inter.message.embeds else None
+        if old_embed:
+            next_embed = _copy_embed_update_expiry(old_embed, new_sub)
+        else:
+            next_embed = make_subscription_embed(sub_obj=new_sub)
+        await inter.message.edit(
+            content="Refreshed.",
+            embeds=[next_embed],
+            components=_subscription_dm_buttons(new_sub.target, new_sub.guild_id),
+        )
     await inter.response.defer()
 
 
 async def unsubscribe_listener(inter: disnake.MessageInteraction):
-    target = inter.message.embeds[0].title
+    resolved = _resolve_target_guild_from_interaction(inter)
+    if not resolved:
+        await inter.response.defer()
+        return
+    target, guild_id = resolved
     user_id = inter.user.id
-    guild_id = int(inter.message.embeds[0].footer.text)
     deleted = sub_model.delete_subscription(user_id=user_id, target=target, guild_id=guild_id)
     if deleted:
-        await inter.message.edit(content=f"Unsubscribed from target `{target}`.", embeds=[], components=[])
+        await inter.message.edit(
+            content=f"Unsubscribed from target `{target}`.",
+            embeds=[],
+            components=[],
+        )
     await inter.response.defer()
 
 
-def make_announce_embed(active_window: rt_data.RaidWindow) -> disnake.Embed:
+def make_announce_embed(
+    active_window: rt_data.RaidWindow,
+    sub: sub_model.Subscription,
+) -> disnake.Embed:
     embed = disnake.Embed()
-    target = active_window.target
-    embed.title = f":boom:** {target.name} **:boom:"
+    raid_target = active_window.target
+    embed.title = f":boom:** {raid_target.name} **:boom:"
     embed.add_field("Start", f"<t:{active_window.start}:R>")
     embed.add_field("End", f"<t:{active_window.end}:R>")
     next_window = active_window.get_next()
     if next_window:
         embed.add_field("Next (estimated)", f"<t:{next_window.start}:R>")
+    embed.add_field("Expires", f"<t:{sub.expiry}:R>")
+    lead_fmt = "{:0>8}".format(str(datetime.timedelta(seconds=sub.lead_time)))
+    embed.add_field("Lead Time", lead_fmt)
     return embed
 
 
@@ -182,7 +266,6 @@ async def announce_subscriptions():
             if not active_window:
                 continue
             time_until = active_window.get_time_until(now)
-            embed = make_announce_embed(active_window)
             for sub in sub_map[target.name]:
                 within_lead = time_until <= datetime.timedelta(seconds=sub.lead_time)
                 already_notified = sub.last_window_start == active_window.start
@@ -194,14 +277,22 @@ async def announce_subscriptions():
                     ):
                         user = base.DISCORD_CLIENT.get_user(sub.user_id)
                         if user:
-                            messages.append(user.send(embed=embed))
+                            embed = make_announce_embed(active_window, sub)
+                            components = _subscription_dm_buttons(target.name, sub.guild_id)
+                            messages.append(user.send(embed=embed, components=components))
                             sub_model.mark_subscription_sent(
-                                sub.user_id, target.name, guild_id=sub.guild_id, start_time=active_window.start
+                                sub.user_id,
+                                target.name,
+                                guild_id=sub.guild_id,
+                                start_time=active_window.start,
                             )
                         else:
                             print(f"Could not load user for DM: {sub.user_id}")
                     else:
-                        print(f"User `{sub.user_id}` did not have the required role, removing watch `{target.name}`.")
+                        print(
+                            f"User `{sub.user_id}` did not have the required role, "
+                            f"removing watch `{target.name}`."
+                        )
                         sub_model.delete_subscription(sub.user_id, target.name, guild_id=sub.guild_id)
 
     await asyncio.gather(*messages)

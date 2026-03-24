@@ -13,7 +13,9 @@ async def announce_subscriptions_task():
     while True:
         start = time.time()
         try:
-            # print(f"Running Subscription Notifier: {datetime.datetime.now()}")
+            # print(
+            #     f"Running Subscription Notifier: {datetime.datetime.now()}"
+            # )
             await commands.cmd_raidtarget.announce_subscriptions()
         except Exception as e:
             print(e)
@@ -26,6 +28,7 @@ async def on_ready():
     global SUBSCRIPTION_TASK
 
     print(f"Logged in as: {DISCORD_CLIENT.user.name}")
+
     await commands.cmd_timer.load_timers()
     print("Loaded timers from DB.")
     await commands.cmd_ds.restore_spawn_overrides()
@@ -39,9 +42,14 @@ async def on_ready():
 
 @DISCORD_CLIENT.listen("on_button_click")
 async def help_listener(inter: disnake.MessageInteraction):
-    if inter.component.custom_id not in commands.BUTTON_LISTENERS:
-        # We filter out any other button presses except
-        # the components we wish to process.
-        return
-
-    await commands.BUTTON_LISTENERS[inter.component.custom_id](inter)
+    # Match by prefix so custom_ids can embed metadata
+    # (e.g. "unsubscribe:Target:guild_id").
+    # Longest keys first so a prefix cannot steal a longer match.
+    sorted_listeners = sorted(
+        commands.BUTTON_LISTENERS.items(),
+        key=lambda kv: -len(kv[0]),
+    )
+    for key, handler in sorted_listeners:
+        if inter.component.custom_id.startswith(key):
+            await handler(inter)
+            return

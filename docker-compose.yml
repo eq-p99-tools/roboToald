@@ -5,10 +5,11 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./alerts.db:/app/alerts.db
+      - ./data:/app/data
       - ./batphone.ini:/app/batphone.ini
-      - ./certs:/app/certs  # Bind local certs directory
+      - ./certs:/app/certs
       - ./audit_archives:/app/audit_archives
+      - ./google_service_config.json:/app/google_service_config.json
 
     restart: always
     ports:

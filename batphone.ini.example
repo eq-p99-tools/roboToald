@@ -25,6 +25,39 @@ quake_bonus = 150
 [wakeup]
 audiofile = wakeup.wav
 
+# Per-guild raid settings: [raid.<guild_id>]
+# Each guild that has enable_raid = true in its [guild.<id>] section
+# should have a corresponding [raid.<id>] section here.
+[raid.12345]
+#database_path = data/raids_12345.db
+#batphone_channel_id = <channel_id>
+#tracking_channel_id = <channel_id>
+#create_event_channel_id = <channel_id>
+#uploaded_events_channel_id = <channel_id>
+#event_category_ids = <category_id1>, <category_id2>
+#register_channel_id = <channel_id>
+#loot_channel_id = <channel_id>
+#send_batphone = false
+#create_channels = false
+#allowed_reload_ids = <discord_user_id1>, <discord_user_id2>
+
+# Per-guild EQdkp settings: [eqdkp.<guild_id>]
+[eqdkp.12345]
+#url = https://eqdkp.example.com
+#host = eqdkp.example.com
+#api_key = <eqdkp_api_key>
+#adjustment_event_id = 0
+
+# Per-guild Pushsafer settings: [pushsafer.<guild_id>]
+[pushsafer.12345]
+#private_key = <pushsafer_private_key>
+#guest_id = <pushsafer_guest_id>
+#title = Batphone
+
+[google_sheets]
+#config_file = google_service_account.json
+#spreadsheet_id = <google_spreadsheet_id>
+
 [guild.12345]
 # Member Role is necessary for raidtarget commands to work
 member_role = 77777
@@ -38,6 +71,8 @@ ds_schedule_channel = <channel_id>
 ds_admin_role = <role_id>
 enable_sso = true
 sso_admin_roles = <role_id1>, <role_id2>
+# Raid (batphone-bot) features:
+#enable_raid = true
 
 # Timer and Random functions default to true, but can be disabled:
 enable_timer = false

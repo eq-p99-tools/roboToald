@@ -15,9 +15,13 @@ if __name__ == "__main__":
     logging.root.addHandler(_handler)
     logging.root.setLevel(logging.INFO)
 
-    # Initialize database and run migrations
-    print("Initializing database and running migrations...")
+    # Initialize databases and run migrations
+    print("Initializing databases and running migrations...")
     base.initialize_database()
+
+    from roboToald.db.raid_base import initialize_raid_database
+    for _raid_gid in config.raid_guild_ids():
+        initialize_raid_database(_raid_gid)
 
     from roboToald.db.models import sso as sso_model
 

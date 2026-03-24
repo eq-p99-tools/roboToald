@@ -39,6 +39,7 @@ RUN pip install -r requirements.txt --only-binary :all: --find-links /wheels
 COPY scripts/ /app/scripts/
 COPY alembic.ini /app/
 COPY migrations/ /app/migrations/
+COPY raid_migrations/ /app/raid_migrations/
 COPY roboToald/ /app/roboToald/
 COPY batphone.py /app/
 

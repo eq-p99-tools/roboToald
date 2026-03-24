@@ -56,11 +56,11 @@ async def list_timers(
     all_channels: bool = commands.Param(default=False, description="Show timers for all channels?"),
 ):
     if all_users and all_channels:
-        timer_list = timer_model.get_timers()
+        timer_list = timer_model.get_timers_for_guild(inter.guild_id)
     elif all_users:
         timer_list = timer_model.get_timers_for_channel(inter.channel_id)
     elif all_channels:
-        timer_list = timer_model.get_timers_for_user(inter.user.id)
+        timer_list = timer_model.get_timers_for_user(inter.user.id, guild_id=inter.guild_id)
     else:
         timer_list = timer_model.get_timers_for_user_in_channel(inter.user.id, inter.channel_id)
     timer_embeds = []

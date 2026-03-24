@@ -791,7 +791,7 @@ class SSOCommands(commands.Cog):
         # Implement group add logic
         try:
             sso_model.add_account_to_group(inter.guild_id, group_name, username)
-            await inter.send(content=f"✨🤖🗂️ **Added user** `{username}` to group `{group_name}`")
+            await inter.send(content=f"✨🤖🗂️ **Added account** `{username}` to group `{group_name}`")
             ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
@@ -814,7 +814,7 @@ class SSOCommands(commands.Cog):
         # Implement group remove logic
         try:
             sso_model.remove_account_from_group(inter.guild_id, group_name, username)
-            await inter.send(content=f"🗑️🤖🗂️ **Removed user** `{username}` from group `{group_name}`")
+            await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{username}` from group `{group_name}`")
             ws_manager.notify_guild(inter.guild_id)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
