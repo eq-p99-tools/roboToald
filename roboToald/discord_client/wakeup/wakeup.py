@@ -1,8 +1,11 @@
 import asyncio
+import logging
 
 import disnake
 
 from roboToald import config
+
+logging.getLogger("disnake.voice_client").setLevel(logging.CRITICAL)
 
 
 async def process_message(message: disnake.Message) -> None:
