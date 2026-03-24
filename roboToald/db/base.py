@@ -31,7 +31,7 @@ class MyBase:
 # get_engine returns a Singleton engine object
 def get_engine(store={}) -> sqlalchemy.engine.Engine:
     if not store:
-        store["engine"] = sqlalchemy.create_engine("sqlite:///alerts.db", echo=False, future=True)
+        store["engine"] = sqlalchemy.create_engine("sqlite:///data/alerts.db", echo=False, future=True)
     return store["engine"]
 
 

@@ -28,6 +28,7 @@ async def on_ready():
     global SUBSCRIPTION_TASK
 
     print(f"Logged in as: {DISCORD_CLIENT.user.name}")
+
     await commands.cmd_timer.load_timers()
     print("Loaded timers from DB.")
     await commands.cmd_ds.restore_spawn_overrides()

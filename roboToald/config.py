@@ -25,6 +25,56 @@ OFFHOURS_ZONE = zoneinfo.ZoneInfo(CONF.get("ds", "offhours_zone", fallback="Amer
 
 WAKEUP_AUDIOFILE = CONF.get("wakeup", "audiofile", fallback="wakeup.wav")
 
+# Per-guild raid / batphone-bot settings — parsed from [raid.<guild_id>] sections
+RAID_SETTINGS: dict[int, dict] = {}
+for _section in CONF.sections():
+    if _section.startswith("raid."):
+        _gid = int(_section.split(".", 1)[1])
+        RAID_SETTINGS[_gid] = {
+            "database_path": CONF.get(_section, "database_path", fallback=f"data/raids_{_gid}.db"),
+            "batphone_channel_id": CONF.getint(_section, "batphone_channel_id", fallback=0),
+            "tracking_channel_id": CONF.getint(_section, "tracking_channel_id", fallback=0),
+            "create_event_channel_id": CONF.getint(_section, "create_event_channel_id", fallback=0),
+            "uploaded_events_channel_id": CONF.getint(_section, "uploaded_events_channel_id", fallback=0),
+            "event_category_ids": [
+                int(x.strip()) for x in CONF.get(_section, "event_category_ids", fallback="").split(",") if x.strip()
+            ],
+            "register_channel_id": CONF.getint(_section, "register_channel_id", fallback=0),
+            "send_batphone": CONF.getboolean(_section, "send_batphone", fallback=False),
+            "create_channels": CONF.getboolean(_section, "create_channels", fallback=False),
+            "allowed_reload_ids": [
+                x.strip() for x in CONF.get(_section, "allowed_reload_ids", fallback="").split(",") if x.strip()
+            ],
+            "loot_channel_id": CONF.getint(_section, "loot_channel_id", fallback=0),
+        }
+
+# Per-guild EQdkp settings — parsed from [eqdkp.<guild_id>] sections
+EQDKP_SETTINGS: dict[int, dict] = {}
+for _section in CONF.sections():
+    if _section.startswith("eqdkp."):
+        _gid = int(_section.split(".", 1)[1])
+        EQDKP_SETTINGS[_gid] = {
+            "url": CONF.get(_section, "url", fallback=None),
+            "host": CONF.get(_section, "host", fallback=None),
+            "api_key": CONF.get(_section, "api_key", fallback=None),
+            "adjustment_event_id": CONF.getint(_section, "adjustment_event_id", fallback=0),
+        }
+
+# Per-guild Pushsafer settings — parsed from [pushsafer.<guild_id>] sections
+PUSHSAFER_SETTINGS: dict[int, dict] = {}
+for _section in CONF.sections():
+    if _section.startswith("pushsafer."):
+        _gid = int(_section.split(".", 1)[1])
+        PUSHSAFER_SETTINGS[_gid] = {
+            "private_key": CONF.get(_section, "private_key", fallback=None),
+            "guest_id": CONF.get(_section, "guest_id", fallback=None),
+            "title": CONF.get(_section, "title", fallback="Batphone"),
+        }
+
+# Google Sheets settings (shared, not per-guild)
+GOOGLE_SHEETS_CONFIG_FILE = CONF.get("google_sheets", "config_file", fallback=None)
+GOOGLE_SHEETS_SPREADSHEET_ID = CONF.get("google_sheets", "spreadsheet_id", fallback=None)
+
 ENCRYPTION_KEY = CONF.get("sso", "encryption_key")
 API_CERTFILE = CONF.get("sso", "ssl_certfile", fallback=None)
 API_KEYFILE = CONF.get("sso", "ssl_keyfile", fallback=None)
@@ -49,6 +99,7 @@ for guild in TEST_GUILDS:
         "enable_raidtarget": CONF.getboolean(f"guild.{guild}", "enable_raidtarget", fallback=False),
         "enable_sso": CONF.getboolean(f"guild.{guild}", "enable_sso", fallback=False),
         "sso_admin_roles": [int(x) for x in CONF.get(f"guild.{guild}", "sso_admin_roles", fallback="0").split(",")],
+        "enable_raid": CONF.getboolean(f"guild.{guild}", "enable_raid", fallback=False),
         "enable_ds": CONF.getboolean(f"guild.{guild}", "enable_ds", fallback=False),
         "ds_tod_channel": CONF.getint(f"guild.{guild}", "ds_tod_channel", fallback=0),
         "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),
@@ -108,3 +159,20 @@ def get_raidtargets_authkey(guild_id: int) -> str | None:
 
 def get_raidtargets_soon_threshold(guild_id: int) -> int:
     return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_soon_threshold", 48 * 60 * 60)
+
+
+def raid_guild_ids() -> List[int]:
+    """Guild IDs that have both a [raid.<id>] section and enable_raid = true."""
+    return [gid for gid in RAID_SETTINGS if GUILD_SETTINGS.get(gid, {}).get("enable_raid", False)]
+
+
+def get_raid_setting(guild_id: int, key: str):
+    return RAID_SETTINGS.get(guild_id, {}).get(key)
+
+
+def get_eqdkp_setting(guild_id: int, key: str):
+    return EQDKP_SETTINGS.get(guild_id, {}).get(key)
+
+
+def get_pushsafer_setting(guild_id: int, key: str):
+    return PUSHSAFER_SETTINGS.get(guild_id, {}).get(key)

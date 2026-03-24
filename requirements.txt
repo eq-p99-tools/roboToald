@@ -12,3 +12,7 @@ uvicorn
 websockets
 pydantic
 alembic
+httpx
+gspread
+google-auth
+qrcode[pil]
