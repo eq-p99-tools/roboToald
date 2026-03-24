@@ -13,6 +13,8 @@ import io
 from roboToald import config
 from roboToald.api.websocket import manager as ws_manager
 from roboToald.db.models import sso as sso_model
+from roboToald.db.raid_base import get_raid_session
+from roboToald.db.raid_models.raid import Event
 
 SSO_GUILDS = config.guilds_for_command("sso")
 
@@ -1285,66 +1287,69 @@ class SSOCommands(commands.Cog):
     async def _get_reconcile_embed_response(
         channel: disnake.TextChannel, inter: disnake.ApplicationCommandInteraction = None
     ) -> list[disnake.Embed] | None:
-        # Get the latest Status message in this channel
-        status_embed = None
-        async for message in channel.history(limit=50):
-            if message.embeds and message.embeds[0].title == "Raid Status":
-                status_embed = message.embeds[0]
-                break
-        if not status_embed:
-            await channel.send(content="$status")
-        retries = 10
-        while not status_embed and retries > 0:
-            time.sleep(1)
-            retries -= 1
-            async for message in channel.history(limit=5):
+        guild_id = channel.guild.id
+        event_time = None
+
+        if guild_id in config.raid_guild_ids():
+            # Fast path: read event time directly from the raid database
+            with get_raid_session(guild_id) as session:
+                evt = session.query(Event).filter_by(channel_id=str(channel.id)).first()
+            if not evt or not evt.created_at:
+                if inter:
+                    await inter.send(content="⚠️ **No event found for this channel.**", ephemeral=True)
+                return
+            event_time = evt.created_at.replace(tzinfo=datetime.timezone.utc)
+        else:
+            # Fallback: scrape the Raid Status embed from channel history
+            status_embed = None
+            async for message in channel.history(limit=50):
                 if message.embeds and message.embeds[0].title == "Raid Status":
                     status_embed = message.embeds[0]
                     break
+            if not status_embed:
+                await channel.send(content="$status")
+            retries = 10
+            while not status_embed and retries > 0:
+                time.sleep(1)
+                retries -= 1
+                async for message in channel.history(limit=5):
+                    if message.embeds and message.embeds[0].title == "Raid Status":
+                        status_embed = message.embeds[0]
+                        break
 
-        if not status_embed:
-            if inter:
-                await inter.send(content="⚠️ **No Raid Status message found in this channel.**", ephemeral=True)
-            return
+            if not status_embed:
+                if inter:
+                    await inter.send(content="⚠️ **No Raid Status message found in this channel.**", ephemeral=True)
+                return
 
-        # Parse the attendee list out of the status message
-        # attendee_field = ([f for f in status_embed.fields if f.name == "Attendees"] or [None])[0]
-        # if not attendee_field:
-        #     await inter.send(content="Could not find Attendees field in Raid Status message.", ephemeral=True)
-        #     return
-        # attendee_list = attendee_field.value.splitlines()[1:-1]
-        # attendee_list = [x.split(" ")[1] for x in attendee_list]
+            event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
+            if not event_field:
+                if inter:
+                    await inter.send(
+                        content="⚠️ **Could not find Event Review field in Raid Status message.**", ephemeral=True
+                    )
+                return
+            event_header = event_field.value.splitlines()[1]
+            event_time = event_header.split(" added at ")[1]
+            event_time = " ".join(event_time.split(" ")[:3])
 
-        # Parse the exact event time out of the status message (the line containing " added at ")
-        event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
-        if not event_field:
-            if inter:
-                await inter.send(
-                    content="⚠️ **Could not find Event Review field in Raid Status message.**", ephemeral=True
-                )
-            return
-        event_header = event_field.value.splitlines()[1]
-        event_time = event_header.split(" added at ")[1]
-        event_time = " ".join(event_time.split(" ")[:3])
-
-        # Convert the event time to a datetime object
-        try:
-            event_time = datetime.datetime.strptime(event_time, "%Y-%m-%d %I:%M %p")
-            print(f"Got original event time: {event_time}")
-            event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo("America/New_York"))
-            print(f"Replaced timezone on event time: {event_time}")
-        except ValueError:
-            if inter:
-                await inter.send(content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True)
-            return
+            try:
+                event_time = datetime.datetime.strptime(event_time, "%Y-%m-%d %I:%M %p")
+                event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo("America/New_York"))
+            except ValueError:
+                if inter:
+                    await inter.send(
+                        content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True
+                    )
+                return
 
         if not event_time:
             if inter:
                 await inter.send(content="⚠️ **Could not find event time in Raid Status message.**", ephemeral=True)
             return
 
-        # Get character sessions overlapping the event window (-30 min to +1 hour)
-        start_time = event_time - datetime.timedelta(minutes=30)
+        # Get character sessions overlapping the event window (-5 min to +1 hour)
+        start_time = event_time - datetime.timedelta(minutes=5)
         end_time = event_time + datetime.timedelta(hours=1)
 
         local_tz = datetime.datetime.now().astimezone().tzinfo
