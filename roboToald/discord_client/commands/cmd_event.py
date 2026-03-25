@@ -836,7 +836,11 @@ async def _cmd_dkp(message: disnake.Message, args: str):
 
 @_dollar("status")
 async def _cmd_status(message: disnake.Message, _args: str):
-    embed = build_raid_status_embed(str(message.channel.id), message.guild.id)
+    guild_id = message.guild.id
+    with get_raid_session(guild_id) as session:
+        if not _get_event(session, str(message.channel.id)):
+            return
+    embed = build_raid_status_embed(str(message.channel.id), guild_id)
     await message.channel.send(embed=embed)
 
 
@@ -999,9 +1003,13 @@ async def _cmd_submit_reset(message: disnake.Message):
 
 @_dollar("delete-event")
 async def _cmd_delete_event(message: disnake.Message, _args: str):
-    if not perms.can(message.author, "delete_event", message.guild.id):
+    guild_id = message.guild.id
+    if not perms.can(message.author, "delete_event", guild_id):
         await message.channel.send("```diff\n- No permission.```")
         return
+    with get_raid_session(guild_id) as session:
+        if not _get_event(session, str(message.channel.id)):
+            return
     await message.channel.send("Deleting channel...")
     await message.channel.delete()
 
