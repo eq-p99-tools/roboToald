@@ -13,9 +13,10 @@ import sqlalchemy as sa
 from roboToald import config
 from roboToald.db.raid_base import get_raid_session
 from roboToald.db.raid_models.raid import Event, Attendee
-from roboToald.db.raid_models.loot import EventLoot, Loot, Item
+from roboToald.db.raid_models.loot import EventLoot, Loot, Item, LootTable
 from roboToald.db.raid_models.character import Character
 from roboToald.discord_client import base
+from roboToald.raid import permissions as perms
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ async def loot(inter: disnake.ApplicationCommandInteraction):
 @loot.sub_command(description="Record loot for a character.")
 async def add(
     inter: disnake.ApplicationCommandInteraction,
-    item: str = disnake.ext.commands.Param(description="Item name, ID, or wiki URL"),
+    item: str = disnake.ext.commands.Param(description="Item name, ID, or wiki URL", autocomplete=True),
     character: str = disnake.ext.commands.Param(description="Character name", autocomplete=True),
     dkp_value: int = disnake.ext.commands.Param(description="DKP value", name="dkp"),
 ):
@@ -116,6 +117,67 @@ async def add(
         await inter.response.send_message("\n".join(out))
 
 
+@loot.sub_command(description="Remove a loot entry from this event.")
+async def remove(
+    inter: disnake.ApplicationCommandInteraction,
+    entry: str = disnake.ext.commands.Param(
+        description="Loot entry to remove",
+        autocomplete=True,
+    ),
+):
+    guild_id = inter.guild.id
+    if not perms.can(inter.author, "unloot", guild_id):
+        await inter.response.send_message(
+            "```diff\n- No permission.```", ephemeral=True
+        )
+        return
+
+    loot_id_str = entry.strip()
+    if not loot_id_str.isdigit():
+        await inter.response.send_message(
+            "```diff\n- Please select an entry from the autocomplete list.```",
+            ephemeral=True,
+        )
+        return
+    loot_id = int(loot_id_str)
+
+    with get_raid_session(guild_id) as session:
+        evt = session.query(Event).filter_by(
+            channel_id=str(inter.channel.id)
+        ).first()
+        if not evt:
+            await inter.response.send_message(
+                "```diff\n- No event found for this channel.```",
+                ephemeral=True,
+            )
+            return
+        el = session.query(EventLoot).filter_by(
+            event_id=evt.id, id=loot_id
+        ).first()
+        if not el:
+            await inter.response.send_message(
+                f"```diff\n- Loot ID {loot_id} not found.```",
+                ephemeral=True,
+            )
+            return
+        item_rec = (
+            session.query(Item).get(el.item_id) if el.item_id else None
+        )
+        char = (
+            session.query(Character).get(el.character_id)
+            if el.character_id else None
+        )
+        item_name = item_rec.name if item_rec else "?"
+        char_name = char.name if char else "?"
+        el_dkp = el.dkp or 0
+        session.delete(el)
+        session.commit()
+        await inter.response.send_message(
+            f"```diff\n+ Loot ID {loot_id} removed."
+            f" ({item_name}, {char_name}, {el_dkp})```"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Autocomplete handlers
 # ---------------------------------------------------------------------------
@@ -132,6 +194,72 @@ def _character_choices(query: str, guild_id: int) -> dict[str, str]:
         if query:
             q = q.filter(sa.func.lower(Character.name).startswith(query))
         return {c.name: c.name for c in q.limit(25).all()}
+
+
+@add.autocomplete("item")
+async def _ac_item(inter: disnake.ApplicationCommandInteraction, query: str):
+    query = query.strip().lower()
+    guild_id = inter.guild.id
+    with get_raid_session(guild_id) as session:
+        evt = session.query(Event).filter_by(
+            channel_id=str(inter.channel.id)
+        ).first()
+        target_id = evt.target_id if evt else None
+
+        if target_id:
+            q = (
+                session.query(Item)
+                .join(LootTable, LootTable.item_id == Item.id)
+                .filter(LootTable.target_id == target_id)
+                .order_by(Item.name)
+            )
+        else:
+            q = session.query(Item).filter(
+                sa.func.length(Item.name) > 0
+            ).order_by(Item.name)
+
+        if query:
+            q = q.filter(sa.func.lower(Item.name).contains(query))
+        return {i.name: i.name for i in q.limit(25).all()}
+
+
+@remove.autocomplete("entry")
+async def _ac_remove_entry(
+    inter: disnake.ApplicationCommandInteraction, query: str
+):
+    query = query.strip().lower()
+    with get_raid_session(inter.guild.id) as session:
+        evt = session.query(Event).filter_by(
+            channel_id=str(inter.channel.id)
+        ).first()
+        if not evt:
+            return {}
+        entries = (
+            session.query(EventLoot)
+            .filter_by(event_id=evt.id)
+            .all()
+        )
+        choices: dict[str, str] = {}
+        for el in entries:
+            item_rec = (
+                session.query(Item).get(el.item_id)
+                if el.item_id else None
+            )
+            char = (
+                session.query(Character).get(el.character_id)
+                if el.character_id else None
+            )
+            item_name = item_rec.name if item_rec else "?"
+            char_name = char.name if char else "?"
+            label = (
+                f"{item_name} ({char_name}, {el.dkp or 0} DKP)"
+                f" [ID: {el.id}]"
+            )
+            if not query or query in label.lower():
+                choices[label] = str(el.id)
+            if len(choices) >= 25:
+                break
+        return choices
 
 
 @add.autocomplete("character")
