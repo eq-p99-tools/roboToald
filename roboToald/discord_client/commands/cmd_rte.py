@@ -187,7 +187,7 @@ async def _ac_start_character(inter: disnake.ApplicationCommandInteraction, quer
 
 
 @rte.sub_command(description="End RTE manually.")
-async def unrte(
+async def stop(
     inter: disnake.ApplicationCommandInteraction,
     character: str = disnake.ext.commands.Param(description="Character name", autocomplete=True),
     target_name: str = disnake.ext.commands.Param(description="Target name", name="target", autocomplete=True),
@@ -646,12 +646,12 @@ def _fmt_duration(seconds: float | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-@unrte.autocomplete("target")
+@stop.autocomplete("target")
 @submit.autocomplete("target")
 async def _ac_unrte_submit_target(inter: disnake.ApplicationCommandInteraction, query: str):
     return _rte_target_choices(query, inter.guild.id)
 
 
-@unrte.autocomplete("character")
+@stop.autocomplete("character")
 async def _ac_unrte_character(inter: disnake.ApplicationCommandInteraction, query: str):
     return _character_choices(query, inter.guild.id)
