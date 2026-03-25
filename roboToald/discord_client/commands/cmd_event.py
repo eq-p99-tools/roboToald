@@ -442,7 +442,7 @@ def _is_events_category(channel) -> bool:
 
 @base.DISCORD_CLIENT.listen("on_message")
 async def on_raid_message(message: disnake.Message):
-    if not message.guild or message.author.bot:
+    if not message.guild:
         return
     guild_id = message.guild.id
     if guild_id not in config.raid_guild_ids():
@@ -454,6 +454,10 @@ async def on_raid_message(message: disnake.Message):
     batphone_ch_id = config.get_raid_setting(guild_id, "batphone_channel_id")
     if batphone_ch_id and message.channel.id == batphone_ch_id and message.mention_everyone:
         await _handle_batphone(message)
+        return
+
+    # Don't process messages from bots except for batphone, so that goes above
+    if message.author.bot:
         return
 
     # !register in the registration channel
