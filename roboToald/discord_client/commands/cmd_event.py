@@ -456,10 +456,6 @@ async def on_raid_message(message: disnake.Message):
         await _handle_batphone(message)
         return
 
-    # Don't process messages from bots except for batphone, so that goes above
-    if message.author.bot:
-        return
-
     # !register in the registration channel
     register_ch_id = config.get_raid_setting(guild_id, "register_channel_id")
     if (

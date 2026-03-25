@@ -251,10 +251,7 @@ async def _ac_remove_entry(
             )
             item_name = item_rec.name if item_rec else "?"
             char_name = char.name if char else "?"
-            label = (
-                f"{item_name} ({char_name}, {el.dkp or 0} DKP)"
-                f" [ID: {el.id}]"
-            )
+            label = f"{item_name} ({char_name}, {el.dkp or 0} DKP)"
             if not query or query in label.lower():
                 choices[label] = str(el.id)
             if len(choices) >= 25:
