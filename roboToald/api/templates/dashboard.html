@@ -56,10 +56,7 @@
 </div>
 
 <div class="tab-panel active" id="tab-accounts">
-    <div class="section-header">
-        <h3>Accounts</h3>
-        <small class="htmx-indicator" id="accounts-indicator">Updating...</small>
-    </div>
+    <small class="htmx-indicator" id="accounts-indicator">Updating...</small>
     <div id="panel-accounts"
          hx-get="/admin/partials/accounts"
          hx-trigger="load, refreshAll from:body"
@@ -70,10 +67,7 @@
 </div>
 
 <div class="tab-panel" id="tab-connections">
-    <div class="section-header">
-        <h3>Connected WebSocket Clients</h3>
-        <small class="htmx-indicator" id="conn-indicator">Updating...</small>
-    </div>
+    <small class="htmx-indicator" id="conn-indicator">Updating...</small>
     <div id="panel-connections"
          hx-get="/admin/partials/connections"
          hx-trigger="load, refreshAll from:body"
@@ -84,10 +78,7 @@
 </div>
 
 <div class="tab-panel" id="tab-sessions">
-    <div class="section-header">
-        <h3>Active Character Sessions</h3>
-        <small class="htmx-indicator" id="sessions-indicator">Updating...</small>
-    </div>
+    <small class="htmx-indicator" id="sessions-indicator">Updating...</small>
     <div id="panel-sessions"
          hx-get="/admin/partials/sessions"
          hx-trigger="load, refreshAll from:body"
@@ -98,10 +89,7 @@
 </div>
 
 <div class="tab-panel" id="tab-audit">
-    <div class="section-header">
-        <h3>Recent Auth Log</h3>
-        <small class="htmx-indicator" id="audit-indicator">Updating...</small>
-    </div>
+    <small class="htmx-indicator" id="audit-indicator">Updating...</small>
     <div id="panel-audit"
          hx-get="/admin/partials/audit_log"
          hx-trigger="load, refreshAll from:body"
@@ -112,10 +100,7 @@
 </div>
 
 <div class="tab-panel" id="tab-ratelimit">
-    <div class="section-header">
-        <h3>Rate Limited IPs</h3>
-        <small class="htmx-indicator" id="ratelimit-indicator">Updating...</small>
-    </div>
+    <small class="htmx-indicator" id="ratelimit-indicator">Updating...</small>
     <div id="panel-ratelimit"
          hx-get="/admin/partials/rate_limited"
          hx-trigger="load, refreshAll from:body"
@@ -172,30 +157,18 @@
     refreshSel.addEventListener('change', startTimer);
     startTimer();
 
-    /* --- Preserve sub-tab state across HTMX swaps --- */
-    var subTabState = {};
-
+    /* --- Preserve sub-tab state across HTMX swaps ---
+       Before each swap, save the active sub-tab id onto the persistent
+       parent (.tab-panel) element.  The partial's own inline script reads
+       it back synchronously during the swap, before the browser paints. */
     document.body.addEventListener('htmx:beforeSwap', function(evt) {
-        var panel = evt.detail.target;
-        var activeBtn = panel.querySelector('.sub-tab-btn.active');
-        if (activeBtn) {
-            subTabState[panel.id] = activeBtn.dataset.subtab;
+        var panelEl = evt.detail.target;
+        var parent = panelEl.closest('.tab-panel') || panelEl.closest('.dashboard-section');
+        if (!parent) return;
+        var activeBtn = panelEl.querySelector('.sub-tab-btn.active');
+        if (activeBtn && activeBtn.dataset.subtab) {
+            parent.dataset.activeSubtab = activeBtn.dataset.subtab;
         }
-    });
-
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        var panel = evt.detail.target;
-        var savedId = subTabState[panel.id];
-        if (!savedId) return;
-        var target = document.getElementById(savedId);
-        if (!target) return;
-        var bar = panel.querySelector('.sub-tab-bar');
-        if (!bar) return;
-        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
-        var btn = bar.querySelector('[data-subtab="' + savedId + '"]');
-        if (btn) btn.classList.add('active');
-        panel.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
-        target.classList.add('active');
     });
 })();
 </script>

@@ -76,6 +76,22 @@
 (function() {
     var bar = document.getElementById('acct-guild-bar');
     if (!bar) return;
+    var parent = bar.closest('.tab-panel');
+
+    /* Restore saved sub-tab state immediately (before browser paints) */
+    var savedId = parent && parent.dataset.activeSubtab;
+    if (savedId) {
+        var savedBtn = bar.querySelector('[data-subtab="' + savedId + '"]');
+        var savedPanel = document.getElementById(savedId);
+        if (savedBtn && savedPanel) {
+            bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+            savedBtn.classList.add('active');
+            bar.parentElement.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+            savedPanel.classList.add('active');
+        }
+    }
+
+    /* Click handler — also persists selection to parent for next swap */
     bar.addEventListener('click', function(e) {
         var btn = e.target.closest('.sub-tab-btn');
         if (!btn) return;
@@ -83,6 +99,7 @@
         btn.classList.add('active');
         bar.parentElement.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
         document.getElementById(btn.dataset.subtab).classList.add('active');
+        if (parent) parent.dataset.activeSubtab = btn.dataset.subtab;
     });
 })();
 </script>
