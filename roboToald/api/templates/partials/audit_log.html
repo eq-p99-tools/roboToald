@@ -5,7 +5,7 @@
         <tr>
             <th>Time</th>
             <th>Username</th>
-            <th>IP Hash</th>
+            {% if is_super %}<th>IP Hash</th>{% endif %}
             <th>Result</th>
             <th>Discord User</th>
             <th>Version</th>
@@ -16,8 +16,8 @@
         {% for e in entries %}
         <tr>
             <td style="white-space: nowrap;">{{ e.timestamp }}</td>
-            <td>{{ e.username }}</td>
-            <td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}&#x1F512;{% elif e.ip_cc == 'unknown' or not e.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ e.ip_cc }}"></span>{% endif %} {{ e.ip_address }}</td>
+            <td><a href="#" onclick="showAuditModal('account','{{ e.username }}','{{ e.username }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ e.username }}</a></td>
+            {% if is_super %}<td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}&#x1F512;{% elif e.ip_cc == 'unknown' or not e.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ e.ip_cc }}"></span>{% endif %} {{ e.ip_address }}</td>{% endif %}
             <td>
                 {% if e.success %}
                 <span class="badge badge-success">OK</span>
@@ -25,7 +25,7 @@
                 <span class="badge badge-danger">FAIL</span>
                 {% endif %}
             </td>
-            <td>{{ e.user_name }}</td>
+            <td>{% if e.discord_user_id %}<a href="#" onclick="showAuditModal('user_id','{{ e.discord_user_id }}','{{ e.user_name }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ e.user_name }}</a>{% else %}{{ e.user_name }}{% endif %}</td>
             <td>{{ e.client_version }}</td>
             <td>{{ e.details }}</td>
         </tr>

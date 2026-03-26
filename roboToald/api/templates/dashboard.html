@@ -113,7 +113,32 @@
     </div>
 </div>
 
+<!-- Audit history modal -->
+<dialog id="audit-modal">
+    <article style="max-width: 900px; width: 90vw;">
+        <header>
+            <button aria-label="Close" rel="prev" onclick="document.getElementById('audit-modal').close()"></button>
+            <strong id="audit-modal-title"></strong>
+        </header>
+        <div id="audit-modal-body">
+            <p class="empty-state" aria-busy="true">Loading...</p>
+        </div>
+    </article>
+</dialog>
+
 <script>
+function showAuditModal(type, value, label) {
+    var dlg = document.getElementById('audit-modal');
+    document.getElementById('audit-modal-title').textContent = 'Auth history: ' + label;
+    document.getElementById('audit-modal-body').innerHTML = '<p class="empty-state" aria-busy="true">Loading...</p>';
+    dlg.showModal();
+    var url = '/admin/partials/audit_modal?' + encodeURIComponent(type) + '=' + encodeURIComponent(value);
+    htmx.ajax('GET', url, {target: '#audit-modal-body', swap: 'innerHTML'});
+}
+document.getElementById('audit-modal').addEventListener('click', function(e) {
+    if (e.target === this) this.close();
+});
+
 (function() {
     var refreshSel = document.getElementById('refresh-select');
     var guildSel = document.getElementById('guild-select');

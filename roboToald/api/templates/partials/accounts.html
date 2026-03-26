@@ -26,7 +26,7 @@
     <tbody>
         {% for a in g.accounts %}
         <tr>
-            <td style="white-space: nowrap; font-weight: 600;">{{ a.account }}</td>
+            <td style="white-space: nowrap; font-weight: 600;"><a href="#" onclick="showAuditModal('account','{{ a.account }}','{{ a.account }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ a.account }}</a></td>
             <td>
                 {% for c in a.characters %}
                 <span class="badge" style="background: #2d4a6a; color: #d8e8f3; margin: 1px 2px;">{{ c.name }}

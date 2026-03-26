@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import secrets
 import time
 import urllib.parse
 from pathlib import Path
@@ -28,7 +29,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 COOKIE_NAME = "admin_session"
 COOKIE_MAX_AGE = 86400
-_USE_SECURE_COOKIE = bool(config.API_CERTFILE and config.API_KEYFILE)
+STATE_COOKIE_NAME = "oauth_state"
+STATE_COOKIE_MAX_AGE = 300
+_USE_SECURE_COOKIE = bool(config.DASHBOARD_BASE_URL and config.DASHBOARD_BASE_URL.startswith("https://"))
 
 DISCORD_AUTHORIZE_URL = "https://discord.com/api/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
@@ -134,26 +137,40 @@ async def login_page(request: Request, error: str = ""):
     if _is_authenticated(request):
         return RedirectResponse("/admin", status_code=303)
 
+    state = secrets.token_urlsafe(32)
     params = urllib.parse.urlencode({
         "client_id": config.DISCORD_OAUTH_CLIENT_ID,
         "redirect_uri": _oauth_redirect_uri(),
         "response_type": "code",
         "scope": "identify",
+        "state": state,
     })
     authorize_url = f"{DISCORD_AUTHORIZE_URL}?{params}"
-    return templates.TemplateResponse(request, "login.html", {
+    response = templates.TemplateResponse(request, "login.html", {
         "error": error,
         "authorize_url": authorize_url,
     })
+    response.set_cookie(
+        STATE_COOKIE_NAME, state,
+        max_age=STATE_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=_USE_SECURE_COOKIE,
+    )
+    return response
 
 
 @router.get("/callback")
-async def oauth_callback(request: Request, code: str = "", error: str = ""):
+async def oauth_callback(request: Request, code: str = "", error: str = "", state: str = ""):
     if error or not code:
         return RedirectResponse("/admin/login?error=Discord+auth+cancelled", status_code=303)
 
     if not _dashboard_enabled():
         return RedirectResponse("/admin/login?error=Dashboard+disabled", status_code=303)
+
+    expected_state = request.cookies.get(STATE_COOKIE_NAME, "")
+    if not expected_state or not hmac.compare_digest(state, expected_state):
+        return RedirectResponse("/admin/login?error=Invalid+state+parameter", status_code=303)
 
     # Exchange code for access token
     async with httpx.AsyncClient() as client:
@@ -226,6 +243,8 @@ async def oauth_callback(request: Request, code: str = "", error: str = ""):
         "guilds": authorized_guilds,
         "iat": int(time.time()),
     }
+    if is_super:
+        session["super"] = True
     response = RedirectResponse("/admin", status_code=303)
     response.set_cookie(
         COOKIE_NAME,
@@ -235,6 +254,7 @@ async def oauth_callback(request: Request, code: str = "", error: str = ""):
         samesite="lax",
         secure=_USE_SECURE_COOKIE,
     )
+    response.delete_cookie(STATE_COOKIE_NAME)
     return response
 
 
@@ -337,6 +357,7 @@ async def partial_connections(request: Request):
 
     return templates.TemplateResponse(request, "partials/connections.html", {
         "connections": connections,
+        "is_super": session.get("super", False),
     })
 
 
@@ -368,6 +389,7 @@ async def partial_sessions(request: Request):
                 "guild_name": _resolve_guild_name(discord_client, gid),
                 "character_name": s.character_name,
                 "account_name": s.account.real_user if s.account else "?",
+                "discord_user_id": s.discord_user_id,
                 "user_name": _resolve_discord_name(discord_client, gid, s.discord_user_id),
                 "klass": character.klass.value if character and character.klass else "",
                 "park": (character.park_location or "") if character else "",
@@ -382,6 +404,28 @@ async def partial_sessions(request: Request):
     })
 
 
+def _format_audit_entries(logs, discord_client) -> list[dict]:
+    """Format audit log ORM objects into template-friendly dicts."""
+    entries = []
+    for log in logs:
+        ip = log.ip_address or ""
+        entries.append({
+            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "",
+            "username": log.username,
+            "ip_cc": sso_model.ip_country_code(ip) if ip else "",
+            "ip_address": sso_model.hash_ip(ip) if ip else "",
+            "success": log.success,
+            "discord_user_id": log.discord_user_id,
+            "user_name": (
+                _resolve_discord_name(discord_client, log.guild_id, log.discord_user_id)
+                if log.discord_user_id and log.guild_id else ""
+            ),
+            "details": log.details or "",
+            "client_version": log.client_version or "",
+        })
+    return entries
+
+
 @router.get("/partials/audit_log", response_class=HTMLResponse)
 async def partial_audit_log(request: Request):
     session = _get_session(request)
@@ -394,25 +438,41 @@ async def partial_audit_log(request: Request):
     allowed = set(guild_ids)
     logs = sso_model.get_audit_logs(limit=50, guild_id=filter_gid)
     logs = [log for log in logs if log.guild_id in allowed]
-    entries = []
-    for log in logs:
-        ip = log.ip_address or ""
-        entries.append({
-            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "",
-            "username": log.username,
-            "ip_cc": sso_model.ip_country_code(ip) if ip else "",
-            "ip_address": sso_model.hash_ip(ip) if ip else "",
-            "success": log.success,
-            "user_name": (
-                _resolve_discord_name(discord_client, log.guild_id, log.discord_user_id)
-                if log.discord_user_id and log.guild_id else ""
-            ),
-            "details": log.details or "",
-            "client_version": log.client_version or "",
-        })
 
     return templates.TemplateResponse(request, "partials/audit_log.html", {
-        "entries": entries,
+        "entries": _format_audit_entries(logs, discord_client),
+        "is_super": session.get("super", False),
+    })
+
+
+@router.get("/partials/audit_modal", response_class=HTMLResponse)
+async def partial_audit_modal(request: Request):
+    session = _get_session(request)
+    if not session:
+        return Response(status_code=401)
+
+    discord_client = getattr(request.app.state, "discord_client", None)
+    account = request.query_params.get("account")
+    user_id_raw = request.query_params.get("user_id")
+    guild_ids = _sso_guild_ids(session["guilds"])
+    allowed = set(guild_ids)
+
+    if user_id_raw:
+        try:
+            uid = int(user_id_raw)
+        except ValueError:
+            return Response(status_code=400)
+        logs = sso_model.get_audit_logs_for_user_id(uid, limit=50)
+        logs = [log for log in logs if log.guild_id in allowed]
+    elif account:
+        logs = sso_model.get_audit_logs(limit=50, username=account)
+        logs = [log for log in logs if log.guild_id in allowed]
+    else:
+        return Response(status_code=400)
+
+    return templates.TemplateResponse(request, "partials/audit_modal.html", {
+        "entries": _format_audit_entries(logs, discord_client),
+        "is_super": session.get("super", False),
     })
 
 
@@ -487,9 +547,11 @@ async def partial_accounts(request: Request):
 
 @router.get("/partials/rate_limited", response_class=HTMLResponse)
 async def partial_rate_limited(request: Request):
-    if not _get_session(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
+    is_super = session.get("super", False)
     rate_limited = sso_model.get_rate_limited_ips(
         config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES
     )
@@ -500,4 +562,5 @@ async def partial_rate_limited(request: Request):
 
     return templates.TemplateResponse(request, "partials/rate_limited.html", {
         "rate_limited": hashed,
+        "is_super": is_super,
     })

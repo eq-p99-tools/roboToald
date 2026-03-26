@@ -1,3 +1,4 @@
+{% if is_super %}
 {% if rate_limited %}
 <div style="overflow-x: auto;">
 <table>
@@ -19,4 +20,7 @@
 </div>
 {% else %}
 <p class="empty-state">No rate-limited IPs</p>
+{% endif %}
+{% else %}
+<p class="empty-state">Rate-limited IP details are only visible to super admins</p>
 {% endif %}

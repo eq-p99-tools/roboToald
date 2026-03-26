@@ -17,8 +17,8 @@
         {% for s in sessions %}
         <tr>
             <td>{{ s.character_name }}</td>
-            <td>{{ s.account_name }}</td>
-            <td>{{ s.user_name }}</td>
+            <td><a href="#" onclick="showAuditModal('account','{{ s.account_name }}','{{ s.account_name }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ s.account_name }}</a></td>
+            <td>{% if s.discord_user_id %}<a href="#" onclick="showAuditModal('user_id','{{ s.discord_user_id }}','{{ s.user_name }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ s.user_name }}</a>{% else %}{{ s.user_name }}{% endif %}</td>
             <td>{{ s.klass }}</td>
             <td>{{ s.park }}</td>
             <td>{{ s.first_seen }}</td>

@@ -5,7 +5,7 @@
         <tr>
             <th>Guild</th>
             <th>User</th>
-            <th>IP Hash</th>
+            {% if is_super %}<th>IP Hash</th>{% endif %}
             <th>Client Version</th>
             <th>Connected</th>
             <th>Uptime</th>
@@ -15,8 +15,8 @@
         {% for c in connections %}
         <tr>
             <td>{{ c.guild_name }}</td>
-            <td>{{ c.user_name }}</td>
-            <td style="white-space: nowrap;">{% if c.ip_cc == 'private' %}&#x1F512;{% elif c.ip_cc == 'unknown' or not c.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ c.ip_cc }}"></span>{% endif %} {{ c.ip_hash }}</td>
+            <td>{% if c.discord_user_id %}<a href="#" onclick="showAuditModal('user_id','{{ c.discord_user_id }}','{{ c.user_name }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ c.user_name }}</a>{% else %}{{ c.user_name }}{% endif %}</td>
+            {% if is_super %}<td style="white-space: nowrap;">{% if c.ip_cc == 'private' %}&#x1F512;{% elif c.ip_cc == 'unknown' or not c.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ c.ip_cc }}"></span>{% endif %} {{ c.ip_hash }}</td>{% endif %}
             <td>{{ c.client_version }}</td>
             <td><time class="local-time" datetime="{{ c.connected_at_iso }}"></time></td>
             <td>{{ c.uptime }}</td>
