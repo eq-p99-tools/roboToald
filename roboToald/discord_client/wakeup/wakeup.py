@@ -5,7 +5,7 @@ import disnake
 
 from roboToald import config
 
-logging.getLogger("disnake.voice_client").setLevel(logging.CRITICAL)
+logging.getLogger("disnake.voice_client").setLevel(logging.WARNING)
 
 
 async def process_message(message: disnake.Message) -> None:
@@ -28,6 +28,13 @@ async def process_message(message: disnake.Message) -> None:
 async def wakeup(channel: disnake.VoiceChannel) -> None:
     vc: disnake.voice_client.VoiceClient = await channel.connect()
     try:
+        for _ in range(10):
+            if vc.is_connected():
+                break
+            await asyncio.sleep(0.5)
+        if not vc.is_connected():
+            print("Voice connection failed: not connected after waiting")
+            return
 
         def finished(error):
             if error:
