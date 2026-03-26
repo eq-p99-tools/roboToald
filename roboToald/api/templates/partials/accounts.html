@@ -9,7 +9,7 @@
 {% endif %}
 
 {% for g in guilds %}
-<div class="sub-tab-panel{% if loop.first or guilds | length == 1 %} active{% endif %}" id="acct-guild-{{ g.id }}">
+<div class="sub-tab-panel{% if loop.first or guilds | length == 1 %} active{% endif %}" data-subtab-panel="acct-guild-{{ g.id }}">
 {% if g.accounts %}
 <div style="overflow-x: auto;">
 <table>
@@ -77,28 +77,26 @@
     var bar = document.getElementById('acct-guild-bar');
     if (!bar) return;
     var parent = bar.closest('.tab-panel');
+    var container = bar.parentElement;
 
-    /* Restore saved sub-tab state immediately (before browser paints) */
-    var savedId = parent && parent.dataset.activeSubtab;
-    if (savedId) {
-        var savedBtn = bar.querySelector('[data-subtab="' + savedId + '"]');
-        var savedPanel = document.getElementById(savedId);
-        if (savedBtn && savedPanel) {
-            bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
-            savedBtn.classList.add('active');
-            bar.parentElement.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
-            savedPanel.classList.add('active');
-        }
+    function selectPanel(id) {
+        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        var btn = bar.querySelector('[data-subtab="' + id + '"]');
+        if (btn) btn.classList.add('active');
+        container.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        var panel = container.querySelector('[data-subtab-panel="' + id + '"]');
+        if (panel) panel.classList.add('active');
     }
 
-    /* Click handler — also persists selection to parent for next swap */
+    /* Restore saved sub-tab state */
+    var savedId = parent && parent.dataset.activeSubtab;
+    if (savedId) selectPanel(savedId);
+
+    /* Click handler — persists selection to parent for next swap */
     bar.addEventListener('click', function(e) {
         var btn = e.target.closest('.sub-tab-btn');
         if (!btn) return;
-        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        bar.parentElement.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
-        document.getElementById(btn.dataset.subtab).classList.add('active');
+        selectPanel(btn.dataset.subtab);
         if (parent) parent.dataset.activeSubtab = btn.dataset.subtab;
     });
 })();

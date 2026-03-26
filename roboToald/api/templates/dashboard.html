@@ -158,17 +158,24 @@
     startTimer();
 
     /* --- Preserve sub-tab state across HTMX swaps ---
-       Before each swap, save the active sub-tab id onto the persistent
-       parent (.tab-panel) element.  The partial's own inline script reads
-       it back synchronously during the swap, before the browser paints. */
-    document.body.addEventListener('htmx:beforeSwap', function(evt) {
+       Sub-tab panels use data-subtab-panel (not id) so HTMX's settle
+       phase cannot revert their classes.  The click handler in the partial
+       saves state to the persistent parent's dataset on every click.
+       This afterSwap handler restores it after each content replacement. */
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
         var panelEl = evt.detail.target;
         var parent = panelEl.closest('.tab-panel') || panelEl.closest('.dashboard-section');
-        if (!parent) return;
-        var activeBtn = panelEl.querySelector('.sub-tab-btn.active');
-        if (activeBtn && activeBtn.dataset.subtab) {
-            parent.dataset.activeSubtab = activeBtn.dataset.subtab;
-        }
+        if (!parent || !parent.dataset.activeSubtab) return;
+        var savedId = parent.dataset.activeSubtab;
+        var bar = panelEl.querySelector('.sub-tab-bar');
+        if (!bar) return;
+        var btn = bar.querySelector('[data-subtab="' + savedId + '"]');
+        var target = panelEl.querySelector('[data-subtab-panel="' + savedId + '"]');
+        if (!btn || !target) return;
+        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        panelEl.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        target.classList.add('active');
     });
 })();
 </script>
