@@ -670,6 +670,7 @@ async def _handle_batphone(message: disnake.Message):
         opts["v"] = 3
 
     with get_raid_session(guild_id) as session:
+        # Pass 1: exact per-word match (matches original Ruby send_batphone.rb)
         tgt = None
         for fragment in channel_name.split():
             fragment_lower = fragment.lower()
@@ -683,6 +684,12 @@ async def _handle_batphone(message: disnake.Message):
             if len(unique) == 1:
                 tgt = unique[0]
                 break
+
+        # Pass 2: substring match on full channel_name (matches Ruby create_event.rb fallback)
+        if tgt is None:
+            targets, _ = resolve_target(channel_name, session)
+            if len(targets) == 1:
+                tgt = targets[0]
 
         should_send = True
         if tgt and tgt.last_batphone_at:
