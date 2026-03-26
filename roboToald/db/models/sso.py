@@ -1,5 +1,8 @@
+import base64
 import datetime
+import hashlib
 import itertools
+import logging
 import secrets
 
 import sqlalchemy
@@ -12,6 +15,38 @@ import enum
 from roboToald import config
 from roboToald.db import base
 from roboToald import words
+
+_log = logging.getLogger(__name__)
+
+try:
+    from geoip2fast import GeoIP2Fast
+    _geoip = GeoIP2Fast()
+except Exception:
+    _geoip = None
+    _log.warning("geoip2fast unavailable – IP country flags will be disabled")
+
+
+def hash_ip(ip_address: str, length: int = 14) -> str:
+    """One-way hash an IP address for safe display. Truncated SHA-256 in URL-safe Base64."""
+    hash_bytes = hashlib.sha256(ip_address.encode("utf-8")).digest()
+    hash_b64 = base64.urlsafe_b64encode(hash_bytes).decode("utf-8")
+    return hash_b64[:length]
+
+
+def ip_country_flag(ip_address: str) -> str:
+    """Return a flag emoji for the IP's country, or a lock for private IPs."""
+    if _geoip is None:
+        return ""
+    try:
+        result = _geoip.lookup(ip_address)
+        if result.is_private:
+            return "\U0001f512"
+        cc = result.country_code
+        if cc and len(cc) == 2:
+            return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
+    except Exception:
+        pass
+    return ""
 
 
 class CachedEncryptedType(sqlalchemy_utils.EncryptedType):

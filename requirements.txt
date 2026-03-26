@@ -15,3 +15,6 @@ httpx
 gspread
 google-auth
 qrcode[pil]
+jinja2
+python-multipart
+geoip2fast

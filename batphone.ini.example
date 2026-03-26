@@ -13,6 +13,8 @@ port = 443
 # Audit log archival: rows older than this are exported to CSV and deleted on startup
 #audit_retention_days = 90
 #audit_archive_dir = audit_archives
+# Admin dashboard: set a token to enable the web dashboard at /admin
+#admin_dashboard_token = <secret_token>
 
 [raidtargets]
 endpoint = http://path/to/raidtarget.json

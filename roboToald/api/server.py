@@ -40,6 +40,11 @@ logging.getLogger("uvicorn.error").addFilter(_SuppressBareWsLifecycle())
 # Create FastAPI app
 app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services")
 
+# Mount the admin dashboard router
+from roboToald.api.dashboard import router as dashboard_router  # noqa: E402
+
+app.include_router(dashboard_router)
+
 # Expose a function to run the API server in a thread with injected discord_client
 
 
@@ -696,6 +701,8 @@ async def websocket_accounts(websocket: WebSocket):
         guild_id=guild_id,
         discord_user_id=discord_user_id,
         last_sent_state=account_tree,
+        client_version=msg.get("client_version", "unknown"),
+        client_ip=client_host,
     )
     ws_manager.register(conn)
 

@@ -1,0 +1,30 @@
+{% if connections %}
+<div style="overflow-x: auto;">
+<table>
+    <thead>
+        <tr>
+            <th>Guild</th>
+            <th>User</th>
+            <th>IP Hash</th>
+            <th>Client Version</th>
+            <th>Connected</th>
+            <th>Uptime</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in connections %}
+        <tr>
+            <td>{{ c.guild_name }}</td>
+            <td>{{ c.user_name }}</td>
+            <td>{{ c.ip_flag }} {{ c.ip_hash }}</td>
+            <td>{{ c.client_version }}</td>
+            <td><time class="local-time" datetime="{{ c.connected_at_iso }}"></time></td>
+            <td>{{ c.uptime }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty-state">No WebSocket clients connected</p>
+{% endif %}

@@ -1,0 +1,34 @@
+{% if sessions %}
+<div style="overflow-x: auto;">
+<table>
+    <thead>
+        <tr>
+            <th>Character</th>
+            <th>Account</th>
+            <th>User</th>
+            <th>Class</th>
+            <th>Zone</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+            <th>Duration</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in sessions %}
+        <tr>
+            <td>{{ s.character_name }}</td>
+            <td>{{ s.account_name }}</td>
+            <td>{{ s.user_name }}</td>
+            <td>{{ s.klass }}</td>
+            <td>{{ s.park }}</td>
+            <td>{{ s.first_seen }}</td>
+            <td>{{ s.last_seen }}</td>
+            <td>{{ s.duration }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty-state">No active character sessions</p>
+{% endif %}

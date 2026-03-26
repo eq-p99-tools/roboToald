@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libopus0 \
 WORKDIR /app
 
 COPY requirements.txt /app/
-RUN uv pip install --system --only-binary :all: -r requirements.txt
+RUN uv pip install --system --only-binary :all: --no-binary geoip2fast -r requirements.txt
 
 COPY *.wav /app/
 COPY scripts/ /app/scripts/

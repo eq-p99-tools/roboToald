@@ -87,6 +87,7 @@ RATE_LIMIT_MAX_ATTEMPTS = CONF.getint("sso", "rate_limit_max_attempts", fallback
 RATE_LIMIT_WINDOW_MINUTES = CONF.getint("sso", "rate_limit_window_minutes", fallback=30)
 AUDIT_RETENTION_DAYS = CONF.getint("sso", "audit_retention_days", fallback=180)
 AUDIT_ARCHIVE_DIR = CONF.get("sso", "audit_archive_dir", fallback="audit_archives")
+ADMIN_DASHBOARD_TOKEN = CONF.get("sso", "admin_dashboard_token", fallback=None)
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}

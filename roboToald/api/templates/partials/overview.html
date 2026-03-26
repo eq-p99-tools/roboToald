@@ -1,0 +1,32 @@
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="value">{{ ws_client_count }}</div>
+        <div class="label">WS Clients</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">{{ active_session_count }}</div>
+        <div class="label">Active Sessions</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">{{ total_accounts }}</div>
+        <div class="label">Accounts</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">{{ total_characters }}</div>
+        <div class="label">Characters</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">{{ total_groups }}</div>
+        <div class="label">Groups</div>
+    </div>
+</div>
+{% if guild_stats|length > 1 %}
+<div class="guild-stats">
+    {% for g in guild_stats %}
+    <div class="guild-stat">
+        <strong>{{ g.name }}</strong>
+        {{ g.accounts }} accounts &middot; {{ g.characters }} characters &middot; {{ g.groups }} groups
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,22 @@
+{% if rate_limited %}
+<div style="overflow-x: auto;">
+<table>
+    <thead>
+        <tr>
+            <th>IP Hash</th>
+            <th>Failed Attempts</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for flag, ip, count in rate_limited %}
+        <tr>
+            <td>{{ flag }} {{ ip }}</td>
+            <td>{{ count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty-state">No rate-limited IPs</p>
+{% endif %}

@@ -154,6 +154,9 @@ class ClientConnection:
     guild_id: int
     discord_user_id: int
     last_sent_state: dict = field(default_factory=dict)
+    connected_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    client_version: str = "unknown"
+    client_ip: str = ""
 
 
 class ConnectionManager:
@@ -182,6 +185,36 @@ class ConnectionManager:
     def _get_connections_for_guild(self, guild_id: int) -> list[ClientConnection]:
         with self._lock:
             return [c for c in self._connections if c.guild_id == guild_id]
+
+    def get_connections_summary(self) -> list[dict]:
+        """Return metadata for all active connections (no websocket objects).
+
+        Each dict contains guild_id, discord_user_id, client_version,
+        connected_at, and optionally resolved guild_name / user_name.
+        """
+        with self._lock:
+            snapshot = list(self._connections)
+
+        results = []
+        for conn in snapshot:
+            info: dict = {
+                "guild_id": conn.guild_id,
+                "discord_user_id": conn.discord_user_id,
+                "client_version": conn.client_version,
+                "connected_at": conn.connected_at,
+                "ip_flag": sso_model.ip_country_flag(conn.client_ip) if conn.client_ip else "",
+                "ip_hash": sso_model.hash_ip(conn.client_ip) if conn.client_ip else "",
+            }
+            if self._discord_client:
+                guild = self._discord_client.get_guild(conn.guild_id)
+                info["guild_name"] = guild.name if guild else str(conn.guild_id)
+                member = guild.get_member(conn.discord_user_id) if guild else None
+                info["user_name"] = member.display_name if member else str(conn.discord_user_id)
+            else:
+                info["guild_name"] = str(conn.guild_id)
+                info["user_name"] = str(conn.discord_user_id)
+            results.append(info)
+        return results
 
     # -- Public notification API (thread-safe) --------------------------------
 

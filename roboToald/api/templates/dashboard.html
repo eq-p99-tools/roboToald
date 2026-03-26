@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}SSO Admin Dashboard{% endblock %}
+
+{% block nav_right %}
+<li>
+    <div class="nav-control">
+        <label for="guild-select" style="margin: 0; white-space: nowrap;">Guild</label>
+        <select id="guild-select">
+            <option value="">All Guilds</option>
+            {% for g in guilds %}
+            <option value="{{ g.id }}">{{ g.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</li>
+<li>
+    <div class="nav-control">
+        <label for="refresh-select" style="margin: 0; white-space: nowrap;">Refresh</label>
+        <select id="refresh-select">
+            <option value="0">Off</option>
+            <option value="5">5s</option>
+            <option value="10" selected>10s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+        </select>
+    </div>
+</li>
+<li><a href="/admin/logout" role="button" class="outline secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Logout</a></li>
+{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-section">
+    <div class="section-header">
+        <h3>Overview</h3>
+        <small class="htmx-indicator" id="overview-indicator">Updating...</small>
+    </div>
+    <div id="panel-overview"
+         hx-get="/admin/partials/overview"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#overview-indicator">
+        <p class="empty-state" aria-busy="true">Loading overview...</p>
+    </div>
+</div>
+
+<div class="dashboard-section">
+    <div class="section-header">
+        <h3>Connected WebSocket Clients</h3>
+        <small class="htmx-indicator" id="conn-indicator">Updating...</small>
+    </div>
+    <div id="panel-connections"
+         hx-get="/admin/partials/connections"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#conn-indicator">
+        <p class="empty-state" aria-busy="true">Loading connections...</p>
+    </div>
+</div>
+
+<div class="dashboard-section">
+    <div class="section-header">
+        <h3>Active Character Sessions</h3>
+        <small class="htmx-indicator" id="sessions-indicator">Updating...</small>
+    </div>
+    <div id="panel-sessions"
+         hx-get="/admin/partials/sessions"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#sessions-indicator">
+        <p class="empty-state" aria-busy="true">Loading sessions...</p>
+    </div>
+</div>
+
+<div class="dashboard-section">
+    <div class="section-header">
+        <h3>Recent Auth Log</h3>
+        <small class="htmx-indicator" id="audit-indicator">Updating...</small>
+    </div>
+    <div id="panel-audit"
+         hx-get="/admin/partials/audit_log"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#audit-indicator">
+        <p class="empty-state" aria-busy="true">Loading audit log...</p>
+    </div>
+</div>
+
+<div class="dashboard-section">
+    <div class="section-header">
+        <h3>Rate Limited IPs</h3>
+        <small class="htmx-indicator" id="ratelimit-indicator">Updating...</small>
+    </div>
+    <div id="panel-ratelimit"
+         hx-get="/admin/partials/rate_limited"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#ratelimit-indicator">
+        <p class="empty-state" aria-busy="true">Loading...</p>
+    </div>
+</div>
+
+<script>
+(function() {
+    var refreshSel = document.getElementById('refresh-select');
+    var guildSel = document.getElementById('guild-select');
+    var timer = null;
+
+    // Append ?guild_id=<value> to every outgoing HTMX request
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+        var gid = guildSel.value;
+        if (gid) {
+            evt.detail.parameters['guild_id'] = gid;
+        }
+    });
+
+    // When guild selection changes, immediately re-fetch all panels
+    guildSel.addEventListener('change', function() {
+        document.body.dispatchEvent(new CustomEvent('refreshAll'));
+    });
+
+    function startTimer() {
+        stopTimer();
+        var seconds = parseInt(refreshSel.value, 10);
+        if (seconds > 0) {
+            timer = setInterval(function() {
+                document.body.dispatchEvent(new CustomEvent('refreshAll'));
+            }, seconds * 1000);
+        }
+    }
+
+    function stopTimer() {
+        if (timer) { clearInterval(timer); timer = null; }
+    }
+
+    refreshSel.addEventListener('change', startTimer);
+    startTimer();
+})();
+</script>
+
+{% endblock %}

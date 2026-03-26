@@ -1,6 +1,4 @@
-import base64
 import datetime
-import hashlib
 import re
 import time
 import zoneinfo
@@ -344,13 +342,8 @@ async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string:
         return []
 
 
-def hash_ip(ip_address: str, length: int = 14) -> str:
-    # Hash the IP address using SHA-256
-    hash_bytes = hashlib.sha256(ip_address.encode("utf-8")).digest()
-    # Encode the hash in URL-safe Base64 and truncate
-    hash_b64 = base64.urlsafe_b64encode(hash_bytes).decode("utf-8")
-    # Return the first 'length' characters
-    return hash_b64[:length]
+hash_ip = sso_model.hash_ip
+ip_flag = sso_model.ip_country_flag
 
 
 def is_admin(user_roles, guild_id):
@@ -937,12 +930,13 @@ class SSOCommands(commands.Cog):
                     status = "❌"
                     failed_count += 1
 
+                flag = ip_flag(log.ip_address) if log.ip_address else ""
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
 
                 formatted_log = (
-                    f"{status}\u2003🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
+                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
                 )
                 formatted_logs.append(formatted_log)
 
@@ -992,10 +986,11 @@ class SSOCommands(commands.Cog):
                 status = "✅" if log.success else "❌"
                 username = log.username if log.username else "Unknown"
                 details = log.details if log.details else "No details"
+                flag = ip_flag(log.ip_address) if log.ip_address else ""
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
 
                 formatted_log = (
-                    f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
+                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
                 )
                 formatted_logs.append(formatted_log)
 
@@ -1065,6 +1060,7 @@ class SSOCommands(commands.Cog):
                 discord_timestamp = f"<t:{int(log.timestamp.timestamp())}:f>"
 
                 username = log.username if log.username else "Unknown"
+                flag = ip_flag(log.ip_address) if log.ip_address else ""
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
@@ -1073,7 +1069,7 @@ class SSOCommands(commands.Cog):
                 if ip != "N/A":
                     ip_counts[ip] = ip_counts.get(ip, 0) + 1
 
-                formatted_log = f"🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
+                formatted_log = f"{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
 
             # Create the response message
@@ -1140,10 +1136,11 @@ class SSOCommands(commands.Cog):
 
                     status = "✅" if log.success else "❌"
                     username = log.username if log.username else "Unknown"
+                    flag = ip_flag(log.ip_address) if log.ip_address else ""
                     ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                     discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
 
-                    response += f"{status}\u2003🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
+                    response += f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
             else:
                 response += "_No recent activity_\n"
 
@@ -1233,8 +1230,9 @@ class SSOCommands(commands.Cog):
                 return
             lines = []
             for ip, count in rows:
+                flag = ip_flag(ip)
                 hashed = hash_ip(ip)
-                lines.append(f"🌐 `{hashed}` — **{count}** failures")
+                lines.append(f"{flag}🌐 `{hashed}` — **{count}** failures")
             header = (
                 f"# 🚫 Rate-Limited IPs\n"
                 f"_Threshold: {config.RATE_LIMIT_MAX_ATTEMPTS} failures "
