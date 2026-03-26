@@ -1,5 +1,8 @@
 [discord]
 token = <discord_token>
+# OAuth2 credentials for the admin dashboard (from Discord Developer Portal > OAuth2 tab)
+#oauth_client_id = <application_client_id>
+#oauth_client_secret = <application_client_secret>
 
 [sso]
 encryption_key = <encryption_key>
@@ -13,8 +16,10 @@ port = 443
 # Audit log archival: rows older than this are exported to CSV and deleted on startup
 #audit_retention_days = 90
 #audit_archive_dir = audit_archives
-# Admin dashboard: set a token to enable the web dashboard at /admin
-#admin_dashboard_token = <secret_token>
+# Admin dashboard: set base URL to enable the web dashboard at /admin
+# Requires oauth_client_id and oauth_client_secret in [discord] section
+# Set the OAuth2 redirect URI to <dashboard_base_url>/admin/callback in the Discord Developer Portal
+#dashboard_base_url = https://sso.example.com
 
 [raidtargets]
 endpoint = http://path/to/raidtarget.json

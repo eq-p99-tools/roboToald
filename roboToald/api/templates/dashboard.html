@@ -26,7 +26,10 @@
         </select>
     </div>
 </li>
-<li><a href="/admin/logout" role="button" class="outline secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Logout</a></li>
+<li style="display: flex; align-items: center; gap: 0.5rem;">
+    <span style="font-size: 0.85rem; color: var(--pico-muted-color);">{{ user_name }}</span>
+    <a href="/admin/logout" role="button" class="outline secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Logout</a>
+</li>
 {% endblock %}
 
 {% block content %}

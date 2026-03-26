@@ -1,12 +1,16 @@
 """Admin dashboard for SSO monitoring."""
 
+import base64
 import datetime
 import hashlib
 import hmac
+import json
 import logging
 import time
+import urllib.parse
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,35 +30,52 @@ COOKIE_NAME = "admin_session"
 COOKIE_MAX_AGE = 86400
 _USE_SECURE_COOKIE = bool(config.API_CERTFILE and config.API_KEYFILE)
 
+DISCORD_AUTHORIZE_URL = "https://discord.com/api/oauth2/authorize"
+DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
+DISCORD_USER_URL = "https://discord.com/api/users/@me"
 
-def _sign(payload: str) -> str:
+
+def _oauth_redirect_uri() -> str:
+    return f"{config.DASHBOARD_BASE_URL.rstrip('/')}/admin/callback"
+
+
+def _hmac_sign(data: bytes) -> str:
     return hmac.new(
-        config.ENCRYPTION_KEY.encode(), payload.encode(), hashlib.sha256
+        config.ENCRYPTION_KEY.encode(), data, hashlib.sha256
     ).hexdigest()
 
 
-def _make_cookie_value(token: str) -> str:
-    """Build a timestamped, signed cookie: ``<timestamp>:<hmac>``."""
-    ts = str(int(time.time()))
-    sig = _sign(f"{token}|{ts}")
-    return f"{ts}:{sig}"
+def _make_session_cookie(session: dict) -> str:
+    """Encode a session dict as ``base64json.hmac``."""
+    payload = base64.urlsafe_b64encode(json.dumps(session).encode()).decode()
+    sig = _hmac_sign(payload.encode())
+    return f"{payload}.{sig}"
+
+
+def _get_session(request: Request) -> dict | None:
+    """Decode and verify the session cookie. Returns the session dict or None."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not cookie or "." not in cookie:
+        return None
+    payload, sig = cookie.rsplit(".", 1)
+    expected = _hmac_sign(payload.encode())
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        session = json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return None
+    if time.time() - session.get("iat", 0) > COOKIE_MAX_AGE:
+        return None
+    return session
 
 
 def _is_authenticated(request: Request) -> bool:
-    if not config.ADMIN_DASHBOARD_TOKEN:
-        return False
-    cookie = request.cookies.get(COOKIE_NAME)
-    if not cookie or ":" not in cookie:
-        return False
-    ts_str, sig = cookie.split(":", 1)
-    try:
-        issued_at = int(ts_str)
-    except ValueError:
-        return False
-    if time.time() - issued_at > COOKIE_MAX_AGE:
-        return False
-    expected = _sign(f"{config.ADMIN_DASHBOARD_TOKEN}|{ts_str}")
-    return hmac.compare_digest(sig, expected)
+    return _get_session(request) is not None
+
+
+def _dashboard_enabled() -> bool:
+    return bool(config.DISCORD_OAUTH_CLIENT_ID and config.DISCORD_OAUTH_CLIENT_SECRET and config.DASHBOARD_BASE_URL)
 
 
 def _resolve_discord_name(discord_client, guild_id: int, discord_user_id: int) -> str:
@@ -74,10 +95,13 @@ def _resolve_guild_name(discord_client, guild_id: int) -> str:
     return guild.name if guild else str(guild_id)
 
 
-def _sso_guild_ids(filter_guild_id: int | None = None) -> list[int]:
-    """Return the SSO-enabled guild IDs, optionally filtered to one."""
+def _sso_guild_ids(
+    session_guilds: list[int],
+    filter_guild_id: int | None = None,
+) -> list[int]:
+    """Return the SSO-enabled guild IDs scoped to the session's authorized guilds."""
     ids = [
-        gid for gid in config.TEST_GUILDS
+        gid for gid in session_guilds
         if config.GUILD_SETTINGS.get(gid, {}).get("enable_sso")
     ]
     if filter_guild_id and filter_guild_id in ids:
@@ -100,34 +124,108 @@ def _parse_guild_filter(request: Request) -> int | None:
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = ""):
-    if not config.ADMIN_DASHBOARD_TOKEN:
+    if not _dashboard_enabled():
         return HTMLResponse(
-            "<h1>Dashboard disabled</h1><p>Set admin_dashboard_token in batphone.ini</p>",
+            "<h1>Dashboard disabled</h1>"
+            "<p>Set discord_oauth_client_id, discord_oauth_client_secret, "
+            "and dashboard_base_url in batphone.ini</p>",
             status_code=503,
         )
-    return templates.TemplateResponse(request, "login.html", {"error": error})
+    if _is_authenticated(request):
+        return RedirectResponse("/admin", status_code=303)
+
+    params = urllib.parse.urlencode({
+        "client_id": config.DISCORD_OAUTH_CLIENT_ID,
+        "redirect_uri": _oauth_redirect_uri(),
+        "response_type": "code",
+        "scope": "identify",
+    })
+    authorize_url = f"{DISCORD_AUTHORIZE_URL}?{params}"
+    return templates.TemplateResponse(request, "login.html", {
+        "error": error,
+        "authorize_url": authorize_url,
+    })
 
 
-@router.post("/login")
-async def login_submit(request: Request):
-    form = await request.form()
-    token = form.get("token", "")
+@router.get("/callback")
+async def oauth_callback(request: Request, code: str = "", error: str = ""):
+    if error or not code:
+        return RedirectResponse("/admin/login?error=Discord+auth+cancelled", status_code=303)
 
-    if not config.ADMIN_DASHBOARD_TOKEN:
+    if not _dashboard_enabled():
         return RedirectResponse("/admin/login?error=Dashboard+disabled", status_code=303)
 
-    if not hmac.compare_digest(str(token), config.ADMIN_DASHBOARD_TOKEN):
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"error": "Invalid token"},
-            status_code=401,
-        )
+    # Exchange code for access token
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(DISCORD_TOKEN_URL, data={
+            "client_id": config.DISCORD_OAUTH_CLIENT_ID,
+            "client_secret": config.DISCORD_OAUTH_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": _oauth_redirect_uri(),
+        }, headers={"Content-Type": "application/x-www-form-urlencoded"})
 
+        if token_resp.status_code != 200:
+            logger.warning("Discord token exchange failed: %s", token_resp.text)
+            return RedirectResponse("/admin/login?error=Token+exchange+failed", status_code=303)
+
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return RedirectResponse("/admin/login?error=No+access+token", status_code=303)
+
+        # Fetch Discord user identity
+        user_resp = await client.get(DISCORD_USER_URL, headers={
+            "Authorization": f"Bearer {access_token}",
+        })
+
+    if user_resp.status_code != 200:
+        logger.warning("Discord /users/@me failed: %s", user_resp.text)
+        return RedirectResponse("/admin/login?error=Failed+to+get+user+info", status_code=303)
+
+    user_data = user_resp.json()
+    discord_user_id = int(user_data["id"])
+    display_name = user_data.get("global_name") or user_data.get("username", "Unknown")
+    avatar = user_data.get("avatar", "")
+
+    # Check which SSO-enabled guilds this user is admin for (via bot cache)
+    discord_bot = getattr(request.app.state, "discord_client", None)
+    authorized_guilds: list[int] = []
+
+    for gid in config.TEST_GUILDS:
+        settings = config.GUILD_SETTINGS.get(gid, {})
+        if not settings.get("enable_sso"):
+            continue
+        admin_roles = settings.get("sso_admin_roles", [])
+        if not discord_bot:
+            continue
+        guild = discord_bot.get_guild(gid)
+        if not guild:
+            continue
+        member = guild.get_member(discord_user_id)
+        if not member:
+            continue
+        member_role_ids = {r.id for r in member.roles}
+        if member_role_ids & set(admin_roles):
+            authorized_guilds.append(gid)
+
+    if not authorized_guilds:
+        return templates.TemplateResponse(request, "login.html", {
+            "error": "You do not have SSO admin access in any guild.",
+            "authorize_url": "",
+        }, status_code=403)
+
+    session = {
+        "uid": discord_user_id,
+        "name": display_name,
+        "avatar": avatar,
+        "guilds": authorized_guilds,
+        "iat": int(time.time()),
+    }
     response = RedirectResponse("/admin", status_code=303)
     response.set_cookie(
         COOKIE_NAME,
-        _make_cookie_value(config.ADMIN_DASHBOARD_TOKEN),
+        _make_session_cookie(session),
         max_age=COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
@@ -148,16 +246,20 @@ async def logout():
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return RedirectResponse("/admin/login", status_code=303)
 
     discord_client = getattr(request.app.state, "discord_client", None)
     guilds = []
-    for gid in config.TEST_GUILDS:
+    for gid in session.get("guilds", []):
         if config.GUILD_SETTINGS.get(gid, {}).get("enable_sso"):
             guilds.append({"id": gid, "name": _resolve_guild_name(discord_client, gid)})
 
-    return templates.TemplateResponse(request, "dashboard.html", {"guilds": guilds})
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "guilds": guilds,
+        "user_name": session.get("name", ""),
+    })
 
 
 # -- HTMX partial endpoints --------------------------------------------------
@@ -165,12 +267,13 @@ async def dashboard(request: Request):
 
 @router.get("/partials/overview", response_class=HTMLResponse)
 async def partial_overview(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
     discord_client = getattr(request.app.state, "discord_client", None)
     filter_gid = _parse_guild_filter(request)
-    guild_ids = _sso_guild_ids(filter_gid)
+    guild_ids = _sso_guild_ids(session["guilds"], filter_gid)
 
     guild_stats = []
     total_accounts = 0
@@ -191,9 +294,8 @@ async def partial_overview(request: Request):
         total_characters += char_count
         total_groups += len(groups)
 
-    all_connections = ws_manager.get_connections_summary()
-    if filter_gid:
-        all_connections = [c for c in all_connections if c["guild_id"] == filter_gid]
+    allowed = set(guild_ids)
+    all_connections = [c for c in ws_manager.get_connections_summary() if c["guild_id"] in allowed]
 
     active_session_count = 0
     for gid in guild_ids:
@@ -211,13 +313,13 @@ async def partial_overview(request: Request):
 
 @router.get("/partials/connections", response_class=HTMLResponse)
 async def partial_connections(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
     filter_gid = _parse_guild_filter(request)
-    connections = ws_manager.get_connections_summary()
-    if filter_gid:
-        connections = [c for c in connections if c["guild_id"] == filter_gid]
+    allowed = set(_sso_guild_ids(session["guilds"], filter_gid))
+    connections = [c for c in ws_manager.get_connections_summary() if c["guild_id"] in allowed]
 
     now = datetime.datetime.now()
     for conn in connections:
@@ -236,12 +338,13 @@ async def partial_connections(request: Request):
 
 @router.get("/partials/sessions", response_class=HTMLResponse)
 async def partial_sessions(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
     discord_client = getattr(request.app.state, "discord_client", None)
     filter_gid = _parse_guild_filter(request)
-    guild_ids = _sso_guild_ids(filter_gid)
+    guild_ids = _sso_guild_ids(session["guilds"], filter_gid)
 
     now = datetime.datetime.now()
     threshold = now - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
@@ -269,7 +372,7 @@ async def partial_sessions(request: Request):
                 "duration": f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m",
             })
 
-    all_sessions.sort(key=lambda s: s["last_seen"], reverse=True)
+    all_sessions.sort(key=lambda s: (s["character_name"], s["account_name"]))
     return templates.TemplateResponse(request, "partials/sessions.html", {
         "sessions": all_sessions,
     })
@@ -277,12 +380,16 @@ async def partial_sessions(request: Request):
 
 @router.get("/partials/audit_log", response_class=HTMLResponse)
 async def partial_audit_log(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
     discord_client = getattr(request.app.state, "discord_client", None)
     filter_gid = _parse_guild_filter(request)
+    guild_ids = _sso_guild_ids(session["guilds"], filter_gid)
+    allowed = set(guild_ids)
     logs = sso_model.get_audit_logs(limit=50, guild_id=filter_gid)
+    logs = [log for log in logs if log.guild_id in allowed]
     entries = []
     for log in logs:
         ip = log.ip_address or ""
@@ -317,12 +424,13 @@ def _resolve_role_name(discord_client, guild_id: int, role_id: int) -> str:
 
 @router.get("/partials/accounts", response_class=HTMLResponse)
 async def partial_accounts(request: Request):
-    if not _is_authenticated(request):
+    session = _get_session(request)
+    if not session:
         return Response(status_code=401)
 
     discord_client = getattr(request.app.state, "discord_client", None)
     filter_gid = _parse_guild_filter(request)
-    guild_ids = _sso_guild_ids(filter_gid)
+    guild_ids = _sso_guild_ids(session["guilds"], filter_gid)
 
     guilds = []
     for gid in guild_ids:
@@ -375,7 +483,7 @@ async def partial_accounts(request: Request):
 
 @router.get("/partials/rate_limited", response_class=HTMLResponse)
 async def partial_rate_limited(request: Request):
-    if not _is_authenticated(request):
+    if not _get_session(request):
         return Response(status_code=401)
 
     rate_limited = sso_model.get_rate_limited_ips(
