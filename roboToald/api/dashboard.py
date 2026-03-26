@@ -289,7 +289,7 @@ async def partial_audit_log(request: Request):
         entries.append({
             "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "",
             "username": log.username,
-            "ip_flag": sso_model.ip_country_flag(ip) if ip else "",
+            "ip_cc": sso_model.ip_country_code(ip) if ip else "",
             "ip_address": sso_model.hash_ip(ip) if ip else "",
             "success": log.success,
             "user_name": (
@@ -313,7 +313,7 @@ async def partial_rate_limited(request: Request):
         config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES
     )
     hashed = [
-        (sso_model.ip_country_flag(ip), sso_model.hash_ip(ip), count)
+        (sso_model.ip_country_code(ip), sso_model.hash_ip(ip), count)
         for ip, count in rate_limited
     ]
 

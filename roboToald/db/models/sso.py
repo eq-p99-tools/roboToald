@@ -33,19 +33,29 @@ def hash_ip(ip_address: str, length: int = 14) -> str:
     return hash_b64[:length]
 
 
-def ip_country_flag(ip_address: str) -> str:
-    """Return a flag emoji for the IP's country, or a lock for private IPs."""
+def ip_country_code(ip_address: str) -> str:
+    """Return a lowercase 2-letter country code, ``"private"``, or ``""``."""
     if _geoip is None:
         return ""
     try:
         result = _geoip.lookup(ip_address)
         if result.is_private:
-            return "\U0001f512"
+            return "private"
         cc = result.country_code
-        if cc and len(cc) == 2:
-            return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
+        if cc and len(cc) == 2 and cc.isalpha():
+            return cc.lower()
     except Exception:
         pass
+    return ""
+
+
+def ip_country_flag(ip_address: str) -> str:
+    """Return a flag emoji for the IP's country, or a lock for private IPs."""
+    cc = ip_country_code(ip_address)
+    if cc == "private":
+        return "\U0001f512"
+    if cc:
+        return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
     return ""
 
 
@@ -1634,7 +1644,10 @@ def get_sessions_in_range(guild_id: int, start: datetime.datetime, end: datetime
     with base.get_session() as session:
         sessions = (
             session.query(SSOCharacterSession)
-            .options(sqlalchemy.orm.joinedload(SSOCharacterSession.account).joinedload(SSOAccount.aliases))
+            .options(
+                sqlalchemy.orm.joinedload(SSOCharacterSession.account).joinedload(SSOAccount.aliases),
+                sqlalchemy.orm.joinedload(SSOCharacterSession.account).joinedload(SSOAccount.characters),
+            )
             .filter(
                 SSOCharacterSession.guild_id == guild_id,
                 SSOCharacterSession.first_seen <= end,

@@ -8,9 +8,9 @@
         </tr>
     </thead>
     <tbody>
-        {% for flag, ip, count in rate_limited %}
+        {% for cc, ip, count in rate_limited %}
         <tr>
-            <td>{{ flag }} {{ ip }}</td>
+            <td style="white-space: nowrap;">{% if cc == 'private' %}&#x1F512;{% elif cc %}<span class="fi fi-{{ cc }}"></span>{% endif %} {{ ip }}</td>
             <td>{{ count }}</td>
         </tr>
         {% endfor %}

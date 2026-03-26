@@ -202,7 +202,7 @@ class ConnectionManager:
                 "discord_user_id": conn.discord_user_id,
                 "client_version": conn.client_version,
                 "connected_at": conn.connected_at,
-                "ip_flag": sso_model.ip_country_flag(conn.client_ip) if conn.client_ip else "",
+                "ip_cc": sso_model.ip_country_code(conn.client_ip) if conn.client_ip else "",
                 "ip_hash": sso_model.hash_ip(conn.client_ip) if conn.client_ip else "",
             }
             if self._discord_client:
