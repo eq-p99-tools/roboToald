@@ -86,7 +86,9 @@ async def user(
 @lookup.sub_command(description="Look up a character on EQDKP")
 async def character(
     inter: disnake.ApplicationCommandInteraction,
-    name: str = commands.Param(description="Character name"),
+    name: str = commands.Param(
+        description="Character name", autocomplete=True,
+    ),
 ):
     guild_id = inter.guild.id
     await inter.response.defer(ephemeral=True)
@@ -143,3 +145,32 @@ async def character(
             )
 
     await inter.followup.send(embed=embed, ephemeral=True)
+
+
+@character.autocomplete("name")
+async def _ac_character(
+    inter: disnake.ApplicationCommandInteraction, query: str,
+):
+    guild_id = inter.guild.id
+    query = query.strip().lower()
+    try:
+        from roboToald.db.raid_base import get_raid_session
+        from roboToald.db.raid_models.character import Character
+        import sqlalchemy as sa
+        with get_raid_session(guild_id) as session:
+            q = (
+                session.query(Character)
+                .filter(sa.func.length(Character.name) > 0)
+                .order_by(Character.name)
+            )
+            if query:
+                q = q.filter(
+                    sa.func.lower(Character.name)
+                    .startswith(query)
+                )
+            return {
+                c.name: c.name
+                for c in q.limit(25).all()
+            }
+    except Exception:
+        return {}
