@@ -1230,6 +1230,7 @@ class SSOAuditLog(base.Base):
         details=None,
         rate_limit=True,
         timestamp=None,
+        client_version=None,
     ):
         self.username = username
         self.ip_address = ip_address
@@ -1239,6 +1240,7 @@ class SSOAuditLog(base.Base):
         self.guild_id = guild_id
         self.details = details
         self.rate_limit = rate_limit
+        self.client_version = client_version
         self.timestamp = timestamp or datetime.datetime.now()
 
 
