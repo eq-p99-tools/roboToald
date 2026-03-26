@@ -37,6 +37,17 @@ class _SuppressBareWsLifecycle(logging.Filter):
 
 logging.getLogger("uvicorn.error").addFilter(_SuppressBareWsLifecycle())
 
+
+class _SuppressAdminPartials(logging.Filter):
+    """Drop access-log lines for /admin/partials/ HTMX polling requests."""
+
+    def filter(self, record):
+        msg = record.getMessage()
+        return "/admin/partials/" not in msg
+
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressAdminPartials())
+
 # Create FastAPI app
 app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services")
 
