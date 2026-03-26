@@ -55,7 +55,10 @@ class EqdkpClient:
             return resp.json()
 
     async def find_character(self, char_name: str) -> dict | None:
-        data = await self._get("search", **{"in": "charname", "for": char_name})
+        data = await self._get(
+            "search", **{"in": "charname", "for": char_name}
+        )
+        logger.debug("find_character(%s) raw: %s", char_name, data)
         direct = data.get("direct", {})
         members = _values_with_prefix(direct, "member:")
         if not members:
@@ -64,6 +67,22 @@ class EqdkpClient:
             return members[0]
         valid = [m for m in members if str(m.get("user_id", "0")) != "0"]
         return valid[0] if len(valid) == 1 else None
+
+    async def find_characters_by_discord_id(
+        self, discord_id: str | int,
+    ) -> list[dict]:
+        """Look up EQdkp characters linked to a Discord user via auth_account."""
+        data = await self._get(
+            "search",
+            **{"in": "auth_account", "for": str(discord_id)},
+        )
+        logger.debug(
+            "find_characters_by_discord_id(%s) raw: %s",
+            discord_id, data,
+        )
+        direct = data.get("direct", {})
+        members = _values_with_prefix(direct, "member:")
+        return [m for m in members if m.get("name")]
 
     async def find_points(self, user_id: str | int) -> str | None:
         data = await self._get("points", filter="user", filterid=str(user_id))

@@ -162,6 +162,15 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 
 When a raid window is within your lead time, the bot DMs you with window times, how long until the subscription expires, and the same Refresh / Unsubscribe buttons. Button actions use encoded `custom_id` values (`action:target:guild_id`).
 
+### `/lookup`
+
+| Subcommand | Description |
+|---|---|
+| `user <member>` | List EQDKP characters for a Discord user (with race/class and DKP) |
+| `character <name>` | Look up a character on EQDKP (shows linked Discord user, race/class, DKP, and all characters) |
+
+Available in guilds with an `[eqdkp.<guild_id>]` section in `batphone.ini`.
+
 ### `/random`
 
 | Parameter | Description |
