@@ -90,6 +90,9 @@ RATE_LIMIT_WINDOW_MINUTES = CONF.getint("sso", "rate_limit_window_minutes", fall
 AUDIT_RETENTION_DAYS = CONF.getint("sso", "audit_retention_days", fallback=180)
 AUDIT_ARCHIVE_DIR = CONF.get("sso", "audit_archive_dir", fallback="audit_archives")
 DASHBOARD_BASE_URL = CONF.get("sso", "dashboard_base_url", fallback=None)
+DASHBOARD_SUPER_ADMINS: set[int] = {
+    int(x.strip()) for x in CONF.get("sso", "dashboard_super_admins", fallback="").split(",") if x.strip()
+}
 
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}

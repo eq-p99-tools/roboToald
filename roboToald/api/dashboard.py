@@ -188,13 +188,17 @@ async def oauth_callback(request: Request, code: str = "", error: str = ""):
     display_name = user_data.get("global_name") or user_data.get("username", "Unknown")
     avatar = user_data.get("avatar", "")
 
-    # Check which SSO-enabled guilds this user is admin for (via bot cache)
+    # Check which SSO-enabled guilds this user is admin for
+    is_super = discord_user_id in config.DASHBOARD_SUPER_ADMINS
     discord_bot = getattr(request.app.state, "discord_client", None)
     authorized_guilds: list[int] = []
 
     for gid in config.TEST_GUILDS:
         settings = config.GUILD_SETTINGS.get(gid, {})
         if not settings.get("enable_sso"):
+            continue
+        if is_super:
+            authorized_guilds.append(gid)
             continue
         admin_roles = settings.get("sso_admin_roles", [])
         if not discord_bot:
