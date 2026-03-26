@@ -40,6 +40,7 @@
     <div id="panel-overview"
          hx-get="/admin/partials/overview"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#overview-indicator">
         <p class="empty-state" aria-busy="true">Loading overview...</p>
     </div>
@@ -62,6 +63,7 @@
     <div id="panel-accounts"
          hx-get="/admin/partials/accounts"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#accounts-indicator">
         <p class="empty-state" aria-busy="true">Loading accounts...</p>
     </div>
@@ -75,6 +77,7 @@
     <div id="panel-connections"
          hx-get="/admin/partials/connections"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#conn-indicator">
         <p class="empty-state" aria-busy="true">Loading connections...</p>
     </div>
@@ -88,6 +91,7 @@
     <div id="panel-sessions"
          hx-get="/admin/partials/sessions"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#sessions-indicator">
         <p class="empty-state" aria-busy="true">Loading sessions...</p>
     </div>
@@ -101,6 +105,7 @@
     <div id="panel-audit"
          hx-get="/admin/partials/audit_log"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#audit-indicator">
         <p class="empty-state" aria-busy="true">Loading audit log...</p>
     </div>
@@ -114,6 +119,7 @@
     <div id="panel-ratelimit"
          hx-get="/admin/partials/rate_limited"
          hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
          hx-indicator="#ratelimit-indicator">
         <p class="empty-state" aria-busy="true">Loading...</p>
     </div>
@@ -165,6 +171,32 @@
 
     refreshSel.addEventListener('change', startTimer);
     startTimer();
+
+    /* --- Preserve sub-tab state across HTMX swaps --- */
+    var subTabState = {};
+
+    document.body.addEventListener('htmx:beforeSwap', function(evt) {
+        var panel = evt.detail.target;
+        var activeBtn = panel.querySelector('.sub-tab-btn.active');
+        if (activeBtn) {
+            subTabState[panel.id] = activeBtn.dataset.subtab;
+        }
+    });
+
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        var panel = evt.detail.target;
+        var savedId = subTabState[panel.id];
+        if (!savedId) return;
+        var target = document.getElementById(savedId);
+        if (!target) return;
+        var bar = panel.querySelector('.sub-tab-bar');
+        if (!bar) return;
+        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        var btn = bar.querySelector('[data-subtab="' + savedId + '"]');
+        if (btn) btn.classList.add('active');
+        panel.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        target.classList.add('active');
+    });
 })();
 </script>
 
