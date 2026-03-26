@@ -34,7 +34,7 @@ def hash_ip(ip_address: str, length: int = 14) -> str:
 
 
 def ip_country_code(ip_address: str) -> str:
-    """Return a lowercase 2-letter country code, ``"private"``, or ``""``."""
+    """Return a lowercase 2-letter country code, ``"private"``, ``"unknown"``, or ``""``."""
     if _geoip is None:
         return ""
     try:
@@ -46,17 +46,17 @@ def ip_country_code(ip_address: str) -> str:
             return cc.lower()
     except Exception:
         pass
-    return ""
+    return "unknown"
 
 
 def ip_country_flag(ip_address: str) -> str:
-    """Return a flag emoji for the IP's country, or a lock for private IPs."""
+    """Return a flag emoji for the IP's country, lock for private, or ? for unknown."""
     cc = ip_country_code(ip_address)
     if cc == "private":
         return "\U0001f512"
-    if cc:
-        return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
-    return ""
+    if cc == "unknown" or not cc:
+        return "\u2753"
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
 
 
 class CachedEncryptedType(sqlalchemy_utils.EncryptedType):

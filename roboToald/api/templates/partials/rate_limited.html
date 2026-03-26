@@ -10,7 +10,7 @@
     <tbody>
         {% for cc, ip, count in rate_limited %}
         <tr>
-            <td style="white-space: nowrap;">{% if cc == 'private' %}&#x1F512;{% elif cc %}<span class="fi fi-{{ cc }}"></span>{% endif %} {{ ip }}</td>
+            <td style="white-space: nowrap;">{% if cc == 'private' %}&#x1F512;{% elif cc == 'unknown' or not cc %}&#x2753;{% else %}<span class="fi fi-{{ cc }}"></span>{% endif %} {{ ip }}</td>
             <td>{{ count }}</td>
         </tr>
         {% endfor %}

@@ -16,7 +16,7 @@
         <tr>
             <td style="white-space: nowrap;">{{ e.timestamp }}</td>
             <td>{{ e.username }}</td>
-            <td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}&#x1F512;{% elif e.ip_cc %}<span class="fi fi-{{ e.ip_cc }}"></span>{% endif %} {{ e.ip_address }}</td>
+            <td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}&#x1F512;{% elif e.ip_cc == 'unknown' or not e.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ e.ip_cc }}"></span>{% endif %} {{ e.ip_address }}</td>
             <td>
                 {% if e.success %}
                 <span class="badge badge-success">OK</span>

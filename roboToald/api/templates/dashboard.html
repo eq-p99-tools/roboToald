@@ -31,6 +31,7 @@
 
 {% block content %}
 
+<!-- Overview: always visible -->
 <div class="dashboard-section">
     <div class="section-header">
         <h3>Overview</h3>
@@ -44,7 +45,15 @@
     </div>
 </div>
 
-<div class="dashboard-section">
+<!-- Tabs -->
+<div class="tab-bar" id="tab-bar">
+    <button class="tab-btn active" data-tab="connections">Connections</button>
+    <button class="tab-btn" data-tab="sessions">Sessions</button>
+    <button class="tab-btn" data-tab="audit">Auth Log</button>
+    <button class="tab-btn" data-tab="ratelimit">Rate Limited</button>
+</div>
+
+<div class="tab-panel active" id="tab-connections">
     <div class="section-header">
         <h3>Connected WebSocket Clients</h3>
         <small class="htmx-indicator" id="conn-indicator">Updating...</small>
@@ -57,7 +66,7 @@
     </div>
 </div>
 
-<div class="dashboard-section">
+<div class="tab-panel" id="tab-sessions">
     <div class="section-header">
         <h3>Active Character Sessions</h3>
         <small class="htmx-indicator" id="sessions-indicator">Updating...</small>
@@ -70,7 +79,7 @@
     </div>
 </div>
 
-<div class="dashboard-section">
+<div class="tab-panel" id="tab-audit">
     <div class="section-header">
         <h3>Recent Auth Log</h3>
         <small class="htmx-indicator" id="audit-indicator">Updating...</small>
@@ -83,7 +92,7 @@
     </div>
 </div>
 
-<div class="dashboard-section">
+<div class="tab-panel" id="tab-ratelimit">
     <div class="section-header">
         <h3>Rate Limited IPs</h3>
         <small class="htmx-indicator" id="ratelimit-indicator">Updating...</small>
@@ -102,7 +111,18 @@
     var guildSel = document.getElementById('guild-select');
     var timer = null;
 
-    // Append ?guild_id=<value> to every outgoing HTMX request
+    /* --- Tab switching --- */
+    var tabBar = document.getElementById('tab-bar');
+    tabBar.addEventListener('click', function(e) {
+        var btn = e.target.closest('.tab-btn');
+        if (!btn) return;
+        tabBar.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+
+    /* --- Guild filter --- */
     document.body.addEventListener('htmx:configRequest', function(evt) {
         var gid = guildSel.value;
         if (gid) {
@@ -110,11 +130,11 @@
         }
     });
 
-    // When guild selection changes, immediately re-fetch all panels
     guildSel.addEventListener('change', function() {
         document.body.dispatchEvent(new CustomEvent('refreshAll'));
     });
 
+    /* --- Auto-refresh timer --- */
     function startTimer() {
         stopTimer();
         var seconds = parseInt(refreshSel.value, 10);

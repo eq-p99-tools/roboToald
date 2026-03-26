@@ -107,6 +107,33 @@
         .dashboard-section {
             margin-bottom: 2rem;
         }
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--pico-muted-border-color);
+            margin-bottom: 1rem;
+        }
+        .tab-btn {
+            padding: 0.5rem 1.2rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: var(--pico-muted-color);
+            font-size: 0.95rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .tab-btn:hover {
+            color: var(--pico-primary);
+        }
+        .tab-btn.active {
+            color: var(--pico-primary);
+            border-bottom-color: var(--pico-primary);
+        }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
         #refresh-select {
             display: inline-block;
             width: auto;

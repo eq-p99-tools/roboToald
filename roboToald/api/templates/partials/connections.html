@@ -16,7 +16,7 @@
         <tr>
             <td>{{ c.guild_name }}</td>
             <td>{{ c.user_name }}</td>
-            <td style="white-space: nowrap;">{% if c.ip_cc == 'private' %}&#x1F512;{% elif c.ip_cc %}<span class="fi fi-{{ c.ip_cc }}"></span>{% endif %} {{ c.ip_hash }}</td>
+            <td style="white-space: nowrap;">{% if c.ip_cc == 'private' %}&#x1F512;{% elif c.ip_cc == 'unknown' or not c.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ c.ip_cc }}"></span>{% endif %} {{ c.ip_hash }}</td>
             <td>{{ c.client_version }}</td>
             <td><time class="local-time" datetime="{{ c.connected_at_iso }}"></time></td>
             <td>{{ c.uptime }}</td>
