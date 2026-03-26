@@ -189,6 +189,7 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
     - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
     """
     client_ip = _get_client_ip(request)
+    client_ver = request.headers.get("X-Client-Version")
 
     # Check if the IP is rate limited
     if sso_model.is_ip_rate_limited(client_ip, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
@@ -197,6 +198,7 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
 
     # Initialize audit log variables
     account_id = None
+    real_username = None
     guild_id = None
     discord_user_id = None
 
@@ -221,6 +223,7 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
                 account_id=None,
                 guild_id=guild_id,
                 details="Access revoked",
+                client_version=client_ver,
             )
             raise_auth_failed()
 
@@ -283,10 +286,11 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
             account_id=None,
             guild_id=None,
             details=details,
+            client_version=client_ver,
         )
         raise_auth_failed()
 
-    if not account_id:
+    if not account_id or not real_username:
         details = "Account not found"
         logger.warning(f"Authentication failed: {details}")
         # sso_model.create_audit_log(
@@ -317,6 +321,7 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
             account_id=account_id,
             guild_id=guild_id,
             details=details,
+            client_version=client_ver,
         )
         raise_auth_failed()
 
@@ -341,6 +346,7 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
             discord_user_id=discord_user_id,
             guild_id=guild_id,
             details=auth_detail,
+            client_version=client_ver,
         )
         ws_manager.notify_guild(guild_id)
 
@@ -360,6 +366,7 @@ def _get_client_ip(request: Request) -> str:
 
 def _check_auth(request: Request, access_key_in: str, query_type: str | None):
     client_ip = _get_client_ip(request)
+    client_ver = request.headers.get("X-Client-Version")
 
     # Check rate limiting
     if sso_model.is_ip_rate_limited(client_ip, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
@@ -394,6 +401,7 @@ def _check_auth(request: Request, access_key_in: str, query_type: str | None):
                 account_id=None,
                 guild_id=None,
                 details=details,
+                client_version=client_ver,
             )
         raise_auth_failed()
 
@@ -409,11 +417,12 @@ def _check_auth(request: Request, access_key_in: str, query_type: str | None):
                 account_id=None,
                 guild_id=guild_id,
                 details="Access revoked",
+                client_version=client_ver,
             )
         raise_auth_failed()
 
     discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
-    return discord_client, discord_user_id, guild_id, client_ip
+    return discord_client, discord_user_id, guild_id, client_ip, client_ver
 
 
 @app.post(
@@ -428,7 +437,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
     """
     Returns a list of accounts, aliases, and tags that the user with the given access key has access to.
     """
-    discord_client, discord_user_id, guild_id, client_ip = _check_auth(request, access_data.access_key, "list_accounts")
+    discord_client, discord_user_id, guild_id, client_ip, client_ver = _check_auth(request, access_data.access_key, "list_accounts")
 
     # Get all accounts for this guild
     all_accounts = sso_model.list_accounts(guild_id)
@@ -484,6 +493,7 @@ async def list_accounts(access_data: ListAccountsRequest, request: Request):
         account_id=None,
         guild_id=guild_id,
         details="Successfully retrieved resources list",
+        client_version=client_ver,
     )
 
     return response
@@ -501,7 +511,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
     """
     Update the bind/park location of a character assuming the access key has access to it.
     """
-    discord_client, discord_user_id, guild_id, client_ip = _check_auth(
+    discord_client, discord_user_id, guild_id, client_ip, client_ver = _check_auth(
         request, location_data.access_key, "update_location"
     )
 
@@ -527,6 +537,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
             account_id=account.id,
             guild_id=guild_id,
             details=details,
+            client_version=client_ver,
         )
         raise_auth_failed()
 
@@ -555,6 +566,7 @@ async def update_location(location_data: UpdateLocationRequest, request: Request
         f"bind = {location_data.bind_location is not None}, "
         f"park = {location_data.park_location is not None}, "
         f"level = {location_data.level}",
+        client_version=client_ver,
     )
 
     return {"status": "success"}
@@ -572,7 +584,7 @@ async def heartbeat(heartbeat_data: HeartbeatRequest, request: Request):
     """
     Authenticates and updates last_login for the character's account.
     """
-    discord_client, discord_user_id, guild_id, client_ip = _check_auth(request, heartbeat_data.access_key, None)
+    discord_client, discord_user_id, guild_id, _, _ = _check_auth(request, heartbeat_data.access_key, None)
 
     account = sso_model.find_account_by_character(guild_id, heartbeat_data.character_name)
     if not account:
@@ -622,6 +634,8 @@ async def websocket_accounts(websocket: WebSocket):
         await _ws_close(websocket, 4003, "Invalid access key")
         return
 
+    ws_client_ver = msg.get("client_version")
+
     access_key = sso_model.get_access_key_by_key(msg["access_key"])
     if not access_key:
         logger.warning("WebSocket auth failed: invalid access key from %s", client_host)
@@ -633,6 +647,7 @@ async def websocket_accounts(websocket: WebSocket):
             account_id=None,
             guild_id=None,
             details="Invalid access key (WebSocket)",
+            client_version=ws_client_ver,
         )
         await _ws_close(websocket, 4003, "Invalid access key")
         return

@@ -134,6 +134,33 @@
         }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
+        .sub-tab-bar {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            margin-bottom: 0.75rem;
+        }
+        .sub-tab-btn {
+            padding: 0.35rem 1rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: var(--pico-muted-color);
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .sub-tab-btn:hover {
+            color: var(--pico-primary);
+        }
+        .sub-tab-btn.active {
+            color: var(--pico-primary);
+            border-bottom-color: var(--pico-primary);
+        }
+        .sub-tab-panel { display: none; }
+        .sub-tab-panel.active { display: block; }
         #refresh-select {
             display: inline-block;
             width: auto;

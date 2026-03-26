@@ -518,6 +518,7 @@ def update_last_login_and_log(
     discord_user_id: int,
     guild_id: int,
     details: str,
+    client_version: str | None = None,
 ) -> "SSOAuditLog":
     """Combine update_last_login + create_audit_log into a single DB session."""
     with base.get_session() as session:
@@ -535,6 +536,7 @@ def update_last_login_and_log(
             account_id=account_id,
             guild_id=guild_id,
             details=details,
+            client_version=client_version,
         )
         session.add(audit_log)
         session.commit()
@@ -1211,6 +1213,7 @@ class SSOAuditLog(base.Base):
 
     # Additional information
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
+    client_version = sqlalchemy.Column(sqlalchemy.String(32), nullable=True)
 
     __table_args__ = (
         sqlalchemy.Index("ix_audit_rate_limit", "ip_address", "success", "timestamp"),
@@ -1248,6 +1251,7 @@ def create_audit_log(
     guild_id=None,
     details=None,
     rate_limit=True,
+    client_version=None,
 ) -> SSOAuditLog:
     """Create an audit log entry for an SSO authentication attempt."""
     with base.get_session() as session:
@@ -1260,6 +1264,7 @@ def create_audit_log(
             guild_id=guild_id,
             details=details,
             rate_limit=rate_limit,
+            client_version=client_version,
         )
         session.add(audit_log)
         session.commit()

@@ -1,0 +1,93 @@
+{% if guilds %}
+
+{% if guilds | length > 1 %}
+<div class="sub-tab-bar" id="acct-guild-bar">
+    {% for g in guilds %}
+    <button class="sub-tab-btn{% if loop.first %} active{% endif %}" data-subtab="acct-guild-{{ g.id }}">{{ g.name }}</button>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% for g in guilds %}
+<div class="sub-tab-panel{% if loop.first or guilds | length == 1 %} active{% endif %}" id="acct-guild-{{ g.id }}">
+{% if g.accounts %}
+<div style="overflow-x: auto;">
+<table>
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th>Characters</th>
+            <th>Groups</th>
+            <th>Aliases</th>
+            <th>Tags</th>
+            <th>Last Login</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in g.accounts %}
+        <tr>
+            <td style="white-space: nowrap; font-weight: 600;">{{ a.account }}</td>
+            <td>
+                {% for c in a.characters %}
+                <span class="badge" style="background: #2d4a6a; color: #d8e8f3; margin: 1px 2px;">{{ c.name }}
+                    <small>({{ c.klass }}{% if c.level %} {{ c.level }}{% endif %})</small></span>
+                {% endfor %}
+                {% if not a.characters %}<span style="opacity: 0.4;">—</span>{% endif %}
+            </td>
+            <td>
+                {% for gr in a.groups %}
+                <span class="badge" style="background: #4a2d6a; color: #e8d8f3; margin: 1px 2px; cursor: help;" title="Role: {{ gr.role }}">{{ gr.name }}</span>
+                {% endfor %}
+                {% if not a.groups %}<span style="opacity: 0.4;">—</span>{% endif %}
+            </td>
+            <td>
+                {% for al in a.aliases %}
+                <span class="badge" style="background: #3d5a3d; color: #d8f3d8; margin: 1px 2px;">{{ al }}</span>
+                {% endfor %}
+                {% if not a.aliases %}<span style="opacity: 0.4;">—</span>{% endif %}
+            </td>
+            <td>
+                {% for t in a.tags %}
+                <span class="badge" style="background: #5a4a2d; color: #f3e8d8; margin: 1px 2px;">{{ t }}</span>
+                {% endfor %}
+                {% if not a.tags %}<span style="opacity: 0.4;">—</span>{% endif %}
+            </td>
+            <td style="white-space: nowrap;">
+                {% if a.last_login_iso %}
+                <time class="local-time" datetime="{{ a.last_login_iso }}"></time>
+                {% if a.last_login_by %}<br><small>by {{ a.last_login_by }}</small>{% endif %}
+                {% else %}
+                <span style="opacity: 0.4;">Never</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty-state">No accounts in this guild</p>
+{% endif %}
+</div>
+{% endfor %}
+
+{% if guilds | length > 1 %}
+<script>
+(function() {
+    var bar = document.getElementById('acct-guild-bar');
+    if (!bar) return;
+    bar.addEventListener('click', function(e) {
+        var btn = e.target.closest('.sub-tab-btn');
+        if (!btn) return;
+        bar.querySelectorAll('.sub-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        bar.parentElement.querySelectorAll('.sub-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        document.getElementById(btn.dataset.subtab).classList.add('active');
+    });
+})();
+</script>
+{% endif %}
+
+{% else %}
+<p class="empty-state">No accounts found</p>
+{% endif %}

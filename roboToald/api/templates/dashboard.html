@@ -47,13 +47,27 @@
 
 <!-- Tabs -->
 <div class="tab-bar" id="tab-bar">
-    <button class="tab-btn active" data-tab="connections">Connections</button>
+    <button class="tab-btn active" data-tab="accounts">Accounts</button>
+    <button class="tab-btn" data-tab="connections">Connections</button>
     <button class="tab-btn" data-tab="sessions">Sessions</button>
     <button class="tab-btn" data-tab="audit">Auth Log</button>
     <button class="tab-btn" data-tab="ratelimit">Rate Limited</button>
 </div>
 
-<div class="tab-panel active" id="tab-connections">
+<div class="tab-panel active" id="tab-accounts">
+    <div class="section-header">
+        <h3>Accounts</h3>
+        <small class="htmx-indicator" id="accounts-indicator">Updating...</small>
+    </div>
+    <div id="panel-accounts"
+         hx-get="/admin/partials/accounts"
+         hx-trigger="load, refreshAll from:body"
+         hx-indicator="#accounts-indicator">
+        <p class="empty-state" aria-busy="true">Loading accounts...</p>
+    </div>
+</div>
+
+<div class="tab-panel" id="tab-connections">
     <div class="section-header">
         <h3>Connected WebSocket Clients</h3>
         <small class="htmx-indicator" id="conn-indicator">Updating...</small>

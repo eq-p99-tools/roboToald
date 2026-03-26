@@ -934,9 +934,10 @@ class SSOCommands(commands.Cog):
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
+                ver = f"v{log.client_version}" if log.client_version else ""
 
                 formatted_log = (
-                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{details}*"
+                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
                 )
                 formatted_logs.append(formatted_log)
 
@@ -988,9 +989,10 @@ class SSOCommands(commands.Cog):
                 details = log.details if log.details else "No details"
                 flag = ip_flag(log.ip_address) if log.ip_address else ""
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
+                ver = f"v{log.client_version}" if log.client_version else ""
 
                 formatted_log = (
-                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003*{details}*"
+                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
                 )
                 formatted_logs.append(formatted_log)
 
@@ -1064,12 +1066,13 @@ class SSOCommands(commands.Cog):
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 details = log.details if log.details else "No details"
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
+                ver = f"v{log.client_version}" if log.client_version else ""
 
                 # Track IP addresses for potential attack detection
                 if ip != "N/A":
                     ip_counts[ip] = ip_counts.get(ip, 0) + 1
 
-                formatted_log = f"{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003*{details}*"
+                formatted_log = f"{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003👤{discord_user}\u2003{ver}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
 
             # Create the response message
@@ -1139,8 +1142,9 @@ class SSOCommands(commands.Cog):
                     flag = ip_flag(log.ip_address) if log.ip_address else ""
                     ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                     discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "Unknown"
+                    ver = f"v{log.client_version}" if log.client_version else ""
 
-                    response += f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003*{log.details}*\n"
+                    response += f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003{ver}\u2003*{log.details}*\n"
             else:
                 response += "_No recent activity_\n"
 

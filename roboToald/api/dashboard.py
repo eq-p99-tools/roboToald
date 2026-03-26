@@ -297,10 +297,79 @@ async def partial_audit_log(request: Request):
                 if log.discord_user_id and log.guild_id else ""
             ),
             "details": log.details or "",
+            "client_version": log.client_version or "",
         })
 
     return templates.TemplateResponse(request, "partials/audit_log.html", {
         "entries": entries,
+    })
+
+
+def _resolve_role_name(discord_client, guild_id: int, role_id: int) -> str:
+    if not discord_client:
+        return str(role_id)
+    guild = discord_client.get_guild(guild_id)
+    if not guild:
+        return str(role_id)
+    role = guild.get_role(role_id)
+    return role.name if role else str(role_id)
+
+
+@router.get("/partials/accounts", response_class=HTMLResponse)
+async def partial_accounts(request: Request):
+    if not _is_authenticated(request):
+        return Response(status_code=401)
+
+    discord_client = getattr(request.app.state, "discord_client", None)
+    filter_gid = _parse_guild_filter(request)
+    guild_ids = _sso_guild_ids(filter_gid)
+
+    guilds = []
+    for gid in guild_ids:
+        guild_name = _resolve_guild_name(discord_client, gid)
+        accounts = sso_model.list_accounts(gid)
+        rows = []
+        for acct in accounts:
+            chars = sorted(
+                [
+                    {
+                        "name": c.name,
+                        "klass": c.klass.value if c.klass else "",
+                        "level": c.level,
+                    }
+                    for c in acct.characters
+                ],
+                key=lambda c: c["name"],
+            )
+            groups = sorted(
+                [
+                    {
+                        "name": g.group_name,
+                        "role": _resolve_role_name(discord_client, gid, g.role_id),
+                    }
+                    for g in acct.groups
+                ],
+                key=lambda g: g["name"],
+            )
+            aliases = sorted(a.alias for a in acct.aliases)
+            tags = sorted({t.tag for t in acct.tags})
+            last_login_ts = ""
+            if acct.last_login and acct.last_login != datetime.datetime.min:
+                last_login_ts = acct.last_login.isoformat()
+            rows.append({
+                "account": acct.real_user,
+                "characters": chars,
+                "groups": groups,
+                "aliases": aliases,
+                "tags": tags,
+                "last_login_iso": last_login_ts,
+                "last_login_by": acct.last_login_by or "",
+            })
+        rows.sort(key=lambda r: r["account"])
+        guilds.append({"id": gid, "name": guild_name, "accounts": rows})
+
+    return templates.TemplateResponse(request, "partials/accounts.html", {
+        "guilds": guilds,
     })
 
 
