@@ -54,7 +54,19 @@
             font-size: 0.78rem;
             letter-spacing: 0.04em;
             color: var(--pico-muted-color);
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 1.2em;
         }
+        table thead th::after {
+            content: '';
+            position: absolute;
+            right: 0.3em;
+            opacity: 0.3;
+        }
+        table thead th.sort-asc::after { content: '\25B2'; opacity: 0.8; }
+        table thead th.sort-desc::after { content: '\25BC'; opacity: 0.8; }
         .badge {
             display: inline-block;
             padding: 0.15em 0.5em;
@@ -215,6 +227,41 @@
         });
     }
     formatLocalTimes();
+
+    document.body.addEventListener('click', function(evt) {
+        var th = evt.target.closest('thead th');
+        if (!th) return;
+        var table = th.closest('table');
+        var tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        var idx = Array.prototype.indexOf.call(th.parentNode.children, th);
+        var asc = !th.classList.contains('sort-asc');
+        th.parentNode.querySelectorAll('th').forEach(function(h) { h.classList.remove('sort-asc', 'sort-desc'); });
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        var rows = Array.from(tbody.rows);
+        rows.sort(function(a, b) {
+            var cellA = a.cells[idx];
+            var cellB = b.cells[idx];
+            if (!cellA || !cellB) return 0;
+            var tA = cellA.querySelector('time[datetime]');
+            var tB = cellB.querySelector('time[datetime]');
+            var vA, vB;
+            if (tA && tB) {
+                vA = new Date(tA.getAttribute('datetime')).getTime() || 0;
+                vB = new Date(tB.getAttribute('datetime')).getTime() || 0;
+            } else {
+                vA = (cellA.textContent || '').trim().toLowerCase();
+                vB = (cellB.textContent || '').trim().toLowerCase();
+                var nA = parseFloat(vA), nB = parseFloat(vB);
+                if (!isNaN(nA) && !isNaN(nB)) { vA = nA; vB = nB; }
+            }
+            if (vA < vB) return asc ? -1 : 1;
+            if (vA > vB) return asc ? 1 : -1;
+            return 0;
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+    });
+
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         formatLocalTimes(evt.detail.target);
     });

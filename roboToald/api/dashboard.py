@@ -394,7 +394,9 @@ async def partial_sessions(request: Request):
                 "klass": character.klass.value if character and character.klass else "",
                 "park": (character.park_location or "") if character else "",
                 "first_seen": s.first_seen.strftime("%H:%M:%S"),
+                "first_seen_iso": s.first_seen.isoformat() + "Z",
                 "last_seen": s.last_seen.strftime("%H:%M:%S"),
+                "last_seen_iso": s.last_seen.isoformat() + "Z",
                 "duration": f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m",
             })
 
@@ -411,6 +413,7 @@ def _format_audit_entries(logs, discord_client) -> list[dict]:
         ip = log.ip_address or ""
         entries.append({
             "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "",
+            "timestamp_iso": log.timestamp.isoformat() + "Z" if log.timestamp else "",
             "username": log.username,
             "ip_cc": sso_model.ip_country_code(ip) if ip else "",
             "ip_address": sso_model.hash_ip(ip) if ip else "",

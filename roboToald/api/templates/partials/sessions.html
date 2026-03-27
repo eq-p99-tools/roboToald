@@ -21,8 +21,8 @@
             <td>{% if s.discord_user_id %}<a href="#" onclick="showAuditModal('user_id','{{ s.discord_user_id }}','{{ s.user_name }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ s.user_name }}</a>{% else %}{{ s.user_name }}{% endif %}</td>
             <td>{{ s.klass }}</td>
             <td>{{ s.park }}</td>
-            <td>{{ s.first_seen }}</td>
-            <td>{{ s.last_seen }}</td>
+            <td><time class="local-time" datetime="{{ s.first_seen_iso }}">{{ s.first_seen }}</time></td>
+            <td><time class="local-time" datetime="{{ s.last_seen_iso }}">{{ s.last_seen }}</time></td>
             <td>{{ s.duration }}</td>
         </tr>
         {% endfor %}
