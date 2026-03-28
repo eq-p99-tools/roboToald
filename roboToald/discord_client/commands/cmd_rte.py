@@ -477,6 +477,7 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
         dkp_earned = tracking.dkp_amount
         char_name = char.name if char else "?"
         tgt_name = tgt.name if tgt else "?"
+        on_char_name = on_char.name if on_char else None
         role_name = tracking.role_name
         tracking_id = tracking.id
         tracking_message_id = tracking.message_id
@@ -484,8 +485,8 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
         session.commit()
 
     dm_summary = f"+ You are no longer RTEing {tgt_name} on {char_name}"
-    if on_char:
-        dm_summary += f" on {on_char.name}"
+    if on_char_name:
+        dm_summary += f" on {on_char_name}"
     dm_summary += f" as {role_name} due to button end. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking_id})"
 
     stopped_view = disnake.ui.View()
@@ -499,8 +500,8 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
     await inter.followup.send(f"```diff\n{dm_summary}```")
 
     chan_summary = f"+ {char_name} is no longer RTEing {tgt_name}"
-    if on_char:
-        chan_summary += f" on {on_char.name}"
+    if on_char_name:
+        chan_summary += f" on {on_char_name}"
     chan_summary += f" as {role_name} due to button end. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking_id})"
 
     tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
