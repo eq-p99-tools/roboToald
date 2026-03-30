@@ -296,7 +296,7 @@ async def target(
             pass
 
         await inter.followup.send(
-            f"```diff\n+ Target changed to {tgt.name}. DKP: {evt.dkp_value}. No kill: {evt.nokill_dkp_value}.```"
+            f"```diff\n+ Target is changed to {tgt.name}. DKP value is {tgt.dkp_value(True)}. No kill value is {tgt.dkp_value(False)}.```"
         )
 
         tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
@@ -310,7 +310,7 @@ async def target(
 async def targets(inter: disnake.ApplicationCommandInteraction):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "targets", guild_id):
-        await inter.response.send_message("```diff\n- No permission.```", ephemeral=True)
+        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
         return
     with get_raid_session(guild_id) as session:
         all_targets = session.query(Target).filter_by(parent="").all()
@@ -355,7 +355,7 @@ def _count_pinned_in(category, pinned_ids: set) -> int:
 async def reorder(inter: disnake.ApplicationCommandInteraction):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "reorder", guild_id):
-        await inter.response.send_message("```diff\n- No permission.```", ephemeral=True)
+        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
         return
 
     event_category_ids = config.get_raid_setting(guild_id, "event_category_ids") or []
@@ -776,7 +776,7 @@ def _get_event(session, channel_id: str) -> Event | None:
 async def _cmd_kill(message: disnake.Message, _args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "kill", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
@@ -787,7 +787,12 @@ async def _cmd_kill(message: disnake.Message, _args: str):
         session.commit()
         dkp_val = evt.dkp_value
         new_name = f"\U0001F480{evt.channel_name}"
-    await message.channel.send(f"```diff\n+ Marked as killed. DKP: {dkp_val}.```")
+    if dkp_val is None:
+        await message.channel.send(
+            "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as killed.```"
+        )
+        return
+    await message.channel.send(f"```diff\n+ Target was marked as a kill. DKP reward will be {dkp_val}.```")
     try:
         await message.channel.edit(name=new_name)
     except disnake.HTTPException:
@@ -798,7 +803,7 @@ async def _cmd_kill(message: disnake.Message, _args: str):
 async def _cmd_nokill(message: disnake.Message, _args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "nokill", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
@@ -809,7 +814,12 @@ async def _cmd_nokill(message: disnake.Message, _args: str):
         session.commit()
         dkp_val = evt.dkp_value
         new_name = f"\u26D4{evt.channel_name}"
-    await message.channel.send(f"```diff\n+ Marked as not killed. DKP: {dkp_val}.```")
+    if dkp_val is None:
+        await message.channel.send(
+            "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as not killed.```"
+        )
+        return
+    await message.channel.send(f"```diff\n+ Target was marked as not killed. DKP reward will be {dkp_val}.```")
     try:
         await message.channel.edit(name=new_name)
     except disnake.HTTPException:
@@ -820,7 +830,7 @@ async def _cmd_nokill(message: disnake.Message, _args: str):
 async def _cmd_dkp(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "dkp", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     parts = args.split()
     if not parts or not parts[0].lstrip("-").isdigit():
@@ -860,7 +870,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
         return
 
     if not perms.can(message.author, "submit", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
 
     force = args_lower == "force"
@@ -995,7 +1005,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
 async def _cmd_submit_reset(message: disnake.Message):
     guild_id = message.guild.id
     if not perms.can(message.author, "submit", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
@@ -1012,7 +1022,7 @@ async def _cmd_submit_reset(message: disnake.Message):
 async def _cmd_delete_event(message: disnake.Message, _args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "delete_event", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     with get_raid_session(guild_id) as session:
         if not _get_event(session, str(message.channel.id)):
@@ -1025,7 +1035,7 @@ async def _cmd_delete_event(message: disnake.Message, _args: str):
 async def _cmd_clear(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "clear", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     what = args.strip().lower()
     if what not in ("attendees", "loot", "rte"):
@@ -1060,7 +1070,7 @@ async def _cmd_clear(message: disnake.Message, args: str):
 async def _cmd_target(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "target", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     name = args.strip()
     if not name:
@@ -1076,10 +1086,10 @@ async def _cmd_target(message: disnake.Message, args: str):
         targets, _ = resolve_target(name, session)
         if len(targets) > 1:
             names = ", ".join(t.name for t in targets)
-            await message.channel.send(f"```diff\n- Multiple targets found ({names}). Be more specific.```")
+            await message.channel.send(f"```diff\n- Multiple targets were found for this event ({names}). Please be more specific.```")
             return
         if not targets:
-            await message.channel.send("```diff\n- Target not found. Use /event targets to see available targets.```")
+            await message.channel.send("```diff\n- We are sorry but that target was not found. Please try again or use `/event targets` to see the list.```")
             return
 
         tgt = targets[0]
@@ -1119,7 +1129,7 @@ async def _cmd_target(message: disnake.Message, args: str):
             pass
 
         await message.channel.send(
-            f"```diff\n+ Target changed to {tgt.name}. DKP: {evt.dkp_value}. No kill: {evt.nokill_dkp_value}.```"
+            f"```diff\n+ Target is changed to {tgt.name}. DKP value is {tgt.dkp_value(True)}. No kill value is {tgt.dkp_value(False)}.```"
         )
 
         tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
@@ -1232,7 +1242,7 @@ def _resolve_item(item_str: str, session) -> Item | str:
 async def _cmd_unloot(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "unloot", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     loot_id_str = args.strip()
     if not loot_id_str.isdigit():
@@ -1264,7 +1274,7 @@ async def _cmd_unloot(message: disnake.Message, args: str):
 async def _cmd_fte(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "fte", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     parts = args.strip().split()
     if len(parts) < 2 or not parts[-1].lstrip("-").isdigit():
@@ -1293,7 +1303,7 @@ async def _cmd_fte(message: disnake.Message, args: str):
 async def _cmd_unfte(message: disnake.Message, args: str):
     guild_id = message.guild.id
     if not perms.can(message.author, "unfte", guild_id):
-        await message.channel.send("```diff\n- No permission.```")
+        await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
     fte_id_str = args.strip()
     if not fte_id_str.isdigit():
@@ -1518,7 +1528,7 @@ async def reload(
         or str(inter.author.id) in (config.get_raid_setting(guild_id, "allowed_reload_ids") or [])
     )
     if not is_allowed:
-        await inter.response.send_message("```diff\n- No permission.```", ephemeral=True)
+        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
         return
 
     await inter.response.defer()

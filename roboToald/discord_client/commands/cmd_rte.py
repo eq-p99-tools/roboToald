@@ -115,10 +115,15 @@ async def start(
             msg_text += f" on {on_char.name}"
         msg_text += f" as {tracking.role_name} (DKP Per Hour: {rate}, ID: {tracking.id})"
 
+        chan_text = f"+ {char.name} started RTEing {tgt.name}"
+        if on_char:
+            chan_text += f" on {on_char.name}"
+        chan_text += f" as {tracking.role_name} by {inter.author.display_name} (DKP Per Hour: {rate}, ID: {tracking.id})"
+
         tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
         tracking_ch = inter.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
         if tracking_ch:
-            resp = await tracking_ch.send(f"```diff\n{msg_text}```")
+            resp = await tracking_ch.send(f"```diff\n{chan_text}```")
             tracking.message_id = str(resp.id)
         await inter.followup.send(f"```diff\n{msg_text}```")
 
@@ -227,7 +232,7 @@ async def stop(
         chan_msg = f"+ {char.name} is no longer RTEing {tgt.name}"
         if on_char:
             chan_msg += f" on {on_char.name}"
-        chan_msg += f" as {tracking.role_name} due to manual end. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking.id})"
+        chan_msg += f" as {tracking.role_name} due to manual end by {inter.author.display_name}. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking.id})"
 
         reply_ref = None
         if tracking.message_id:
@@ -502,7 +507,7 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
     chan_summary = f"+ {char_name} is no longer RTEing {tgt_name}"
     if on_char_name:
         chan_summary += f" on {on_char_name}"
-    chan_summary += f" as {role_name} due to button end. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking_id})"
+    chan_summary += f" as {role_name} due to button end by {inter.author.display_name}. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking_id})"
 
     tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
     tracking_ch = None
