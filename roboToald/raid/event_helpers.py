@@ -7,13 +7,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import disnake
-import sqlalchemy as sa
 
 from roboToald.db.raid_base import get_raid_session
-from roboToald.db.raid_models.raid import Event, Attendee, Removal, Fte, EqdkpEvent
+from roboToald.db.raid_models.raid import Event, Attendee, Removal, Fte
 from roboToald.db.raid_models.target import Target, TargetAlias
 from roboToald.db.raid_models.tracking import Tracking
-from roboToald.db.raid_models.loot import EventLoot, Item, Loot, LootTable
+from roboToald.db.raid_models.loot import EventLoot, Item, LootTable
 from roboToald.db.raid_models.character import Character
 
 if TYPE_CHECKING:

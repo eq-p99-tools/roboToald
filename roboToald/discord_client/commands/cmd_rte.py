@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from roboToald import config
 from roboToald.db.raid_base import get_raid_session
 from roboToald.db.raid_models.target import Target, TargetAlias
-from roboToald.db.raid_models.tracking import Tracking, RTE_ROLES, RTE_ROLE_NAMES
+from roboToald.db.raid_models.tracking import Tracking, RTE_ROLES
 from roboToald.db.raid_models.character import Character
 from roboToald.discord_client import base
 from roboToald.raid import permissions as perms
@@ -206,12 +206,12 @@ async def stop(
 
         targets, _ = resolve_target(target_name, session)
         if not targets:
-            await inter.response.send_message(f"```diff\n- Target not found.```", ephemeral=True)
+            await inter.response.send_message(f"```diff\n- Target {target_name} not found.```", ephemeral=True)
             return
 
         tgt = targets[0] if len(targets) == 1 else None
         if not tgt:
-            await inter.response.send_message("```diff\n- Multiple targets found, be more specific.```", ephemeral=True)
+            await inter.response.send_message(f"```diff\n- Multiple targets found for {target_name}, be more specific.```", ephemeral=True)
             return
 
         tracking = session.query(Tracking).filter_by(
@@ -357,7 +357,7 @@ async def pending(inter: disnake.ApplicationCommandInteraction):
                     lines.append(f"+ {item['role']} - {item['duration']}, DKP:{item['dkp']} (ID:{item['id']})")
             text = "\n".join(lines)
             if len(text) > 900:
-                chunks, buf = [], ""
+                buf = ""
                 for line in lines:
                     if len(buf + line + "\n") > 900:
                         embed.add_field(name=tgt_name, value=f"```diff\n{buf}```", inline=False)

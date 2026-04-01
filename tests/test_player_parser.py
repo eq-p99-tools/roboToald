@@ -17,8 +17,7 @@ def _parse(content: str, session, known_chars=None):
         session.add(Character(name=char_name))
     session.flush()
 
-    import roboToald.raid.player_parser as pp
-    orig_get = pp.get_raid_session
+    orig_get = player_parser.get_raid_session
 
     import contextlib
 
@@ -26,11 +25,11 @@ def _parse(content: str, session, known_chars=None):
     def fake_session(guild_id):
         yield session
 
-    pp.get_raid_session = fake_session
+    player_parser.get_raid_session = fake_session
     try:
-        players, anon = pp.parse_players_from_content(content, FAKE_GUILD_ID)
+        players, anon = player_parser.parse_players_from_content(content, FAKE_GUILD_ID)
     finally:
-        pp.get_raid_session = orig_get
+        player_parser.get_raid_session = orig_get
     return players, anon
 
 
