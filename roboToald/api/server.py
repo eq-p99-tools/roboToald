@@ -1,12 +1,15 @@
 """REST API server implementation for RoboToald."""
 
 import asyncio
+import base64
 import datetime
 import json
 import logging
 from dataclasses import dataclass
 from typing import Union
 import threading
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
@@ -165,6 +168,23 @@ async def root(request: Request):
     if discord_client is None:
         return {"status": "warning", "service": "RoboToald API", "message": "Discord client not initialized"}
     return {"status": "ok", "service": "RoboToald API", "message": "API server is running"}
+
+
+# ---------------------------------------------------------------------------
+# DES-CBC credential encryption (EQ protocol: all-zero 8-byte key/IV)
+# ---------------------------------------------------------------------------
+_DES_KEY = b"\x00" * 8
+_DES_IV = b"\x00" * 8
+
+
+def _des_encrypt_credentials(username: str, password: str) -> bytes:
+    """Encrypt ``user\\0pass\\0`` with DES-CBC, matching the EQ login format."""
+    plaintext = username.encode() + b"\x00" + password.encode() + b"\x00"
+    padded_len = ((len(plaintext) + 7) // 8) * 8
+    padded = plaintext.ljust(padded_len, b"\x00")
+    cipher = Cipher(algorithms.TripleDES(_DES_KEY), modes.CBC(_DES_IV))
+    encryptor = cipher.encryptor()
+    return encryptor.update(padded) + encryptor.finalize()
 
 
 @dataclass
@@ -880,11 +900,12 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
     )
 
     if result.success:
+        encrypted = _des_encrypt_credentials(result.real_user, result.real_pass)
         await conn.websocket.send_json({
             "type": "login_auth_response",
             "request_id": request_id,
             "real_user": result.real_user,
-            "real_pass": result.real_pass,
+            "encrypted_credentials": base64.b64encode(encrypted).decode(),
         })
     else:
         await conn.websocket.send_json({

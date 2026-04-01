@@ -390,7 +390,7 @@ Reply to a client ping:
 
 #### Login Auth Response
 
-Reply to a `login_auth` request. Contains either the real credentials or an error.
+Reply to a `login_auth` request. Contains either the encrypted credentials or an error. The real password is never sent in plaintext; instead the server DES-CBC encrypts the credentials and returns a base64-encoded blob the client splices directly into the login packet.
 
 **Success:**
 ```json
@@ -398,7 +398,7 @@ Reply to a `login_auth` request. Contains either the real credentials or an erro
   "type": "login_auth_response",
   "request_id": "same_as_request",
   "real_user": "actual_username",
-  "real_pass": "actual_password"
+  "encrypted_credentials": "<base64-encoded DES-CBC ciphertext>"
 }
 ```
 
@@ -415,8 +415,8 @@ Reply to a `login_auth` request. Contains either the real credentials or an erro
 | Field | Type | Description |
 |---|---|---|
 | `request_id` | `string` | Echoed from the request for correlation |
-| `real_user` | `string?` | Real EQ username (present on success) |
-| `real_pass` | `string?` | Real EQ password (present on success) |
+| `real_user` | `string?` | Real EQ account name (present on success, for logging/display) |
+| `encrypted_credentials` | `string?` | Base64-encoded DES-CBC ciphertext of `username\0password\0` (present on success) |
 | `error` | `string?` | Error detail (present on failure) |
 | `status` | `int?` | HTTP-equivalent status code: 400 (character not found), 401 (auth failed / access denied), 410 (tag temporarily empty) |
 
