@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import Union
 import threading
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
+from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
 from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
@@ -182,7 +183,7 @@ def _des_encrypt_credentials(username: str, password: str) -> bytes:
     plaintext = username.encode() + b"\x00" + password.encode() + b"\x00"
     padded_len = ((len(plaintext) + 7) // 8) * 8
     padded = plaintext.ljust(padded_len, b"\x00")
-    cipher = Cipher(algorithms.TripleDES(_DES_KEY), modes.CBC(_DES_IV))
+    cipher = Cipher(TripleDES(_DES_KEY), modes.CBC(_DES_IV))
     encryptor = cipher.encryptor()
     return encryptor.update(padded) + encryptor.finalize()
 
@@ -205,12 +206,16 @@ def _perform_login_auth(
     client_ip: str,
     client_ver: str | None,
     discord_client=None,
+    *,
+    auth_source: str,
 ) -> LoginAuthResult:
     """Core login authentication shared by HTTP /auth and WebSocket login_auth.
 
     Resolves the account by username, checks RBAC, writes the audit log,
     and returns credentials on success.  Callers handle access-key validation,
     rate limiting, revocation, and client version/settings enforcement.
+
+    *auth_source* is ``"http"`` or ``"websocket"`` for server logs.
     """
     try:
         account = sso_model.find_account_by_username(username, guild_id, inactive_only=True)
@@ -271,6 +276,19 @@ def _perform_login_auth(
         client_version=client_ver,
     )
     ws_manager.notify_guild(guild_id)
+
+    guild_label = _guild_label_for_log(discord_client, guild_id)
+    user_label = _user_label_for_log(discord_client, guild_id, discord_user_id)
+    session_ctx = _session_context_log(
+        guild_label, user_label, client_ver or "unknown", client_ip)
+    logger.info(
+        "SSO login [%s] | %s | eq_account=%r | requested_as=%r | %s",
+        auth_source,
+        session_ctx,
+        real_username,
+        username,
+        auth_detail,
+    )
 
     return LoginAuthResult(
         success=True,
@@ -400,6 +418,7 @@ async def authenticate(auth_data: AuthRequest, request: Request):
         client_ip=client_ip,
         client_ver=client_ver,
         discord_client=discord_client,
+        auth_source="http",
     )
 
     if not result.success:
@@ -715,8 +734,10 @@ async def websocket_accounts(websocket: WebSocket):
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
     if discord_client and not discord_client.is_ready():
-        ws_label_early = f"guild={guild_id} user={discord_user_id} ip={client_host}"
-        logger.info("WebSocket waiting for Discord to be ready: %s", ws_label_early)
+        ws_label_early = (
+            f"guild_id={guild_id} | user_id={discord_user_id} | ip={client_host}"
+        )
+        logger.info("WebSocket waiting for Discord to be ready | %s", ws_label_early)
         for _ in range(30):
             await asyncio.sleep(1)
             if discord_client.is_ready():
@@ -726,20 +747,15 @@ async def websocket_accounts(websocket: WebSocket):
             return
 
     # --- Resolve friendly guild/user names for logging ---
-    if discord_client:
-        guild = discord_client.get_guild(guild_id)
-        member = guild.get_member(discord_user_id) if guild else None
-        guild_label = f"{guild_id} ({guild.name})" if guild else str(guild_id)
-        user_label = f"{discord_user_id} ({member.display_name})" if member else str(discord_user_id)
-    else:
-        guild_label = str(guild_id)
-        user_label = str(discord_user_id)
+    guild_label = _guild_label_for_log(discord_client, guild_id)
+    user_label = _user_label_for_log(discord_client, guild_id, discord_user_id)
     client_ver = msg.get("client_version", "unknown")
-    ws_label = f"guild={guild_label} user={user_label} v={client_ver} ip={client_host}"
+    session_ctx = _session_context_log(
+        guild_label, user_label, client_ver, client_host)
 
     # --- Check revocation ---
     if sso_model.is_user_access_revoked(guild_id, discord_user_id):
-        logger.warning("WebSocket rejected: access revoked: %s", ws_label)
+        logger.warning("WebSocket rejected: access revoked | %s", session_ctx)
         await _ws_close(websocket, 4003, "Access revoked")
         return
 
@@ -752,7 +768,9 @@ async def websocket_accounts(websocket: WebSocket):
             update_msg = guild_settings.get("client_update_message") or (
                 f"Client update required (minimum version: {min_ver})"
             )
-            logger.info("Rejecting outdated client %s (minimum %s): %s", client_ver, min_ver, ws_label)
+            logger.info(
+                "Rejecting outdated client %s (minimum %s) | %s",
+                client_ver, min_ver, session_ctx)
             await _ws_close(websocket, 4010, update_msg)
             return
 
@@ -760,7 +778,8 @@ async def websocket_accounts(websocket: WebSocket):
     user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
     settings_error = _validate_client_settings(msg.get("client_settings"), guild_id, user_role_ids=user_role_ids)
     if settings_error:
-        logger.info("Rejecting client due to settings: %s: %s", settings_error, ws_label)
+        logger.info(
+            "Rejecting client due to settings | %s | %s", settings_error, session_ctx)
         await _ws_close(websocket, 4011, settings_error)
         return
 
@@ -788,14 +807,16 @@ async def websocket_accounts(websocket: WebSocket):
                 "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
             }
         )
-        logger.info("WebSocket connected: %s (%d accounts)", ws_label, len(account_tree))
+        logger.info(
+            "WebSocket connected | %s | accounts=%d",
+            session_ctx, len(account_tree))
 
         # --- Phase 3: listen for client messages + send keepalive pings ---
         await _ws_message_loop(websocket, conn)
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected: %s", ws_label)
+        logger.info("WebSocket disconnected | %s", session_ctx)
     except Exception:
-        logger.exception("WebSocket error: %s", ws_label)
+        logger.exception("WebSocket error | %s", session_ctx)
     finally:
         ws_manager.unregister(websocket)
 
@@ -897,6 +918,7 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
         client_ip=conn.client_ip,
         client_ver=conn.client_version,
         discord_client=discord_client,
+        auth_source="websocket",
     )
 
     if result.success:
@@ -955,6 +977,39 @@ async def _ws_close(websocket: WebSocket, code: int, reason: str):
         await websocket.close(code=code, reason=reason)
     except Exception:
         pass
+
+
+def _guild_label_for_log(discord_client, guild_id: int) -> str:
+    """Guild id plus Discord server name when the bot can resolve the guild."""
+    if not discord_client:
+        return str(guild_id)
+    guild = discord_client.get_guild(guild_id)
+    if not guild:
+        return str(guild_id)
+    return f"{guild_id} ({guild.name})"
+
+
+def _user_label_for_log(discord_client, guild_id: int, discord_user_id: int) -> str:
+    """Discord user id plus guild display name when the member can be resolved."""
+    if not discord_client:
+        return str(discord_user_id)
+    guild = discord_client.get_guild(guild_id)
+    member = guild.get_member(discord_user_id) if guild else None
+    if member:
+        return f"{discord_user_id} ({member.display_name})"
+    return str(discord_user_id)
+
+
+def _session_context_log(
+    guild_label: str,
+    user_label: str,
+    client_ver: str,
+    client_ip: str,
+) -> str:
+    """Pipe-delimited session fields shared by SSO login and WebSocket logs."""
+    return (
+        f"guild={guild_label} | user={user_label} | v={client_ver} | ip={client_ip}"
+    )
 
 
 def _resolve_display_name(discord_client, guild_id: int, discord_user_id: int) -> str | None:
