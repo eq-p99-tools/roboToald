@@ -4,11 +4,12 @@ import asyncio
 import datetime
 import json
 import logging
+from dataclasses import dataclass
 from typing import Union
 import threading
 
 from disnake.ext import commands
-from fastapi import BackgroundTasks, FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import uvicorn
 
@@ -166,6 +167,98 @@ async def root(request: Request):
     return {"status": "ok", "service": "RoboToald API", "message": "API server is running"}
 
 
+@dataclass
+class LoginAuthResult:
+    """Result of a login authentication attempt."""
+
+    success: bool
+    real_user: str | None = None
+    real_pass: str | None = None
+    error_detail: str | None = None
+    error_status: int = 401
+
+
+def _perform_login_auth(
+    username: str,
+    guild_id: int,
+    discord_user_id: int,
+    client_ip: str,
+    client_ver: str | None,
+    discord_client=None,
+) -> LoginAuthResult:
+    """Core login authentication shared by HTTP /auth and WebSocket login_auth.
+
+    Resolves the account by username, checks RBAC, writes the audit log,
+    and returns credentials on success.  Callers handle access-key validation,
+    rate limiting, revocation, and client version/settings enforcement.
+    """
+    try:
+        account = sso_model.find_account_by_username(username, guild_id, inactive_only=True)
+    except sso_model.SSOTagTemporarilyEmptyError:
+        return LoginAuthResult(
+            success=False,
+            error_detail="Tag is empty (possibly temporarily, due to inactivity requirements)",
+            error_status=410,
+        )
+
+    if not account:
+        return LoginAuthResult(
+            success=False,
+            error_detail="Character not found",
+            error_status=400,
+        )
+
+    # Check if the discord user has access to this account
+    if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account.id]):
+        # Log with specific reason but return generic error
+        sso_model.create_audit_log(
+            username=account.real_user,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=account.id,
+            guild_id=guild_id,
+            details="Access denied",
+            client_version=client_ver,
+        )
+        return LoginAuthResult(
+            success=False,
+            error_detail="Authentication failed",
+            error_status=401,
+        )
+
+    # Authentication successful - build audit detail
+    login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+    input_name = username.lower()
+    real_username = account.real_user
+    if input_name == real_username:
+        auth_detail = "Authentication successful (account name)"
+    elif any(c.name.lower() == input_name for c in account.characters):
+        auth_detail = f"Authentication successful via character {username}"
+    elif any(a.alias.lower() == input_name for a in account.aliases):
+        auth_detail = f"Authentication successful via alias {username}"
+    else:
+        auth_detail = f"Authentication successful via tag {username}"
+
+    sso_model.update_last_login_and_log(
+        account_id=account.id,
+        login_by=login_name,
+        username=real_username,
+        ip_address=client_ip,
+        discord_user_id=discord_user_id,
+        guild_id=guild_id,
+        details=auth_detail,
+        client_version=client_ver,
+    )
+    ws_manager.notify_guild(guild_id)
+
+    return LoginAuthResult(
+        success=True,
+        real_user=account.real_user,
+        real_pass=account.real_pass,
+    )
+
+
 @app.post(
     "/auth",
     response_model=Union[SSOResponse, ErrorResponse],
@@ -178,13 +271,9 @@ async def root(request: Request):
         # 429: {"model": ErrorResponse, "description": "Too many failed attempts"}
     },
 )
-async def authenticate(auth_data: AuthRequest, request: Request, background_tasks: BackgroundTasks):
+async def authenticate(auth_data: AuthRequest, request: Request):
     """
     Authenticate a user based on username and password.
-
-    # Access the Discord client from app.state
-    discord_client = request.app.state.discord_client if hasattr(request.app.state, 'discord_client') else None
-    # You can now use discord_client in this route if needed
 
     The authentication process:
     1. Check if the client IP is rate limited
@@ -198,6 +287,8 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
 
     Rate limiting:
     - IP addresses with more than some number of failed attempts in a rolling time period will be blocked
+
+    Account resolution and RBAC are delegated to ``_perform_login_auth``.
     """
     client_ip = _get_client_ip(request)
     client_ver = request.headers.get("X-Client-Version")
@@ -207,84 +298,9 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
         logger.warning(f"Rate limit exceeded for IP: {client_ip}")
         raise_auth_failed()
 
-    # Initialize audit log variables
-    account_id = None
-    real_username = None
-    guild_id = None
-    discord_user_id = None
-
     # Find the discord_user_id associated with the provided password
     access_key = sso_model.get_access_key_by_key(auth_data.password)
-
-    """
-    If we have an access key, we can look up the account by the guild_id.
-    If we don't have an access key, we'll log the failed attempt and continue.
-    """
-    if access_key:
-        discord_user_id = access_key.discord_user_id
-        guild_id = access_key.guild_id
-
-        if sso_model.is_user_access_revoked(guild_id, discord_user_id):
-            logger.warning(f"Authentication failed: Access revoked for user {discord_user_id}")
-            sso_model.create_audit_log(
-                username=auth_data.username,
-                ip_address=client_ip,
-                success=False,
-                discord_user_id=discord_user_id,
-                account_id=None,
-                guild_id=guild_id,
-                details="Access revoked",
-                client_version=client_ver,
-            )
-            raise_auth_failed()
-
-        discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
-
-        guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
-        min_ver = guild_settings.get("min_client_version")
-        if min_ver:
-            client_ver = request.headers.get("X-Client-Version", "0.0.0")
-            if _parse_version(client_ver) < _parse_version(min_ver):
-                update_msg = guild_settings.get("client_update_message") or (
-                    f"Client update required (minimum version: {min_ver})"
-                )
-                logger.info(
-                    "Rejecting /auth: client %s below minimum %s [account: %s, guild: %s]",
-                    client_ver,
-                    min_ver,
-                    auth_data.username,
-                    guild_id,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=update_msg,
-                )
-
-        user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
-        settings_error = _validate_client_settings(auth_data.client_settings, guild_id, user_role_ids=user_role_ids)
-        if settings_error:
-            login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
-            logger.info(
-                "Rejecting /auth due to client settings: %s [account: %s, guild: %s, user: %s (%s)]",
-                settings_error,
-                auth_data.username,
-                guild_id,
-                discord_user_id,
-                login_name or "unknown",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=settings_error,
-            )
-
-        try:
-            account = sso_model.find_account_by_username(auth_data.username, access_key.guild_id, inactive_only=True)
-        except sso_model.SSOTagTemporarilyEmptyError:
-            raise_tag_temporarily_empty()
-        if account:
-            account_id = account.id
-            real_username = account.real_user
-    else:
+    if not access_key:
         # Log failed authentication attempt
         details = "Invalid access key"
         logger.warning(f"Authentication failed: {details} [account: {auth_data.username}]")
@@ -301,70 +317,80 @@ async def authenticate(auth_data: AuthRequest, request: Request, background_task
         )
         raise_auth_failed()
 
-    if not account_id or not real_username:
-        details = "Account not found"
-        logger.warning(f"Authentication failed: {details}")
-        # sso_model.create_audit_log(
-        #     username=auth_data.username,
-        #     ip_address=client_ip,
-        #     success=False,
-        #     discord_user_id=discord_user_id,
-        #     account_id=None,
-        #     guild_id=access_key.guild_id,
-        #     details=details
-        # )
-        raise_invalid_character()
+    discord_user_id = access_key.discord_user_id
+    guild_id = access_key.guild_id
 
-    # Past this point we are guaranteed to have an account_id, guild_id, and discord_user_id
-    discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
-
-    # Check if the discord user has access to this account
-    if not user_has_access_to_accounts(discord_client, discord_user_id, guild_id, [account_id]):
-        # Log with specific reason but return generic error
-        details = "Access denied"
-        logger.warning(f"Authentication failed: {details} for user {discord_user_id}")
-        # Create audit log entry before raising exception
+    if sso_model.is_user_access_revoked(guild_id, discord_user_id):
+        logger.warning(f"Authentication failed: Access revoked for user {discord_user_id}")
         sso_model.create_audit_log(
-            username=real_username,
+            username=auth_data.username,
             ip_address=client_ip,
             success=False,
             discord_user_id=discord_user_id,
-            account_id=account_id,
+            account_id=None,
             guild_id=guild_id,
-            details=details,
+            details="Access revoked",
             client_version=client_ver,
         )
         raise_auth_failed()
 
-    # Authentication successful - build audit detail
-    login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
-    input_name = auth_data.username.lower()
-    if input_name == real_username:
-        auth_detail = "Authentication successful (account name)"
-    elif any(c.name.lower() == input_name for c in account.characters):
-        auth_detail = f"Authentication successful via character {auth_data.username}"
-    elif any(a.alias.lower() == input_name for a in account.aliases):
-        auth_detail = f"Authentication successful via alias {auth_data.username}"
-    else:
-        auth_detail = f"Authentication successful via tag {auth_data.username}"
+    discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
 
-    def _post_auth_write():
-        sso_model.update_last_login_and_log(
-            account_id=account_id,
-            login_by=login_name,
-            username=real_username,
-            ip_address=client_ip,
-            discord_user_id=discord_user_id,
-            guild_id=guild_id,
-            details=auth_detail,
-            client_version=client_ver,
+    guild_settings = config.GUILD_SETTINGS.get(guild_id, {})
+    min_ver = guild_settings.get("min_client_version")
+    if min_ver:
+        client_ver = request.headers.get("X-Client-Version", "0.0.0")
+        if _parse_version(client_ver) < _parse_version(min_ver):
+            update_msg = guild_settings.get("client_update_message") or (
+                f"Client update required (minimum version: {min_ver})"
+            )
+            logger.info(
+                "Rejecting /auth: client %s below minimum %s [account: %s, guild: %s]",
+                client_ver,
+                min_ver,
+                auth_data.username,
+                guild_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=update_msg,
+            )
+
+    user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
+    settings_error = _validate_client_settings(auth_data.client_settings, guild_id, user_role_ids=user_role_ids)
+    if settings_error:
+        login_name = _resolve_display_name(discord_client, guild_id, discord_user_id)
+        logger.info(
+            "Rejecting /auth due to client settings: %s [account: %s, guild: %s, user: %s (%s)]",
+            settings_error,
+            auth_data.username,
+            guild_id,
+            discord_user_id,
+            login_name or "unknown",
         )
-        ws_manager.notify_guild(guild_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=settings_error,
+        )
 
-    background_tasks.add_task(_post_auth_write)
+    result = _perform_login_auth(
+        username=auth_data.username,
+        guild_id=guild_id,
+        discord_user_id=discord_user_id,
+        client_ip=client_ip,
+        client_ver=client_ver,
+        discord_client=discord_client,
+    )
 
-    # Return the real credentials immediately; writes happen in background
-    return SSOResponse(real_user=account.real_user, real_pass=account.real_pass)
+    if not result.success:
+        if result.error_status == 410:
+            raise_tag_temporarily_empty()
+        elif result.error_status == 400:
+            raise_invalid_character()
+        else:
+            raise_auth_failed()
+
+    return SSOResponse(real_user=result.real_user, real_pass=result.real_pass)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -774,6 +800,9 @@ async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
 
             elif msg_type == "update_location":
                 await _ws_handle_update_location(conn, msg)
+
+            elif msg_type == "login_auth":
+                await _ws_handle_login_auth(conn, msg)
     finally:
         ping_task.cancel()
         try:
@@ -825,6 +854,45 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         level=msg.get("level"),
     )
     await ws_manager.notify_guild_async(conn.guild_id)
+
+
+async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
+    """Process a login_auth request: resolve account, RBAC check, return credentials."""
+    request_id = msg.get("request_id")
+    username = msg.get("username")
+    if not request_id or not username:
+        await conn.websocket.send_json({
+            "type": "login_auth_response",
+            "request_id": request_id,
+            "error": "Missing request_id or username",
+            "status": 400,
+        })
+        return
+
+    discord_client = ws_manager._discord_client
+    result = _perform_login_auth(
+        username=username,
+        guild_id=conn.guild_id,
+        discord_user_id=conn.discord_user_id,
+        client_ip=conn.client_ip,
+        client_ver=conn.client_version,
+        discord_client=discord_client,
+    )
+
+    if result.success:
+        await conn.websocket.send_json({
+            "type": "login_auth_response",
+            "request_id": request_id,
+            "real_user": result.real_user,
+            "real_pass": result.real_pass,
+        })
+    else:
+        await conn.websocket.send_json({
+            "type": "login_auth_response",
+            "request_id": request_id,
+            "error": result.error_detail,
+            "status": result.error_status,
+        })
 
 
 async def _ws_ping_loop(websocket: WebSocket):

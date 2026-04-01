@@ -4,7 +4,7 @@
 
 The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net) client. It provides authentication for shared EQ accounts and real-time account data streaming.
 
-**The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, and real-time delta pushes. `POST /auth` is the only active HTTP endpoint (used for the actual login). The remaining HTTP endpoints are deprecated.
+**The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, login authentication, and real-time delta pushes. `POST /auth` remains available as a fallback HTTP endpoint but newer clients perform login authentication over the WebSocket via `login_auth` messages. The remaining HTTP endpoints are deprecated.
 
 ## Concepts
 
@@ -348,6 +348,26 @@ Side effects (same as heartbeat, plus):
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 
+#### Login Auth
+
+Performs the same credential lookup as `POST /auth` but over the existing WebSocket connection, avoiding a new TCP/TLS handshake per login. The access key, rate limiting, revocation, client version, and client settings are already validated at WebSocket connection time. The server only performs account resolution, RBAC check, and audit logging.
+
+```json
+{
+  "type": "login_auth",
+  "request_id": "unique_string",
+  "username": "alias_or_tag_or_character"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `string` | yes | Must be `"login_auth"` |
+| `request_id` | `string` | yes | Client-generated unique ID for correlating the response |
+| `username` | `string` | yes | Account name, alias, tag, character name, or dynamic tag to resolve |
+
+The server replies with a `login_auth_response` message (see below).
+
 ### Server -> Client Messages
 
 #### Ping
@@ -367,6 +387,40 @@ Reply to a client ping:
 ```json
 {"type": "pong"}
 ```
+
+#### Login Auth Response
+
+Reply to a `login_auth` request. Contains either the real credentials or an error.
+
+**Success:**
+```json
+{
+  "type": "login_auth_response",
+  "request_id": "same_as_request",
+  "real_user": "actual_username",
+  "real_pass": "actual_password"
+}
+```
+
+**Error:**
+```json
+{
+  "type": "login_auth_response",
+  "request_id": "same_as_request",
+  "error": "human-readable reason",
+  "status": 401
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `request_id` | `string` | Echoed from the request for correlation |
+| `real_user` | `string?` | Real EQ username (present on success) |
+| `real_pass` | `string?` | Real EQ password (present on success) |
+| `error` | `string?` | Error detail (present on failure) |
+| `status` | `int?` | HTTP-equivalent status code: 400 (character not found), 401 (auth failed / access denied), 410 (tag temporarily empty) |
+
+Side effects on success are the same as `POST /auth`: `last_login` updated, audit log entry created, delta push triggered.
 
 #### Delta
 
