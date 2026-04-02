@@ -56,7 +56,10 @@
             color: var(--pico-muted-color);
             cursor: pointer;
             user-select: none;
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--pico-background-color);
             padding-right: 1.2em;
         }
         table thead th::after {
@@ -197,6 +200,17 @@
             font-size: 0.85rem;
             color: var(--pico-muted-color);
         }
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -228,6 +242,122 @@
     }
     formatLocalTimes();
 
+    var dashSortState = Object.create(null);
+    try {
+        var _savedSorts = sessionStorage.getItem('dash_sorts');
+        if (_savedSorts) {
+            var _parsed = JSON.parse(_savedSorts);
+            if (_parsed && typeof _parsed === 'object' && !Array.isArray(_parsed)) {
+                dashSortState = Object.assign(Object.create(null), _parsed);
+            }
+        }
+    } catch (_e) { /* ignore */ }
+
+    function persistDashSortState() {
+        try {
+            sessionStorage.setItem('dash_sorts', JSON.stringify(dashSortState));
+        } catch (e) { /* ignore */ }
+    }
+
+    window.dashboardApplyTableFilter = function() {
+        var input = document.getElementById('table-filter');
+        if (!input) return;
+        var q = (input.value || '').trim().toLowerCase();
+        var panel = document.querySelector('.tab-panel.active');
+        if (!panel) return;
+        var scope = panel.querySelector('.sub-tab-panel.active') || panel;
+        var rows = scope.querySelectorAll('tbody tr');
+        for (var ri = 0; ri < rows.length; ri++) {
+            var tr = rows[ri];
+            if (!q) {
+                tr.style.display = '';
+            } else {
+                tr.style.display = (tr.textContent || '').toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+            }
+        }
+    };
+
+    var tableFilterEl = document.getElementById('table-filter');
+    if (tableFilterEl) {
+        tableFilterEl.addEventListener('input', window.dashboardApplyTableFilter);
+    }
+
+    function dashboardTableSortKey(table) {
+        var el = table;
+        var anchor = '';
+        while (el && el !== document.body) {
+            if (el.id === 'audit-modal-body' || (el.id && el.id.indexOf('panel-') === 0)) {
+                anchor = el.id;
+                break;
+            }
+            el = el.parentElement;
+        }
+        if (!anchor) anchor = 'orphan';
+        var sub = table.closest('[data-subtab-panel]');
+        var subId = sub ? sub.getAttribute('data-subtab-panel') : '';
+        var scope = sub;
+        if (!scope && anchor !== 'orphan') {
+            scope = document.getElementById(anchor);
+        }
+        if (!scope) scope = table.parentElement;
+        var tables = scope.querySelectorAll('table');
+        var idx = 0;
+        for (var i = 0; i < tables.length; i++) {
+            if (tables[i] === table) {
+                idx = i;
+                break;
+            }
+        }
+        return anchor + '|' + (subId || '_') + '|' + idx;
+    }
+
+    function sortKeyFromCell(cell) {
+        var time = cell.querySelector('time[datetime]');
+        if (time) return { type: 'num', val: new Date(time.getAttribute('datetime')).getTime() || 0 };
+        var badges = cell.querySelectorAll('.badge');
+        if (badges.length) {
+            var parts = [];
+            for (var i = 0; i < badges.length; i++) {
+                parts.push((badges[i].textContent || '').trim().toLowerCase());
+            }
+            parts.sort();
+            return { type: 'str', val: parts.join('\u0001') };
+        }
+        var raw = (cell.textContent || '').trim().toLowerCase();
+        var num = parseFloat(raw);
+        if (!isNaN(num) && raw !== '') return { type: 'num', val: num };
+        return { type: 'str', val: raw };
+    }
+
+    function compareDashboardCells(cellA, cellB, asc) {
+        if (!cellA || !cellB) return 0;
+        var a = sortKeyFromCell(cellA);
+        var b = sortKeyFromCell(cellB);
+        if (a.val < b.val) return asc ? -1 : 1;
+        if (a.val > b.val) return asc ? 1 : -1;
+        return 0;
+    }
+
+    function sortDashboardTable(table, colIndex, asc) {
+        var theadRow = table.querySelector('thead tr');
+        var tbody = table.querySelector('tbody');
+        if (!theadRow || !tbody) return;
+        var headers = theadRow.children;
+        if (colIndex < 0 || colIndex >= headers.length) return;
+        var th = headers[colIndex];
+        Array.prototype.forEach.call(headers, function(h) {
+            h.classList.remove('sort-asc', 'sort-desc');
+            h.removeAttribute('aria-sort');
+        });
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
+        var rows = Array.from(tbody.rows);
+        rows.sort(function(a, b) {
+            return compareDashboardCells(a.cells[colIndex], b.cells[colIndex], asc);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+    }
+
     document.body.addEventListener('click', function(evt) {
         var th = evt.target.closest('thead th');
         if (!th) return;
@@ -236,35 +366,27 @@
         if (!tbody) return;
         var idx = Array.prototype.indexOf.call(th.parentNode.children, th);
         var asc = !th.classList.contains('sort-asc');
-        th.parentNode.querySelectorAll('th').forEach(function(h) { h.classList.remove('sort-asc', 'sort-desc'); });
-        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-        var rows = Array.from(tbody.rows);
-        rows.sort(function(a, b) {
-            var cellA = a.cells[idx];
-            var cellB = b.cells[idx];
-            if (!cellA || !cellB) return 0;
-            var tA = cellA.querySelector('time[datetime]');
-            var tB = cellB.querySelector('time[datetime]');
-            var vA, vB;
-            if (tA && tB) {
-                vA = new Date(tA.getAttribute('datetime')).getTime() || 0;
-                vB = new Date(tB.getAttribute('datetime')).getTime() || 0;
-            } else {
-                vA = (cellA.textContent || '').trim().toLowerCase();
-                vB = (cellB.textContent || '').trim().toLowerCase();
-                var nA = parseFloat(vA), nB = parseFloat(vB);
-                if (!isNaN(nA) && !isNaN(nB)) { vA = nA; vB = nB; }
-            }
-            if (vA < vB) return asc ? -1 : 1;
-            if (vA > vB) return asc ? 1 : -1;
-            return 0;
-        });
-        rows.forEach(function(r) { tbody.appendChild(r); });
+        sortDashboardTable(table, idx, asc);
+        dashSortState[dashboardTableSortKey(table)] = { colIndex: idx, asc: asc };
+        persistDashSortState();
     });
 
     document.body.addEventListener('htmx:afterSwap', function(evt) {
-        formatLocalTimes(evt.detail.target);
+        var root = evt.detail.target;
+        formatLocalTimes(root);
+        root.querySelectorAll('table').forEach(function(table) {
+            var key = dashboardTableSortKey(table);
+            var st = dashSortState[key];
+            if (st) sortDashboardTable(table, st.colIndex, st.asc);
+        });
+        if (typeof window.dashboardApplyTableFilter === 'function') {
+            window.dashboardApplyTableFilter();
+        }
     });
+
+    if (typeof window.dashboardApplyTableFilter === 'function') {
+        window.dashboardApplyTableFilter();
+    }
     </script>
 </body>
 </html>

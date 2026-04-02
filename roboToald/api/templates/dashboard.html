@@ -20,7 +20,7 @@
         <select id="refresh-select">
             <option value="0">Off</option>
             <option value="5">5s</option>
-            <option value="10" selected>10s</option>
+            <option value="10">10s</option>
             <option value="30">30s</option>
             <option value="60">60s</option>
         </select>
@@ -50,15 +50,20 @@
 </div>
 
 <!-- Tabs -->
-<div class="tab-bar" id="tab-bar">
-    <button class="tab-btn active" data-tab="accounts">Accounts</button>
-    <button class="tab-btn" data-tab="connections">Connections</button>
-    <button class="tab-btn" data-tab="sessions">Sessions</button>
-    <button class="tab-btn" data-tab="audit">Auth Log</button>
-    <button class="tab-btn" data-tab="ratelimit">Rate Limited</button>
+<label for="table-filter" class="visually-hidden">Filter table rows</label>
+<input type="search" id="table-filter" name="table-filter" autocomplete="off"
+       placeholder="Filter rows in active tab…"
+       style="max-width: 22rem; margin-bottom: 0.5rem; display: block;">
+
+<div class="tab-bar" id="tab-bar" role="tablist" aria-label="Dashboard sections">
+    <button type="button" class="tab-btn active" id="tab-btn-accounts" role="tab" aria-selected="true" aria-controls="tab-accounts" tabindex="0" data-tab="accounts">Accounts</button>
+    <button type="button" class="tab-btn" id="tab-btn-connections" role="tab" aria-selected="false" aria-controls="tab-connections" tabindex="-1" data-tab="connections">Connections</button>
+    <button type="button" class="tab-btn" id="tab-btn-sessions" role="tab" aria-selected="false" aria-controls="tab-sessions" tabindex="-1" data-tab="sessions">Sessions</button>
+    <button type="button" class="tab-btn" id="tab-btn-audit" role="tab" aria-selected="false" aria-controls="tab-audit" tabindex="-1" data-tab="audit">Auth Log</button>
+    <button type="button" class="tab-btn" id="tab-btn-ratelimit" role="tab" aria-selected="false" aria-controls="tab-ratelimit" tabindex="-1" data-tab="ratelimit">Rate Limited</button>
 </div>
 
-<div class="tab-panel active" id="tab-accounts">
+<div class="tab-panel active" id="tab-accounts" role="tabpanel" aria-labelledby="tab-btn-accounts" aria-hidden="false">
     <small class="htmx-indicator" id="accounts-indicator">Updating...</small>
     <div id="panel-accounts"
          hx-get="/admin/partials/accounts"
@@ -69,7 +74,7 @@
     </div>
 </div>
 
-<div class="tab-panel" id="tab-connections">
+<div class="tab-panel" id="tab-connections" role="tabpanel" aria-labelledby="tab-btn-connections" aria-hidden="true">
     <small class="htmx-indicator" id="conn-indicator">Updating...</small>
     <div id="panel-connections"
          hx-get="/admin/partials/connections"
@@ -80,7 +85,7 @@
     </div>
 </div>
 
-<div class="tab-panel" id="tab-sessions">
+<div class="tab-panel" id="tab-sessions" role="tabpanel" aria-labelledby="tab-btn-sessions" aria-hidden="true">
     <small class="htmx-indicator" id="sessions-indicator">Updating...</small>
     <div id="panel-sessions"
          hx-get="/admin/partials/sessions"
@@ -91,7 +96,7 @@
     </div>
 </div>
 
-<div class="tab-panel" id="tab-audit">
+<div class="tab-panel" id="tab-audit" role="tabpanel" aria-labelledby="tab-btn-audit" aria-hidden="true">
     <small class="htmx-indicator" id="audit-indicator">Updating...</small>
     <div id="panel-audit"
          hx-get="/admin/partials/audit_log"
@@ -102,7 +107,7 @@
     </div>
 </div>
 
-<div class="tab-panel" id="tab-ratelimit">
+<div class="tab-panel" id="tab-ratelimit" role="tabpanel" aria-labelledby="tab-btn-ratelimit" aria-hidden="true">
     <small class="htmx-indicator" id="ratelimit-indicator">Updating...</small>
     <div id="panel-ratelimit"
          hx-get="/admin/partials/rate_limited"
@@ -117,7 +122,7 @@
 <dialog id="audit-modal">
     <article style="max-width: 900px; width: 90vw;">
         <header>
-            <button aria-label="Close" rel="prev" onclick="document.getElementById('audit-modal').close()"></button>
+            <button type="button" id="audit-modal-close" aria-label="Close" rel="prev" onclick="document.getElementById('audit-modal').close()"></button>
             <strong id="audit-modal-title"></strong>
         </header>
         <div id="audit-modal-body">
@@ -127,33 +132,128 @@
 </dialog>
 
 <script>
+var auditModalPreviousFocus = null;
+
 function showAuditModal(type, value, label) {
     var dlg = document.getElementById('audit-modal');
+    auditModalPreviousFocus = document.activeElement;
     document.getElementById('audit-modal-title').textContent = 'Auth history: ' + label;
     document.getElementById('audit-modal-body').innerHTML = '<p class="empty-state" aria-busy="true">Loading...</p>';
     dlg.showModal();
+    var closeBtn = document.getElementById('audit-modal-close');
+    if (closeBtn) closeBtn.focus();
     var url = '/admin/partials/audit_modal?' + encodeURIComponent(type) + '=' + encodeURIComponent(value);
     htmx.ajax('GET', url, {target: '#audit-modal-body', swap: 'innerHTML'});
 }
 document.getElementById('audit-modal').addEventListener('click', function(e) {
     if (e.target === this) this.close();
 });
+document.getElementById('audit-modal').addEventListener('close', function() {
+    if (auditModalPreviousFocus && typeof auditModalPreviousFocus.focus === 'function') {
+        try { auditModalPreviousFocus.focus(); } catch (err) { /* ignore */ }
+    }
+    auditModalPreviousFocus = null;
+});
 
 (function() {
     var refreshSel = document.getElementById('refresh-select');
     var guildSel = document.getElementById('guild-select');
     var timer = null;
+    var tabBar = document.getElementById('tab-bar');
+
+    /* --- Restore sessionStorage (guild, refresh) --- */
+    try {
+        var savedGuild = sessionStorage.getItem('dash_guild');
+        if (savedGuild !== null) {
+            for (var gi = 0; gi < guildSel.options.length; gi++) {
+                if (guildSel.options[gi].value === savedGuild) {
+                    guildSel.value = savedGuild;
+                    break;
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
+    try {
+        var savedRefresh = sessionStorage.getItem('dash_refresh');
+        var matchedRefresh = false;
+        if (savedRefresh !== null) {
+            for (var ri = 0; ri < refreshSel.options.length; ri++) {
+                if (refreshSel.options[ri].value === savedRefresh) {
+                    refreshSel.value = savedRefresh;
+                    matchedRefresh = true;
+                    break;
+                }
+            }
+        }
+        if (!matchedRefresh) refreshSel.value = '10';
+    } catch (e2) {
+        refreshSel.value = '10';
+    }
+
+    function activateTab(btn) {
+        if (!btn) return;
+        var tabId = btn.dataset.tab;
+        tabBar.querySelectorAll('.tab-btn[role="tab"]').forEach(function(b) {
+            b.classList.remove('active');
+            b.setAttribute('aria-selected', 'false');
+            b.setAttribute('tabindex', '-1');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        btn.setAttribute('tabindex', '0');
+        document.querySelectorAll('.tab-panel[role="tabpanel"]').forEach(function(p) {
+            var on = p.id === 'tab-' + tabId;
+            p.classList.toggle('active', on);
+            p.setAttribute('aria-hidden', on ? 'false' : 'true');
+        });
+        try { sessionStorage.setItem('dash_tab', tabId); } catch (e) { /* ignore */ }
+        if (typeof window.dashboardApplyTableFilter === 'function') {
+            window.dashboardApplyTableFilter();
+        }
+    }
 
     /* --- Tab switching --- */
-    var tabBar = document.getElementById('tab-bar');
     tabBar.addEventListener('click', function(e) {
         var btn = e.target.closest('.tab-btn');
         if (!btn) return;
-        tabBar.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        activateTab(btn);
+        btn.focus();
     });
+
+    tabBar.addEventListener('keydown', function(e) {
+        var tabs = Array.prototype.slice.call(tabBar.querySelectorAll('.tab-btn[role="tab"]'));
+        var i = tabs.indexOf(document.activeElement);
+        if (i < 0) return;
+        var next = i;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            next = (i + 1) % tabs.length;
+            e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            next = (i - 1 + tabs.length) % tabs.length;
+            e.preventDefault();
+        } else if (e.key === 'Home') {
+            next = 0;
+            e.preventDefault();
+        } else if (e.key === 'End') {
+            next = tabs.length - 1;
+            e.preventDefault();
+        } else {
+            return;
+        }
+        activateTab(tabs[next]);
+        tabs[next].focus();
+    });
+
+    /* --- Restore saved tab (deferred so base.html can define dashboardApplyTableFilter first) --- */
+    try {
+        var savedTab = sessionStorage.getItem('dash_tab');
+        if (savedTab) {
+            var tbtn = tabBar.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
+            if (tbtn) {
+                setTimeout(function() { activateTab(tbtn); }, 0);
+            }
+        }
+    } catch (e3) { /* ignore */ }
 
     /* --- Guild filter --- */
     document.body.addEventListener('htmx:configRequest', function(evt) {
@@ -164,6 +264,7 @@ document.getElementById('audit-modal').addEventListener('click', function(e) {
     });
 
     guildSel.addEventListener('change', function() {
+        try { sessionStorage.setItem('dash_guild', guildSel.value); } catch (e) { /* ignore */ }
         document.body.dispatchEvent(new CustomEvent('refreshAll'));
     });
 
@@ -182,7 +283,10 @@ document.getElementById('audit-modal').addEventListener('click', function(e) {
         if (timer) { clearInterval(timer); timer = null; }
     }
 
-    refreshSel.addEventListener('change', startTimer);
+    refreshSel.addEventListener('change', function() {
+        try { sessionStorage.setItem('dash_refresh', refreshSel.value); } catch (e) { /* ignore */ }
+        startTimer();
+    });
     startTimer();
 
     /* --- Preserve sub-tab state across HTMX swaps ---
