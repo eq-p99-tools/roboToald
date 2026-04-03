@@ -56,10 +56,9 @@
 2. The proxy should fail to connect (WebSocket closed with code 4003)
 3. Check server logs for "Access revoked" in close reason
 
-### B3. Revoke blocks deprecated endpoints
+### B3. Removed HTTP account routes (optional)
 
-1. With revocation still active, send a raw `POST /list_accounts` with the access key -- expect 401
-2. Send a raw `POST /heartbeat` -- expect 401
+1. Optional: `POST /list_accounts`, `POST /heartbeat`, and `POST /update_location` are no longer implemented (expect `404`). Revocation is enforced on `/auth` and WebSocket as in B1/B2.
 
 ### B4. Remove revocation restores access
 
@@ -94,7 +93,7 @@
 
 ### C3. Valid usage doesn't trigger rate limit
 
-1. After clearing, perform a few normal logins and list_accounts calls
+1. After clearing, perform a few normal logins and routine WebSocket traffic (heartbeats, etc.)
 2. Confirm no rate limiting occurs (successful requests don't count)
 
 ---
@@ -128,11 +127,6 @@
 
 1. Send a heartbeat for a character the user DOES have access to
 2. Verify: `last_login` updates, session is created/extended, `active_character` shows in the account tree
-
-### E3. HTTP heartbeat respects RBAC
-
-1. Send a raw `POST /heartbeat` with access key and an unauthorized character name -- expect 401
-2. Send the same request with an authorized character -- expect `{"status": "success"}`
 
 ---
 

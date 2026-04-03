@@ -25,7 +25,7 @@ def _brief_exc_info() -> str:
 def build_account_tree(accessible_accounts, active_characters: dict[int, str] | None = None) -> dict:
     """Build an account_tree dict from a list of SSOAccount objects.
 
-    Matches the v3 structure returned by POST /list_accounts.
+    Matches the v3 ``account_tree`` shape sent in WebSocket ``full_state`` messages.
     *active_characters* is an optional ``{account_id: character_name}`` map
     from :func:`sso_model.get_active_characters`.
     """

@@ -4,7 +4,7 @@
 
 The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net) client. It provides authentication for shared EQ accounts and real-time account data streaming.
 
-**The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, login authentication, and real-time delta pushes. `POST /auth` remains available as a fallback HTTP endpoint but newer clients perform login authentication over the WebSocket via `login_auth` messages. The remaining HTTP endpoints are deprecated.
+**The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, login authentication, and real-time delta pushes. `POST /auth` remains available as a fallback HTTP endpoint; newer clients perform login authentication over the WebSocket via `login_auth` messages. The only other public HTTP route is `GET /` (health check). Account listing, heartbeats, and location updates are WebSocket-only.
 
 ## Concepts
 
@@ -548,67 +548,7 @@ Sent before closing the connection due to a server-side issue:
 
 ---
 
-## Deprecated HTTP Endpoints
-
-These endpoints are superseded by the WebSocket. They remain functional for backward compatibility but should not be used by new clients.
-
-### `POST /list_accounts`
-
-Use the WebSocket `full_state` message instead.
-
-Request:
-```json
-{"access_key": "string"}
-```
-
-Response (same shape as WebSocket `full_state`, minus the `type` and `count` fields):
-```json
-{
-  "account_tree": { ... },
-  "dynamic_tag_zones": ["vp", "st", ...],
-  "dynamic_tag_classes": ["bar", "brd", ...]
-}
-```
-
-Errors: 401 (invalid key or rate limited).
-
-IP resolution: uses `X-Forwarded-For` header (first value) if present, otherwise `request.client.host`.
-
-### `POST /update_location`
-
-Use the WebSocket `update_location` message instead.
-
-Request:
-```json
-{
-  "access_key": "string",
-  "character_name": "string",
-  "bind_location": "string_or_null",
-  "park_location": "string_or_null",
-  "level": 60
-}
-```
-
-Response: `{"status": "success"}`
-
-Errors: 400 (character not found), 401 (invalid key, access denied, or rate limited).
-
-Side effects: updates character location, updates `last_login` on the account. Does NOT push a WebSocket delta (unlike the WebSocket version).
-
-### `POST /heartbeat`
-
-Use the WebSocket `heartbeat` message instead.
-
-Request:
-```json
-{"access_key": "string", "character_name": "string"}
-```
-
-Response: `{"status": "success"}`
-
-Errors: 400 (character not found), 401 (invalid key or rate limited).
-
-Side effects: updates `last_login`, records heartbeat session. Does NOT push a WebSocket delta or expire other sessions (unlike the WebSocket version).
+## HTTP endpoints (non-WebSocket)
 
 ### `GET /`
 
@@ -620,16 +560,17 @@ Health check.
 
 Returns `"status": "warning"` if the Discord client hasn't been injected yet.
 
+`POST /auth` is documented earlier in this file; it remains the HTTP fallback for credential resolution.
+
 ---
 
 ## Authentication and Authorization
 
 ### IP Resolution
 
-- `POST /auth` uses `request.client.host` directly (does not read `X-Forwarded-For`).
-- All other endpoints (`/list_accounts`, `/update_location`, `/heartbeat`) use `X-Forwarded-For` first value if present, otherwise `request.client.host`.
-- WebSocket connections use `websocket.client.host`.
-- Configure `forwarded_allow_ips` in `batphone.ini` to control which proxy IPs uvicorn trusts for `X-Forwarded-For`.
+- `POST /auth` uses the first value of `X-Forwarded-For` when the connecting client is a trusted proxy (`forwarded_allow_ips` in `batphone.ini`); otherwise `request.client.host`.
+- WebSocket connections use `websocket.client.host` (the immediate TCP peer; `X-Forwarded-For` is not applied to WebSocket in this server).
+- Configure `forwarded_allow_ips` in `batphone.ini` to control which proxy IPs uvicorn trusts for `X-Forwarded-For` on HTTP requests.
 
 ### Rate Limiting
 
@@ -637,7 +578,7 @@ Rate limiting is based on failed authentication attempts per IP address:
 
 - **Threshold:** 20 failed attempts
 - **Window:** 30 minutes (rolling)
-- **Counting:** Only counts failures where `rate_limit != False` and either `account_id IS NOT NULL` or `username = 'list_accounts'`
+- **Counting:** Only counts failures where `rate_limit != False` and `account_id IS NOT NULL` (plus legacy rows where `username = 'list_accounts'` from the removed HTTP list endpoint, if any remain in the window)
 - **Response:** Same `401 Unauthorized` as any other auth failure (no `429` status code, to avoid information leakage)
 - **Clearing:** An admin can clear the rate limit for an IP via `/sso_admin reset_rate_limit`, which sets `rate_limit = False` on all failed audit entries for that IP
 
