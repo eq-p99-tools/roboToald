@@ -17,7 +17,7 @@
         <tr>
             <td style="white-space: nowrap;"><time class="local-time" datetime="{{ e.timestamp_iso }}">{{ e.timestamp }}</time></td>
             <td><a href="#" onclick="showAuditModal('account','{{ e.username }}','{{ e.username }}'); return false;" style="text-decoration: none; color: inherit; border-bottom: 1px dashed var(--pico-muted-color);">{{ e.username }}</a></td>
-            {% if is_super %}<td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}&#x1F512;{% elif e.ip_cc == 'unknown' or not e.ip_cc %}&#x2753;{% else %}<span class="fi fi-{{ e.ip_cc }}"></span>{% endif %} {{ e.ip_address }}</td>{% endif %}
+            {% if is_super %}<td style="white-space: nowrap;">{% if e.ip_cc == 'private' %}<span title="Private">&#x1F512;</span>{% elif e.ip_cc == 'unknown' or not e.ip_cc %}<span title="Unknown">&#x2753;</span>{% else %}<span class="fi fi-{{ e.ip_cc }}" title="{{ e.ip_cc | upper }}"></span>{% endif %} {{ e.ip_address }}</td>{% endif %}
             <td>
                 {% if e.success %}
                 <span class="badge badge-success">OK</span>

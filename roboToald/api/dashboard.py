@@ -28,7 +28,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 COOKIE_NAME = "admin_session"
-COOKIE_MAX_AGE = 86400
+COOKIE_MAX_AGE = 604800  # 7 days
 STATE_COOKIE_NAME = "oauth_state"
 STATE_COOKIE_MAX_AGE = 300
 _USE_SECURE_COOKIE = bool(config.DASHBOARD_BASE_URL and config.DASHBOARD_BASE_URL.startswith("https://"))
