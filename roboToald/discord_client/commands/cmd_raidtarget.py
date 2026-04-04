@@ -20,8 +20,8 @@ async def raidtarget(inter: disnake.ApplicationCommandInteraction):
     pass
 
 
-def autocomplete_raid_target(inter: disnake.ApplicationCommandInteraction, user_input: str):
-    names = rt_data.RaidTargets.get_all_names(inter.guild_id)
+async def autocomplete_raid_target(inter: disnake.ApplicationCommandInteraction, user_input: str):
+    names = await rt_data.RaidTargets.get_all_names(inter.guild_id)
     return [name for name in names if user_input.lower() in name.lower()][:MAX_AC_RESULTS]
 
 
@@ -45,7 +45,7 @@ async def subscribe(
         await inter.send(content="You are not authorized to subscribe to raid targets.", ephemeral=True)
         return
 
-    valid_names = rt_data.RaidTargets.get_all_names(inter.guild_id)
+    valid_names = await rt_data.RaidTargets.get_all_names(inter.guild_id)
     if target not in valid_names:
         await inter.send(content=f"`{target}` is not a valid raid target for this server.", ephemeral=True)
         return
@@ -257,7 +257,7 @@ async def announce_subscriptions():
 
     for guild_id, sub_map in guild_sub_map.items():
         soon_threshold = config.get_raidtargets_soon_threshold(guild_id)
-        raid_targets = rt_data.RaidTargets.get_targets(guild_id)
+        raid_targets = await rt_data.RaidTargets.get_targets(guild_id)
 
         for target in raid_targets:
             if target.name not in sub_map:
@@ -289,10 +289,7 @@ async def announce_subscriptions():
                         else:
                             print(f"Could not load user for DM: {sub.user_id}")
                     else:
-                        print(
-                            f"User `{sub.user_id}` did not have the required role, "
-                            f"removing watch `{target.name}`."
-                        )
+                        print(f"User `{sub.user_id}` did not have the required role, removing watch `{target.name}`.")
                         sub_model.delete_subscription(sub.user_id, target.name, guild_id=sub.guild_id)
 
     await asyncio.gather(*messages)

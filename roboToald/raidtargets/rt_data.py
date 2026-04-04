@@ -1,15 +1,36 @@
 from __future__ import annotations
+
 import collections
 import datetime
 import enum
 import json
+import logging
 import time
+from urllib.parse import urlparse
 
-import requests
+import httpx
 
 from roboToald import config
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_SOON_THRESHOLD = 48 * 60 * 60
+
+RAIDTARGETS_CACHE_SECONDS = 60
+SLOW_RAIDTARGETS_WARN_SEC = 3.0
+_CONNECT_TIMEOUT = 10.0
+_READ_TIMEOUT = 30.0
+
+_httpx_client: httpx.AsyncClient | None = None
+
+
+def _raidtargets_http_client() -> httpx.AsyncClient:
+    global _httpx_client
+    if _httpx_client is None:
+        _httpx_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),
+        )
+    return _httpx_client
 
 
 class RaidWindowStatus(enum.Enum):
@@ -96,26 +117,9 @@ class RaidTargets:
     _cache: dict[int, dict] = {}
 
     @classmethod
-    def get_targets(cls, guild_id: int) -> list[RaidTarget]:
-        cls.load(guild_id)
-        return cls._cache.get(guild_id, {}).get("targets", [])
-
-    @classmethod
-    def get_all_names(cls, guild_id: int) -> list[str]:
-        cls.load(guild_id)
-        return cls._cache.get(guild_id, {}).get("names", [])
-
-    @classmethod
-    def get_by_name(cls, name: str, guild_id: int) -> RaidTarget:
-        cls.load(guild_id)
-        for target in cls._cache.get(guild_id, {}).get("targets", []):
-            if target.name_matches(name):
-                return target
-
-    @classmethod
-    def load(cls, guild_id: int) -> None:
+    async def ensure_loaded(cls, guild_id: int) -> None:
         cached = cls._cache.get(guild_id)
-        if cached and cached["time"] > (time.time() - 60):
+        if cached and cached["time"] > (time.time() - RAIDTARGETS_CACHE_SECONDS):
             return
 
         endpoint = config.get_raidtargets_endpoint(guild_id)
@@ -128,14 +132,54 @@ class RaidTargets:
         if authkey:
             headers["AuthorizationKey"] = authkey
 
-        r = requests.get(endpoint, headers=headers)
-        data = r.json(cls=JSONDecoder)
+        safe_host = urlparse(endpoint).netloc or endpoint
+        client = _raidtargets_http_client()
+        t0 = time.perf_counter()
+        try:
+            r = await client.get(endpoint, headers=headers)
+            data = json.loads(r.text, cls=JSONDecoder)
+        except Exception:
+            logger.exception(
+                "Raid targets fetch failed for guild=%s host=%s",
+                guild_id,
+                safe_host,
+            )
+            cls._cache[guild_id] = {"time": time.time(), "targets": [], "names": []}
+            return
+
+        elapsed = time.perf_counter() - t0
+        if elapsed > SLOW_RAIDTARGETS_WARN_SEC:
+            logger.warning(
+                "Slow raid targets endpoint guild=%s host=%s elapsed=%.2fs",
+                guild_id,
+                safe_host,
+                elapsed,
+            )
+
         targets = data if isinstance(data, list) else []
         cls._cache[guild_id] = {
             "time": time.time(),
             "targets": targets,
             "names": [t.name for t in targets],
         }
+
+    @classmethod
+    async def get_targets(cls, guild_id: int) -> list[RaidTarget]:
+        await cls.ensure_loaded(guild_id)
+        return cls._cache.get(guild_id, {}).get("targets", [])
+
+    @classmethod
+    async def get_all_names(cls, guild_id: int) -> list[str]:
+        await cls.ensure_loaded(guild_id)
+        return cls._cache.get(guild_id, {}).get("names", [])
+
+    @classmethod
+    async def get_by_name(cls, name: str, guild_id: int) -> RaidTarget | None:
+        await cls.ensure_loaded(guild_id)
+        for target in cls._cache.get(guild_id, {}).get("targets", []):
+            if target.name_matches(name):
+                return target
+        return None
 
 
 class RaidTarget:
