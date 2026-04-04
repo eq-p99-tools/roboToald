@@ -1,6 +1,7 @@
 import asyncio
 import collections
 import datetime
+import logging
 import math
 import time
 from typing import Tuple
@@ -16,6 +17,8 @@ from roboToald.db.models import timer as timer_model
 from roboToald.discord_client import base
 from roboToald.discord_client.commands import cmd_timer
 from roboToald import utils
+
+logger = logging.getLogger(__name__)
 
 DS_GUILDS = config.guilds_for_command("ds")
 
@@ -652,7 +655,7 @@ async def schedule_messages():
         if channel_id:
             channel = await base.DISCORD_CLIENT.fetch_channel(channel_id)
             if not channel:
-                print(f"Could not find channel with ID {channel_id} for guild {guild_id}")
+                logger.warning("Could not find channel with ID %s for guild %s", channel_id, guild_id)
                 return
 
             task = asyncio.create_task(_schedule_message_repeating(channel))

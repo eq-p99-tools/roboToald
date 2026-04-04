@@ -1,3 +1,5 @@
+import logging
+
 import disnake
 from disnake.ext import commands
 import sqlalchemy.exc
@@ -8,6 +10,8 @@ from roboToald.discord_client import base
 from roboToald import db
 from roboToald.db.models import alert as alert_model
 from roboToald import utils
+
+logger = logging.getLogger(__name__)
 
 BATPHONE_GUILDS = config.guilds_for_command("batphone")
 HELP_MESSAGE = (
@@ -96,11 +100,11 @@ async def register(
         try:
             session.commit()
         except sqlalchemy.exc.IntegrityError:
-            print("User attempted to register a duplicate alert.")
+            logger.info("User attempted to register a duplicate alert.")
             await inter.response.send_message("Alert already exists.", ephemeral=True)
             return
         session.flush()
-        print(f"Registered Alert ID: {alert.id}")
+        logger.info("Registered Alert ID: `%s`", alert.id)
     await inter.response.send_message(
         f"Stored alert for <#{alert.channel_id}>: `{alert.alert_regex}` \u2192 {alert.alert_url}", ephemeral=True
     )
@@ -142,9 +146,9 @@ async def list(inter: disnake.ApplicationCommandInteraction):
 
         async def button_callback(button_inter, that_message=msg, that_alert=alert, that_embed=e, that_view=my_view):
             action = button_inter.component.emoji.name
-            print(f"Interacted with Alert #{that_alert.id} with {action}")
+            logger.debug("Interacted with Alert #%s with %s", that_alert.id, action)
             if action == constants.DELETE_EMOJI:
-                print(f"Removing alert {that_alert.id}!")
+                logger.info("Removing alert %s!", that_alert.id)
                 that_alert.delete()
                 test_button.disabled = True
                 delete_button.disabled = True
@@ -153,12 +157,19 @@ async def list(inter: disnake.ApplicationCommandInteraction):
                 that_embed.colour = disnake.Color.darker_grey()
                 await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.TEST_EMOJI:
-                print(f"Testing alert {that_alert.id}!")
-                utils.send_alert(that_alert, f"Test of alert: {that_alert.alert_regex}")
+                logger.info("Testing alert %s!", that_alert.id)
+                owner_display = base.resolve_alert_owner_display_name(button_inter.guild, that_alert.user_id)
+                guild_display = base.resolve_guild_display_name(button_inter.guild, that_alert.guild_id)
+                utils.send_alert(
+                    that_alert,
+                    f"Test of alert: {that_alert.alert_regex}",
+                    alert_owner_display_name=owner_display,
+                    guild_name=guild_display,
+                )
                 that_embed.set_footer(text=footer_text.format(that_alert.trigger_count, that_alert.id))
                 await that_message.edit(view=that_view, embed=that_embed)
             elif action == constants.CLEAR_EMOJI:
-                print(f"Clearing counter for alert {that_alert.id}!")
+                logger.info("Clearing counter for alert %s!", that_alert.id)
                 that_alert.reset_counter()
                 that_embed.set_footer(text=footer_text.format(that_alert.trigger_count, that_alert.id))
                 await that_message.edit(view=that_view, embed=that_embed)

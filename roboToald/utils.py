@@ -1,3 +1,4 @@
+import logging
 import re
 
 import disnake
@@ -15,6 +16,8 @@ SERVICE_MAP = {
     SQUADCAST_WEBHOOK_REGEX_EU: squadcast.send_alert,
 }
 
+logger = logging.getLogger(__name__)
+
 
 def validate_url(url):
     for prefix in VALID_ALERT_PREFIXES:
@@ -30,14 +33,31 @@ def send_function(url):
             return SERVICE_MAP[service]
 
 
-def send_alert(alert, message):
+def send_alert(
+    alert,
+    message,
+    *,
+    alert_owner_display_name: str | None = None,
+    guild_name: str | None = None,
+):
     service_func = send_function(alert.alert_url)
     # Strip non-printable characters
     message = "".join(c for c in message if c.isprintable())
     if not service_func:
-        print(f"Alert ID `{alert.id}` has invalid alert_url: `{alert.alert_url}`")
+        logger.warning("Alert ID `%s` has invalid alert_url: `%s`", alert.id, alert.alert_url)
         return
-    print(f"Sending Alert via `{service_func.__module__.split('.')[-1]}` to {alert.alert_url}: {message}")
+    owner_name = alert_owner_display_name or "unknown"
+    gname = guild_name or "unknown"
+    mod = service_func.__module__.split(".")[-1]
+    logger.info(
+        "Sending Alert via `%s` (guild_id=`%s`, guild=`%s`, user_id=`%s`, owner=`%s`): %s",
+        mod,
+        alert.guild_id,
+        gname,
+        alert.user_id,
+        owner_name,
+        message,
+    )
     # Remove @everyone from the message if present
     message = message.removeprefix("@everyone").strip()
     service_func(message[:12], message, webhook=alert.alert_url)

@@ -1,3 +1,4 @@
+import logging
 import random as pyrandom
 
 import disnake
@@ -5,6 +6,8 @@ from disnake.ext import commands
 
 from roboToald import config
 from roboToald.discord_client import base
+
+logger = logging.getLogger(__name__)
 
 RANDOM_GUILDS = config.guilds_for_command("random")
 
@@ -15,7 +18,7 @@ async def random(
     end: int = commands.Param(ge=1, default=100),
     start: int = commands.Param(ge=0, default=0),
 ):
-    print("Received random number request, num1: %s; num2: %s" % (start, end))
+    logger.debug("Received random number request, num1: %s; num2: %s", start, end)
 
     if start > end:
         await inter.response.send_message(

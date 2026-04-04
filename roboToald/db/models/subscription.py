@@ -1,10 +1,13 @@
 import datetime
+import logging
 import time
 from typing import List
 
 import sqlalchemy.orm
 
 from roboToald.db import base
+
+logger = logging.getLogger(__name__)
 
 
 class Subscription(base.Base, base.MyBase):
@@ -88,7 +91,12 @@ def refresh_subscription(user_id: int, target: str, guild_id: int) -> Subscripti
         sub.store()
         return sub
     except Exception:
-        print(f"Failed to refresh subscription {user_id}/{target}.")
+        logger.exception(
+            "Failed to refresh subscription user_id=%s target=%s guild_id=%s",
+            user_id,
+            target,
+            guild_id,
+        )
 
 
 def clean_expired_subscriptions() -> None:
@@ -97,8 +105,13 @@ def clean_expired_subscriptions() -> None:
         for sub in expired:
             sub.delete()
     if expired:
-        print(f"Cleaned up {len(expired)} expired subscriptions.")
+        logger.info("Cleaned up %s expired subscriptions.", len(expired))
 
 
 if __name__ == "__main__":
-    print(clean_expired_subscriptions())
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-5.5s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    clean_expired_subscriptions()

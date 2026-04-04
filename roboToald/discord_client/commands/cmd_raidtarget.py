@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import logging
 import time
 from typing import Optional, Tuple
 
@@ -10,6 +11,8 @@ from roboToald import config
 from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
+
+logger = logging.getLogger(__name__)
 
 RAIDTARGET_GUILDS = config.guilds_for_command("raidtarget")
 MAX_AC_RESULTS = 25
@@ -287,14 +290,18 @@ async def announce_subscriptions():
                                 start_time=active_window.start,
                             )
                         else:
-                            print(f"Could not load user for DM: {sub.user_id}")
+                            logger.warning("Could not load user for DM: `%s`", sub.user_id)
                     else:
-                        print(f"User `{sub.user_id}` did not have the required role, removing watch `{target.name}`.")
+                        logger.info(
+                            "User `%s` did not have the required role, removing watch `%s`.",
+                            sub.user_id,
+                            target.name,
+                        )
                         sub_model.delete_subscription(sub.user_id, target.name, guild_id=sub.guild_id)
 
     await asyncio.gather(*messages)
     if messages:
-        print(f"Sent {len(messages)} subscription notifications.")
+        logger.info("Sent %s subscription notifications.", len(messages))
 
 
 BUTTON_LISTENERS = {"unsubscribe": unsubscribe_listener, "refresh": refresh_listener}

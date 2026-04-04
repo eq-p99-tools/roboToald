@@ -1,9 +1,12 @@
 import contextlib
+import logging
 
 import sqlalchemy
 import sqlalchemy.orm
 
 from roboToald import config
+
+logger = logging.getLogger(__name__)
 
 RaidBase = sqlalchemy.orm.declarative_base()
 
@@ -39,7 +42,7 @@ def initialize_raid_database(guild_id: int, run_migrations=True):
     try:
         from roboToald.db.raid_migrations import upgrade_raid_database, stamp_raid_database
     except ImportError:
-        print("Alembic not available for raid DB — falling back to create_all().")
+        logger.info("Alembic not available for raid DB — falling back to create_all().")
         RaidBase.metadata.create_all(engine)
         return
 
@@ -51,17 +54,21 @@ def initialize_raid_database(guild_id: int, run_migrations=True):
     has_app_tables = "events" in table_names
 
     if not has_app_tables:
-        print(f"Fresh raid database detected ({db_path}) — creating tables and stamping head.")
+        logger.info(
+            "Fresh raid database detected (guild_id=%s, path=%s) — creating tables and stamping head.",
+            guild_id,
+            db_path,
+        )
         RaidBase.metadata.create_all(engine)
         stamp_raid_database(db_path=db_path)
     elif not has_alembic:
-        print(f"Pre-Alembic raid database detected ({db_path}) — stamping head.")
+        logger.info("Pre-Alembic raid database detected (guild_id=%s, path=%s) — stamping head.", guild_id, db_path)
         stamp_raid_database(db_path=db_path)
     else:
-        print(f"Running raid Alembic migrations ({db_path})...")
+        logger.info("Running raid Alembic migrations (guild_id=%s, path=%s)...", guild_id, db_path)
         upgrade_raid_database(db_path=db_path)
 
-    print(f"Raid database schema is up to date ({db_path}).")
+    logger.info("Raid database schema is up to date (guild_id=%s, path=%s).", guild_id, db_path)
 
 
 @contextlib.contextmanager

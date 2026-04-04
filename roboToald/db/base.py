@@ -1,9 +1,12 @@
 import contextlib
+import logging
 
 import sqlalchemy
 import sqlalchemy.orm
 
 from roboToald import exceptions
+
+logger = logging.getLogger(__name__)
 
 Base = sqlalchemy.orm.declarative_base()
 
@@ -52,7 +55,7 @@ def initialize_database(run_migrations=True):
     try:
         from roboToald.db.migrations import upgrade_database, stamp_database
     except ImportError:
-        print("Alembic not available — falling back to create_all().")
+        logger.info("Alembic not available — falling back to create_all().")
         Base.metadata.create_all(engine)
         return
 
@@ -62,17 +65,17 @@ def initialize_database(run_migrations=True):
     has_app_tables = "sso_account" in table_names
 
     if not has_app_tables:
-        print("Fresh database detected — creating tables and stamping head.")
+        logger.info("Fresh database detected — creating tables and stamping head.")
         Base.metadata.create_all(engine)
         stamp_database()
     elif not has_alembic:
-        print("Pre-Alembic database detected — stamping head.")
+        logger.info("Pre-Alembic database detected — stamping head.")
         stamp_database()
     else:
-        print("Running Alembic migrations...")
+        logger.info("Running Alembic migrations...")
         upgrade_database()
 
-    print("Database schema is up to date.")
+    logger.info("Database schema is up to date.")
 
 
 @contextlib.contextmanager

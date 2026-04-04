@@ -16,7 +16,7 @@ if __name__ == "__main__":
     logging.root.setLevel(logging.INFO)
 
     # Initialize databases and run migrations
-    print("Initializing databases and running migrations...")
+    logging.getLogger(__name__).info("Initializing databases and running migrations...")
     base.initialize_database()
 
     from roboToald.db.raid_base import initialize_raid_database

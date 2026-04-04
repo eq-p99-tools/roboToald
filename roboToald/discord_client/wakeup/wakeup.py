@@ -7,6 +7,8 @@ from roboToald import config
 
 logging.getLogger("disnake.voice_client").setLevel(logging.WARNING)
 
+logger = logging.getLogger(__name__)
+
 
 async def process_message(message: disnake.Message) -> None:
     channel_id = message.channel.id
@@ -14,15 +16,15 @@ async def process_message(message: disnake.Message) -> None:
         for exclusion in config.get_wakeup_exclusions(message.guild.id):
             if exclusion in message.content.lower():
                 return
-        print(f"Playing wakeup in channel {channel_id} for message: {message.content}")
+        logger.info("Playing wakeup in channel %s for message: %s", channel_id, message.content)
         voice_channel_id = config.WAKEUP_CHANNELS[channel_id]
         voice_channel = message.guild.get_channel(voice_channel_id)
         try:
             await wakeup(voice_channel)
         except disnake.errors.ClientException:
-            print("Already connected to a voice channel, likely a duplicate trigger.")
-        except Exception as e:
-            print(f"Unexpected error during wakeup: {e}")
+            logger.warning("Already connected to a voice channel, likely a duplicate trigger.")
+        except Exception:
+            logger.exception("Unexpected error during wakeup")
 
 
 async def wakeup(channel: disnake.VoiceChannel) -> None:
@@ -33,12 +35,12 @@ async def wakeup(channel: disnake.VoiceChannel) -> None:
                 break
             await asyncio.sleep(0.5)
         if not vc.is_connected():
-            print("Voice connection failed: not connected after waiting")
+            logger.warning("Voice connection failed: not connected after waiting")
             return
 
         def finished(error):
             if error:
-                print(error)
+                logger.warning("Wakeup playback finished with error: %s", error)
 
         wakeup_sound = disnake.FFmpegPCMAudio(config.WAKEUP_AUDIOFILE)
         vc.play(wakeup_sound, after=finished)
@@ -48,10 +50,10 @@ async def wakeup(channel: disnake.VoiceChannel) -> None:
             await asyncio.sleep(1)
             elapsed += 1
         if elapsed >= timeout:
-            print(f"Wakeup playback timed out after {timeout}s, forcing disconnect")
+            logger.warning("Wakeup playback timed out after %ss, forcing disconnect", timeout)
             vc.stop()
-    except Exception as e:
-        print(f"Wakeup voice error: {e}")
+    except Exception:
+        logger.exception("Wakeup voice error")
     finally:
         try:
             await vc.disconnect(force=True)
