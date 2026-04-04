@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 API_PATH = "/api.php"
 
 
+class EqdkpApiError(RuntimeError):
+    """EQdkp API returned status 0 or an error payload (HTTP may still be 200)."""
+
+
+def _raise_if_eqdkp_error(data: dict) -> None:
+    if data.get("status") == 0:
+        raise EqdkpApiError(data.get("error") or "unknown EQdkp error")
+
+
 def _values_with_prefix(d: dict, prefix: str) -> list[dict]:
     """Extract values whose keys start with *prefix* (e.g. 'player:', 'member:')."""
     return [v for k, v in d.items() if isinstance(v, dict) and k.startswith(prefix)]
@@ -52,12 +61,12 @@ class EqdkpClient:
                 json=body,
             )
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            _raise_if_eqdkp_error(data)
+            return data
 
     async def find_character(self, char_name: str) -> dict | None:
-        data = await self._get(
-            "search", **{"in": "charname", "for": char_name}
-        )
+        data = await self._get("search", **{"in": "charname", "for": char_name})
         logger.debug("find_character(%s) raw: %s", char_name, data)
         direct = data.get("direct", {})
         members = _values_with_prefix(direct, "member:")
@@ -69,7 +78,8 @@ class EqdkpClient:
         return valid[0] if len(valid) == 1 else None
 
     async def find_characters_by_discord_id(
-        self, discord_id: str | int,
+        self,
+        discord_id: str | int,
     ) -> list[dict]:
         """Look up EQdkp characters linked to a Discord user via auth_account."""
         data = await self._get(
@@ -78,7 +88,8 @@ class EqdkpClient:
         )
         logger.debug(
             "find_characters_by_discord_id(%s) raw: %s",
-            discord_id, data,
+            discord_id,
+            data,
         )
         direct = data.get("direct", {})
         members = _values_with_prefix(direct, "member:")
@@ -96,11 +107,14 @@ class EqdkpClient:
         return None
 
     async def create_event(self, event_name: str, event_value: int) -> int:
-        data = await self._post("add_event", {
-            "event_name": event_name,
-            "event_value": event_value,
-            "multidkp_poolid": 1,
-        })
+        data = await self._post(
+            "add_event",
+            {
+                "event_name": event_name,
+                "event_value": event_value,
+                "multidkp_poolid": 1,
+            },
+        )
         return data["event_id"]
 
     async def create_character(self, name: str) -> dict | None:
@@ -114,6 +128,7 @@ class EqdkpClient:
         session so the caller can commit as part of a larger transaction.
         """
         from roboToald.db.raid_base import get_raid_session
+
         member = await self.find_character(character.name)
         if not member:
             await self._post("character", {"name": character.name})
@@ -146,13 +161,16 @@ class EqdkpClient:
         raid_date: datetime | None = None,
     ) -> int:
         date_str = (raid_date or datetime.utcnow()).strftime("%Y-%m-%d %I:%M")
-        data = await self._post("add_raid", {
-            "raid_date": date_str,
-            "raid_value": raid_value,
-            "raid_event_id": event_eqdkp_event_id,
-            "raid_note": raid_note,
-            "raid_attendees": {"member": member_ids},
-        })
+        data = await self._post(
+            "add_raid",
+            {
+                "raid_date": date_str,
+                "raid_value": raid_value,
+                "raid_event_id": event_eqdkp_event_id,
+                "raid_note": raid_note,
+                "raid_attendees": {"member": member_ids},
+            },
+        )
         return data["raid_id"]
 
     async def add_item(
@@ -164,16 +182,19 @@ class EqdkpClient:
         item_date: datetime | None = None,
     ) -> int:
         date_str = (item_date or datetime.utcnow()).strftime("%Y-%m-%d %I:%M")
-        data = await self._post("add_item", {
-            "item_date": date_str,
-            "item_buyers": {"member": [member_id]},
-            "item_name": item_name,
-            "item_value": item_value,
-            "item_raid_id": raid_id,
-            "item_id": None,
-            "item_game_id": None,
-            "item_itempool_id": 1,
-        })
+        data = await self._post(
+            "add_item",
+            {
+                "item_date": date_str,
+                "item_buyers": {"member": [member_id]},
+                "item_name": item_name,
+                "item_value": item_value,
+                "item_raid_id": raid_id,
+                "item_id": None,
+                "item_game_id": None,
+                "item_itempool_id": 1,
+            },
+        )
         return data["item_id"]
 
     async def add_adjustment(

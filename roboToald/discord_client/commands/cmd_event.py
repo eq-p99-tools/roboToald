@@ -31,8 +31,11 @@ from roboToald.db.raid_models.permission import Permission
 from roboToald.discord_client import base
 from roboToald.raid import permissions as perms
 from roboToald.raid.event_helpers import (
-    resolve_target, get_shortest_alias, rte_tracking_creator,
-    build_target_loot_table_lines, build_raid_status_embed,
+    resolve_target,
+    get_shortest_alias,
+    rte_tracking_creator,
+    build_target_loot_table_lines,
+    build_raid_status_embed,
 )
 from roboToald.raid.player_parser import parse_players_from_content
 from roboToald.raid.pushsafer import send_batphone
@@ -59,7 +62,9 @@ async def create(
 ):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "create_event", guild_id):
-        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
+        await inter.response.send_message(
+            "```diff\n- You do not have permission to access that command.```", ephemeral=True
+        )
         return
 
     await inter.response.defer(ephemeral=True)
@@ -74,7 +79,9 @@ async def create(
             return
 
         if _is_locked_out(target, session):
-            await inter.followup.send("```diff\n- An event for this target was created recently (lockout). Skipping.```")
+            await inter.followup.send(
+                "```diff\n- An event for this target was created recently (lockout). Skipping.```"
+            )
             return
 
         children = []
@@ -92,7 +99,9 @@ async def create(
         if children:
             for child in children:
                 ch = await _perform_create_event(
-                    inter.guild, inter.author.display_name, _send_error,
+                    inter.guild,
+                    inter.author.display_name,
+                    _send_error,
                     session,
                     f"{display_name} - {child.name}",
                     target=target,
@@ -105,7 +114,9 @@ async def create(
                     created_channels.append(ch)
         else:
             ch = await _perform_create_event(
-                inter.guild, inter.author.display_name, _send_error,
+                inter.guild,
+                inter.author.display_name,
+                _send_error,
                 session,
                 display_name,
                 target=target,
@@ -167,13 +178,13 @@ async def _perform_create_event(
     ch_name = f"{channel_name or target_name} {et_now.strftime('%b-%d-%I%p').lower()}"
 
     channel = None
-    for cat_id in (config.get_raid_setting(guild_id, "event_category_ids") or []):
+    for cat_id in config.get_raid_setting(guild_id, "event_category_ids") or []:
         try:
             category = guild.get_channel(cat_id)
             if category is None:
                 continue
             channel = await guild.create_text_channel(
-                name=f"\u23F2\uFE0F{ch_name}",
+                name=f"\u23f2\ufe0f{ch_name}",
                 category=category,
             )
             await channel.edit(sync_permissions=True)
@@ -209,16 +220,18 @@ async def _perform_create_event(
             msg = f"Multiple targets found ({', '.join(t.name for t in targets)})"
         output_lines.append(f"```diff\n- {msg} Please use /event target to set the proper target.```")
 
-    output_lines.extend([
-        "> **What's next?**",
-        ">   - Check out available commands using `$help`.",
-        ">   - Submit logs to add attendees by pasting or uploading files.",
-        ">   - Add individual players using `+Player reason`.",
-        ">      - Indicate a bot with `+Player on Bot`",
-        ">   - Record loot using `$loot <item> <character> <dkp>`",
-        "",
-        f"Started By: {started_by}",
-    ])
+    output_lines.extend(
+        [
+            "> **What's next?**",
+            ">   - Check out available commands using `$help`.",
+            ">   - Submit logs to add attendees by pasting or uploading files.",
+            ">   - Add individual players using `+Player reason`.",
+            ">      - Indicate a bot with `+Player on Bot`",
+            ">   - Record loot using `$loot <item> <character> <dkp>`",
+            "",
+            f"Started By: {started_by}",
+        ]
+    )
 
     msg_obj = await channel.send("\n".join(output_lines))
     evt.first_message_id = str(msg_obj.id)
@@ -253,10 +266,14 @@ async def target(
         targets, _ = resolve_target(name, session)
         if len(targets) > 1:
             names = ", ".join(t.name for t in targets)
-            await inter.followup.send(f"```diff\n- Multiple targets found ({names}). Be more specific.```", ephemeral=True)
+            await inter.followup.send(
+                f"```diff\n- Multiple targets found ({names}). Be more specific.```", ephemeral=True
+            )
             return
         if not targets:
-            await inter.followup.send("```diff\n- Target not found. Use /event targets to see available targets.```", ephemeral=True)
+            await inter.followup.send(
+                "```diff\n- Target not found. Use /event targets to see available targets.```", ephemeral=True
+            )
             return
 
         tgt = targets[0]
@@ -269,7 +286,7 @@ async def target(
         evt.nokill_dkp = tgt.nokill_value
         session.flush()
 
-        emoji = "\U0001F480" if evt.killed is True else ("\u26D4" if evt.killed is False else "\u23F2\uFE0F")
+        emoji = "\U0001f480" if evt.killed is True else ("\u26d4" if evt.killed is False else "\u23f2\ufe0f")
 
         try:
             output = build_target_loot_table_lines(evt, tgt, session)
@@ -283,9 +300,9 @@ async def target(
             logger.exception("Failed to update first message")
 
         if old_target_id:
-            session.query(Attendee).filter(
-                Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)
-            ).delete(synchronize_session="fetch")
+            session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).delete(
+                synchronize_session="fetch"
+            )
 
         tracking_msgs = rte_tracking_creator(evt, tgt, None, session, target_name=display_name)
         session.commit()
@@ -310,7 +327,9 @@ async def target(
 async def targets(inter: disnake.ApplicationCommandInteraction):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "targets", guild_id):
-        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
+        await inter.response.send_message(
+            "```diff\n- You do not have permission to access that command.```", ephemeral=True
+        )
         return
     with get_raid_session(guild_id) as session:
         all_targets = session.query(Target).filter_by(parent="").all()
@@ -355,7 +374,9 @@ def _count_pinned_in(category, pinned_ids: set) -> int:
 async def reorder(inter: disnake.ApplicationCommandInteraction):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "reorder", guild_id):
-        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
+        await inter.response.send_message(
+            "```diff\n- You do not have permission to access that command.```", ephemeral=True
+        )
         return
 
     event_category_ids = config.get_raid_setting(guild_id, "event_category_ids") or []
@@ -366,14 +387,16 @@ async def reorder(inter: disnake.ApplicationCommandInteraction):
     await inter.response.defer()
 
     pinned_channel_ids = {
-        cid for cid in (
+        cid
+        for cid in (
             config.get_raid_setting(guild_id, "tracking_channel_id"),
             config.get_raid_setting(guild_id, "create_event_channel_id"),
             config.get_raid_setting(guild_id, "uploaded_events_channel_id"),
             config.get_raid_setting(guild_id, "batphone_channel_id"),
             config.get_raid_setting(guild_id, "register_channel_id"),
             config.get_raid_setting(guild_id, "loot_channel_id"),
-        ) if cid
+        )
+        if cid
     }
 
     categories = []
@@ -386,7 +409,8 @@ async def reorder(inter: disnake.ApplicationCommandInteraction):
         event_channels.extend(
             sorted(
                 [
-                    ch for ch in category.channels
+                    ch
+                    for ch in category.channels
                     if isinstance(ch, disnake.TextChannel) and ch.id not in pinned_channel_ids
                 ],
                 key=lambda c: c.position,
@@ -432,12 +456,9 @@ async def reorder(inter: disnake.ApplicationCommandInteraction):
 # Message handlers: +Player, -Player, log paste, batphone
 # ---------------------------------------------------------------------------
 
+
 def _is_events_category(channel) -> bool:
-    return (
-        hasattr(channel, "category")
-        and channel.category
-        and channel.category.name.startswith("Events")
-    )
+    return hasattr(channel, "category") and channel.category and channel.category.name.startswith("Events")
 
 
 @base.DISCORD_CLIENT.listen("on_message")
@@ -458,11 +479,7 @@ async def on_raid_message(message: disnake.Message):
 
     # !register in the registration channel
     register_ch_id = config.get_raid_setting(guild_id, "register_channel_id")
-    if (
-        content.strip().lower() == "!register"
-        and register_ch_id
-        and message.channel.id == register_ch_id
-    ):
+    if content.strip().lower() == "!register" and register_ch_id and message.channel.id == register_ch_id:
         await _handle_register(message)
         return
 
@@ -511,9 +528,7 @@ async def _handle_add_player(message: disnake.Message):
                 session.add(char)
                 session.flush()
 
-            existing = session.query(Attendee).filter_by(
-                event_id=evt.id, character_id=str(char.id)
-            ).first()
+            existing = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
             on_character = None
             on_match = re.match(r"^on\s+(.+)$", reason, re.IGNORECASE)
@@ -522,9 +537,9 @@ async def _handle_add_player(message: disnake.Message):
                 on_character = session.query(Character).filter(Character.name.ilike(on_name)).first()
 
             if on_character:
-                on_existing = session.query(Attendee).filter_by(
-                    event_id=evt.id, on_character_id=str(on_character.id)
-                ).first()
+                on_existing = (
+                    session.query(Attendee).filter_by(event_id=evt.id, on_character_id=str(on_character.id)).first()
+                )
                 if on_existing:
                     c = session.query(Character).filter_by(id=int(on_existing.character_id)).first()
                     out.append(f"- {c.name if c else '?'} is already on {on_character.name}")
@@ -550,9 +565,12 @@ async def _handle_add_player(message: disnake.Message):
             out.append(msg_text)
 
             if on_character:
-                dup = session.query(Attendee).filter_by(
-                    event_id=evt.id, character_id=str(on_character.id)
-                ).filter(Attendee.on_character_id.is_(None)).first()
+                dup = (
+                    session.query(Attendee)
+                    .filter_by(event_id=evt.id, character_id=str(on_character.id))
+                    .filter(Attendee.on_character_id.is_(None))
+                    .first()
+                )
                 if dup:
                     session.delete(dup)
                     out.append(f"- {on_character.name} was removed from this event")
@@ -582,9 +600,7 @@ async def _handle_remove_player(message: disnake.Message):
             await message.channel.send(f"```fix\n{player_name} does not exist```")
             return
 
-        attendee = session.query(Attendee).filter_by(
-            event_id=evt.id, character_id=str(char.id)
-        ).first()
+        attendee = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
         if attendee:
             session.delete(attendee)
@@ -629,13 +645,9 @@ async def _handle_log_parse(message: disnake.Message):
             elif not char.klass and p.klass:
                 char.klass = p.klass
 
-            existing = session.query(Attendee).filter_by(
-                event_id=evt.id, character_id=str(char.id)
-            ).first()
+            existing = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
             if not existing:
-                on_existing = session.query(Attendee).filter_by(
-                    event_id=evt.id, on_character_id=str(char.id)
-                ).first()
+                on_existing = session.query(Attendee).filter_by(event_id=evt.id, on_character_id=str(char.id)).first()
                 if not on_existing:
                     session.add(Attendee(event_id=evt.id, character_id=str(char.id)))
                     num_added += 1
@@ -644,11 +656,13 @@ async def _handle_log_parse(message: disnake.Message):
 
     out = ["```diff", f"+ Log Parsed. {num_added} players added."]
     if anon_players:
-        out.extend([
-            "",
-            "- The following players were not added (anonymous and never seen before):",
-            "",
-        ])
+        out.extend(
+            [
+                "",
+                "- The following players were not added (anonymous and never seen before):",
+                "",
+            ]
+        )
         for p in anon_players:
             out.append(f"-  {p.name}")
     out.append("```")
@@ -699,7 +713,9 @@ async def _handle_batphone(message: disnake.Message):
         if should_send and config.get_raid_setting(guild_id, "send_batphone"):
             send_batphone(
                 config.get_pushsafer_setting(guild_id, "title") or "Batphone",
-                str(message.content), guild_id, opts=opts,
+                str(message.content),
+                guild_id,
+                opts=opts,
             )
 
         if tgt and should_send:
@@ -722,7 +738,9 @@ async def _handle_batphone(message: disnake.Message):
             if children:
                 for child in children:
                     await _perform_create_event(
-                        message.guild, message.author.display_name, message.channel.send,
+                        message.guild,
+                        message.author.display_name,
+                        message.channel.send,
                         session,
                         f"{display_name} - {child.name}",
                         target=tgt,
@@ -733,7 +751,9 @@ async def _handle_batphone(message: disnake.Message):
                     )
             else:
                 await _perform_create_event(
-                    message.guild, message.author.display_name, message.channel.send,
+                    message.guild,
+                    message.author.display_name,
+                    message.channel.send,
                     session,
                     display_name,
                     target=tgt,
@@ -762,9 +782,11 @@ async def _handle_dollar_command(message: disnake.Message):
 
 def _dollar(name):
     """Decorator to register a $command handler."""
+
     def decorator(func):
         _DOLLAR_COMMANDS[name] = func
         return func
+
     return decorator
 
 
@@ -786,7 +808,7 @@ async def _cmd_kill(message: disnake.Message, _args: str):
         evt.killed = True
         session.commit()
         dkp_val = evt.dkp_value
-        new_name = f"\U0001F480{evt.channel_name}"
+        new_name = f"\U0001f480{evt.channel_name}"
     if dkp_val is None:
         await message.channel.send(
             "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as killed.```"
@@ -813,7 +835,7 @@ async def _cmd_nokill(message: disnake.Message, _args: str):
         evt.killed = False
         session.commit()
         dkp_val = evt.dkp_value
-        new_name = f"\u26D4{evt.channel_name}"
+        new_name = f"\u26d4{evt.channel_name}"
     if dkp_val is None:
         await message.channel.send(
             "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as not killed.```"
@@ -846,9 +868,7 @@ async def _cmd_dkp(message: disnake.Message, args: str):
         evt.dkp = value
         evt.nokill_dkp = nokill_value
         session.commit()
-        await message.channel.send(
-            f"```diff\n+ DKP set to {value}, no-kill DKP set to {nokill_value}.```"
-        )
+        await message.channel.send(f"```diff\n+ DKP set to {value}, no-kill DKP set to {nokill_value}.```")
 
 
 @_dollar("status")
@@ -876,6 +896,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
     force = args_lower == "force"
     async with message.channel.typing():
         from roboToald.eqdkp.client import EqdkpClient
+
         eqdkp = EqdkpClient(guild_id)
 
         with get_raid_session(guild_id) as session:
@@ -897,9 +918,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                 tgt = session.query(Target).get(evt.target_id) if evt.target_id else None
                 event_name = tgt.name if tgt else evt.name
 
-                eqdkp_evt = session.query(EqdkpEvent).filter(
-                    EqdkpEvent.name.ilike(event_name)
-                ).first()
+                eqdkp_evt = session.query(EqdkpEvent).filter(EqdkpEvent.name.ilike(event_name)).first()
                 if not eqdkp_evt or not eqdkp_evt.eqdkp_event_id:
                     new_id = await eqdkp.create_event(event_name, evt.dkp_value or 0)
                     if not eqdkp_evt:
@@ -913,28 +932,71 @@ async def _cmd_submit(message: disnake.Message, args: str):
                 attendees = session.query(Attendee).filter_by(event_id=evt.id, tracking_id=None).all()
                 characters = []
                 for att in attendees:
-                    char = session.query(Character).filter_by(id=int(att.character_id)).first() if att.character_id else None
+                    char = (
+                        session.query(Character).filter_by(id=int(att.character_id)).first()
+                        if att.character_id
+                        else None
+                    )
                     if char:
                         char = await eqdkp.create_member(char, session=session)
                         characters.append(char)
 
                 members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
 
+                # batphone-bot eqdkp_publisher: if no attendees and DKP is 0, use loot buyers as raid members.
+                if not members_by_user and (evt.dkp_value or 0) == 0:
+                    for el in session.query(EventLoot).filter_by(event_id=evt.id).all():
+                        char = (
+                            session.query(Character).filter_by(id=int(el.character_id)).first()
+                            if el.character_id
+                            else None
+                        )
+                        if char:
+                            char = await eqdkp.create_member(char, session=session)
+                            characters.append(char)
+                    members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
+
+                raid_roster_from_fte_merge = False
+                if not members_by_user:
+                    for fte_rec in session.query(Fte).filter_by(event_id=evt.id).all():
+                        char = session.query(Character).get(fte_rec.character_id) if fte_rec.character_id else None
+                        if char:
+                            char = await eqdkp.create_member(char, session=session)
+                            characters.append(char)
+                    members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
+                    if members_by_user:
+                        raid_roster_from_fte_merge = True
+
+                if not members_by_user:
+                    await message.channel.send(
+                        "```diff\n- EQdkp requires at least one raid member. "
+                        "Add attendees, loot with a buyer, or FTE before submitting.```"
+                    )
+                    return
+
+                raid_value = 0 if raid_roster_from_fte_merge else (evt.dkp_value or 0)
+
                 kill_msg = "Killed" if evt.killed else "Not Killed"
-                raid_note = f"{evt.created_at.strftime('%Y%m%d-%I%M')}-{evt.name} {kill_msg}" if evt.created_at else evt.name
+                raid_note = (
+                    f"{evt.created_at.strftime('%Y%m%d-%I%M')}-{evt.name} {kill_msg}" if evt.created_at else evt.name
+                )
                 raid_id = await eqdkp.create_raid(
                     evt.eqdkp_event_id,
-                    evt.dkp_value or 0,
+                    raid_value,
                     raid_note,
                     [c.eqdkp_member_id for c in members_by_user],
                 )
                 evt.eqdkp_raid_id = raid_id
 
-                rte_attendees = session.query(Attendee).filter(
-                    Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)
-                ).all()
+                rte_attendees = (
+                    session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).all()
+                )
                 for att in rte_attendees:
-                    char = session.query(Character).filter_by(id=int(att.character_id)).first() if att.character_id else None
+                    char = (
+                        session.query(Character).filter_by(id=int(att.character_id)).first()
+                        if att.character_id
+                        else None
+                    )
                     if not char:
                         continue
                     char = await eqdkp.create_member(char, session=session)
@@ -980,7 +1042,10 @@ async def _cmd_submit(message: disnake.Message, args: str):
                         char = await eqdkp.create_member(char, session=session)
                         if char.eqdkp_member_id:
                             item_id = await eqdkp.add_item(
-                                loot_rec.name, el.dkp or 0, char.eqdkp_member_id, raid_id,
+                                loot_rec.name,
+                                el.dkp or 0,
+                                char.eqdkp_member_id,
+                                raid_id,
                                 item_date=el.created_at,
                             )
                             el.eqdkp_item_id = item_id
@@ -1086,10 +1151,14 @@ async def _cmd_target(message: disnake.Message, args: str):
         targets, _ = resolve_target(name, session)
         if len(targets) > 1:
             names = ", ".join(t.name for t in targets)
-            await message.channel.send(f"```diff\n- Multiple targets were found for this event ({names}). Please be more specific.```")
+            await message.channel.send(
+                f"```diff\n- Multiple targets were found for this event ({names}). Please be more specific.```"
+            )
             return
         if not targets:
-            await message.channel.send("```diff\n- We are sorry but that target was not found. Please try again or use `/event targets` to see the list.```")
+            await message.channel.send(
+                "```diff\n- We are sorry but that target was not found. Please try again or use `/event targets` to see the list.```"
+            )
             return
 
         tgt = targets[0]
@@ -1116,9 +1185,9 @@ async def _cmd_target(message: disnake.Message, args: str):
             logger.exception("Failed to update first message")
 
         if old_target_id:
-            session.query(Attendee).filter(
-                Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)
-            ).delete(synchronize_session="fetch")
+            session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).delete(
+                synchronize_session="fetch"
+            )
 
         tracking_msgs = rte_tracking_creator(evt, tgt, None, session, target_name=display_name)
         session.commit()
@@ -1180,9 +1249,7 @@ async def _cmd_loot(message: disnake.Message, args: str):
             await message.channel.send(f"```diff\n- {character} not found. Add them with +Player first.```")
             return
 
-        attendee = session.query(Attendee).filter_by(
-            event_id=evt.id, character_id=str(char.id)
-        ).first()
+        attendee = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
         loot_rec = session.query(Loot).filter_by(item_id=item_record.id).first()
         if not loot_rec:
@@ -1265,9 +1332,7 @@ async def _cmd_unloot(message: disnake.Message, args: str):
         el_dkp = el.dkp or 0
         session.delete(el)
         session.commit()
-        await message.channel.send(
-            f"```diff\n+ Loot ID {loot_id} removed. ({item_name}, {char_name}, {el_dkp})```"
-        )
+        await message.channel.send(f"```diff\n+ Loot ID {loot_id} removed. ({item_name}, {char_name}, {el_dkp})```")
 
 
 @_dollar("fte")
@@ -1294,9 +1359,7 @@ async def _cmd_fte(message: disnake.Message, args: str):
         fte_rec = Fte(event_id=evt.id, character_id=char.id, dkp=dkp_value)
         session.add(fte_rec)
         session.commit()
-        await message.channel.send(
-            f"```diff\n+ {char.name} awarded {dkp_value} DKP for FTE on {evt.target_name}.```"
-        )
+        await message.channel.send(f"```diff\n+ {char.name} awarded {dkp_value} DKP for FTE on {evt.target_name}.```")
 
 
 @_dollar("unfte")
@@ -1324,9 +1387,7 @@ async def _cmd_unfte(message: disnake.Message, args: str):
         fte_dkp = fte_rec.dkp or 0
         session.delete(fte_rec)
         session.commit()
-        await message.channel.send(
-            f"```diff\n+ FTE ID {fte_id} removed. ({char_name}, {fte_dkp})```"
-        )
+        await message.channel.send(f"```diff\n+ FTE ID {fte_id} removed. ({char_name}, {fte_dkp})```")
 
 
 # ---------------------------------------------------------------------------
@@ -1334,29 +1395,20 @@ async def _cmd_unfte(message: disnake.Message, args: str):
 # ---------------------------------------------------------------------------
 
 _HELP_TEXTS: dict[str, str] = {
-    "kill": (
-        "```\n$kill\n\nMarks the target as killed.\n```"
-    ),
-    "nokill": (
-        "```\n$nokill\n\nMarks the target as not killed.\n```"
-    ),
+    "kill": ("```\n$kill\n\nMarks the target as killed.\n```"),
+    "nokill": ("```\n$nokill\n\nMarks the target as not killed.\n```"),
     "dkp": (
         "```\n$dkp [value] [nokill value:optional]\n\n"
         "Sets the dkp and nokill dkp value for this event.\n\n"
         "Examples:\n\n$dkp 10\n$dkp 10 5\n```"
     ),
-    "status": (
-        "```\n$status\n\nShow the current tracking and readiness status.\n\n"
-        "Examples:\n\n$status\n```"
-    ),
+    "status": ("```\n$status\n\nShow the current tracking and readiness status.\n\nExamples:\n\n$status\n```"),
     "submit": (
         "```\n$submit\n$submit reset\n$submit force\n\n"
         "Submits this event to EQdkp. Use 'reset' to clear EQdkp IDs for "
         "resubmission, or 'force' to submit even if DKP is 0.\n```"
     ),
-    "delete-event": (
-        "```\n$delete-event\n\nDeletes this event channel.\n```"
-    ),
+    "delete-event": ("```\n$delete-event\n\nDeletes this event channel.\n```"),
     "clear": (
         "```\n$clear [attendees|loot|rte]\n\n"
         "This command will remove all of the objects for the given command value.\n\n"
@@ -1385,22 +1437,14 @@ _HELP_TEXTS: dict[str, str] = {
         "Award a specific character an amount of DKP for FTE.\n\n"
         "Examples:\n\n$fte Nanae 10\n```"
     ),
-    "unfte": (
-        "```\n$unfte [ID]\n\n"
-        "Removes an FTE by ID.\n\n"
-        "Examples:\n\n$unfte 123\n```"
-    ),
+    "unfte": ("```\n$unfte [ID]\n\nRemoves an FTE by ID.\n\nExamples:\n\n$unfte 123\n```"),
     "+": (
         "```\n+[Character] [Reason:optional]\n+[Character] on [Bot]\n\n"
         "Adds a character to this event, with an optional reason or "
         "attending as an alternate character or bot.\n\n"
         "Examples:\n\n+Nanae\n+Nanae on Healbox\n+Nanae porting everyone\n```"
     ),
-    "-": (
-        "```\n-[Character]\n\n"
-        "Removes a character from this event.\n\n"
-        "Examples:\n\n-Nanae\n```"
-    ),
+    "-": ("```\n-[Character]\n\nRemoves a character from this event.\n\nExamples:\n\n-Nanae\n```"),
 }
 
 _HELP_OVERVIEW = (
@@ -1430,7 +1474,9 @@ async def _cmd_help(message: disnake.Message, args: str):
     if topic and topic in _HELP_TEXTS:
         await message.channel.send(_HELP_TEXTS[topic])
     elif topic:
-        await message.channel.send("```diff\n- That command was not found. Please see available commands by using $help```")
+        await message.channel.send(
+            "```diff\n- That command was not found. Please see available commands by using $help```"
+        )
     else:
         await message.channel.send(_HELP_OVERVIEW)
 
@@ -1508,7 +1554,8 @@ def _get_gspread_client():
         "https://www.googleapis.com/auth/drive.readonly",
     ]
     creds = Credentials.from_service_account_file(
-        config.GOOGLE_SHEETS_CONFIG_FILE, scopes=scopes,
+        config.GOOGLE_SHEETS_CONFIG_FILE,
+        scopes=scopes,
     )
     return gspread.authorize(creds)
 
@@ -1523,12 +1570,13 @@ async def reload(
     ),
 ):
     guild_id = inter.guild.id
-    is_allowed = (
-        perms.can(inter.author, "reload", guild_id)
-        or str(inter.author.id) in (config.get_raid_setting(guild_id, "allowed_reload_ids") or [])
+    is_allowed = perms.can(inter.author, "reload", guild_id) or str(inter.author.id) in (
+        config.get_raid_setting(guild_id, "allowed_reload_ids") or []
     )
     if not is_allowed:
-        await inter.response.send_message("```diff\n- You do not have permission to access that command.```", ephemeral=True)
+        await inter.response.send_message(
+            "```diff\n- You do not have permission to access that command.```", ephemeral=True
+        )
         return
 
     await inter.response.defer()
@@ -1588,10 +1636,24 @@ async def reload(
                 }
 
                 rte_cols = [
-                    "rate_per_hour", "rte_tank", "rte_ramp", "rte_kiter", "rte_bumper",
-                    "rte_puller", "rte_racer", "rte_tracker", "rte_trainer", "rte_tagger",
-                    "rte_cother", "rte_anchor", "rte_sower", "rte_dmf", "rte_cleric",
-                    "rte_enchanter", "rte_shaman", "rte_bard",
+                    "rate_per_hour",
+                    "rte_tank",
+                    "rte_ramp",
+                    "rte_kiter",
+                    "rte_bumper",
+                    "rte_puller",
+                    "rte_racer",
+                    "rte_tracker",
+                    "rte_trainer",
+                    "rte_tagger",
+                    "rte_cother",
+                    "rte_anchor",
+                    "rte_sower",
+                    "rte_dmf",
+                    "rte_cleric",
+                    "rte_enchanter",
+                    "rte_shaman",
+                    "rte_bard",
                 ]
                 for i, col_name in enumerate(rte_cols):
                     idx = rte_start + i
@@ -1653,9 +1715,7 @@ async def reload(
                 item_name = row[1].strip()
 
                 if target_name not in target_cache:
-                    target_cache[target_name] = session.query(Target).filter(
-                        Target.name.ilike(target_name)
-                    ).first()
+                    target_cache[target_name] = session.query(Target).filter(Target.name.ilike(target_name)).first()
                 tgt = target_cache[target_name]
 
                 item = session.query(Item).filter(Item.name.ilike(item_name)).first()
@@ -1734,9 +1794,7 @@ def _target_choices(query: str, guild_id: int) -> dict[str, str]:
         )
         if query:
             alias_ids = (
-                session.query(TargetAlias.target_id)
-                .filter(sa.func.lower(TargetAlias.name).startswith(query))
-                .all()
+                session.query(TargetAlias.target_id).filter(sa.func.lower(TargetAlias.name).startswith(query)).all()
             )
             alias_target_ids = [a[0] for a in alias_ids]
             q = q.filter(
