@@ -100,7 +100,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `group show <name>` | Show group details |
 | `group list [role]` | List groups |
 | `alias list` | List aliases |
-| `character list [username]` | List characters |
+| `character list [username]` | List characters (shows confirmed zone keys: Seb, VP, ST) |
 | `reconcile` | Event-channel audit |
 
 ### `/sso_admin` (admin)
@@ -114,7 +114,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `group add / remove` | Add/remove accounts from groups |
 | `tag add / remove / update` | Manage tags (incl. UI macros) |
 | `alias create / delete` | Manage aliases |
-| `character add / remove` | Manage characters |
+| `character add / remove / keys` | Manage characters; `keys` sets Seb/VP/ST key status |
 | `audit account / user / failed / statistics` | Audit logs |
 | `revocation add / list / remove` | Revoke/restore user access |
 | `reset_rate_limit` | Clear rate limit for an IP |

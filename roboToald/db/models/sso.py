@@ -343,20 +343,23 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
         dt_zones, dt_classes = _dynamic_tags
         dt_list = _dynamic_tag_list
         if username in dt_list:
-            zones = None
-            klass = None
-            for dt_zone, dt_zone_list in dt_zones.items():
-                if username.startswith(dt_zone):
-                    zones = dt_zone_list
-                    break
-            for dt_class, dt_class_val in dt_classes.items():
-                if username.endswith(dt_class):
-                    klass = dt_class_val
-                    break
+            zone_matches = [(z, lst) for z, lst in dt_zones.items() if username.startswith(z)]
+            zone_matches.sort(key=lambda x: len(x[0]), reverse=True)
+            class_matches = [(c, v) for c, v in dt_classes.items() if username.endswith(c)]
+            class_matches.sort(key=lambda x: len(x[0]), reverse=True)
+            zones = zone_matches[0][1] if zone_matches else None
+            dt_zone_prefix = zone_matches[0][0] if zone_matches else None
+            klass = class_matches[0][1] if class_matches else None
             if not zones or not klass:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
 
-            characters = list_account_characters_by_class_zone(guild_id, klass, zones)
+            required_key_column = None
+            if config.REQUIRE_KEYS_FOR_DYNAMIC_TAGS and dt_zone_prefix:
+                required_key_column = DYNAMIC_TAG_KEY_REQUIREMENTS.get(dt_zone_prefix)
+
+            characters = list_account_characters_by_class_zone(
+                guild_id, klass, zones, required_key_column=required_key_column
+            )
             if not characters:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
             char_level_by_account = {c.account_id: (c.level or 0) for c in characters}
@@ -409,6 +412,7 @@ def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
     #     "fear": ["Plane of Fear", "The Feerrott"]
     # }
     dynamic_tag_zones = {
+        "seb": ["sebilis", "trakanon"],
         "vp": ["veeshan", "skyfire"],
         "st": ["sleeper", "eastwastes"],
         "tov": ["templeveeshan", "westwastes"],
@@ -426,6 +430,7 @@ def get_dynamic_tags() -> (dict[str, list[str]], dict[str, CharacterClass]):
             "dain": dynamic_tag_zones["thurg"],
             "yeli": dynamic_tag_zones["ss"],
             "zlandi": dynamic_tag_zones["dn"],
+            "trak": dynamic_tag_zones["seb"],
         }
     )
 
@@ -476,6 +481,21 @@ _dynamic_tags = get_dynamic_tags()
 _dynamic_tag_list = frozenset(
     "{}{}".format(a, b) for a, b in itertools.product(list(_dynamic_tags[0]), list(_dynamic_tags[1]))
 )
+
+# When require_keys_for_dynamic_tags is enabled, dynamic tag resolution requires these columns True.
+DYNAMIC_TAG_KEY_REQUIREMENTS: dict[str, str] = {
+    "seb": "key_seb",
+    "trak": "key_seb",
+    "vp": "key_vp",
+    "st": "key_st",
+}
+
+# Park zone key from client -> SSOAccountCharacter column name; auto-set True on zone entry.
+KEY_ZONE_TO_COLUMN: dict[str, str] = {
+    "sebilis": "key_seb",
+    "veeshan": "key_vp",
+    "sleeper": "key_st",
+}
 
 
 def get_dynamic_tag_list():
@@ -1431,6 +1451,10 @@ class SSOAccountCharacter(base.Base):
     park_location = sqlalchemy.Column(sqlalchemy.String(64), nullable=True)
     level = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
 
+    key_seb = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    key_vp = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    key_st = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
 
@@ -1476,7 +1500,10 @@ def list_account_characters(guild_id: int, real_user: str = None) -> [SSOAccount
 
 
 def list_account_characters_by_class_zone(
-    guild_id: int, klass: CharacterClass = None, zone: str = None
+    guild_id: int,
+    klass: CharacterClass = None,
+    zone: str = None,
+    required_key_column: str | None = None,
 ) -> [SSOAccountCharacter]:
     with base.get_session() as session:
         characters = (
@@ -1490,6 +1517,9 @@ def list_account_characters_by_class_zone(
             characters = characters.filter(
                 sqlalchemy.or_(SSOAccountCharacter.bind_location.in_(zone), SSOAccountCharacter.park_location.in_(zone))
             )
+        if required_key_column:
+            key_col = getattr(SSOAccountCharacter, required_key_column)
+            characters = characters.filter(key_col.is_(True))
         # Join with accounts
         characters = characters.join(SSOAccount, SSOAccount.id == SSOAccountCharacter.account_id)
         #  exclude accounts with a recent last_login
@@ -1518,6 +1548,9 @@ def update_account_character(
     bind_location: str = None,
     park_location: str = None,
     level: int = None,
+    key_seb: bool | None = None,
+    key_vp: bool | None = None,
+    key_st: bool | None = None,
 ) -> bool:
     with base.get_session() as session:
         character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
@@ -1531,6 +1564,41 @@ def update_account_character(
             character.park_location = park_location
         if level is not None:
             character.level = level
+        if key_seb is not None:
+            character.key_seb = key_seb
+        if key_vp is not None:
+            character.key_vp = key_vp
+        if key_st is not None:
+            character.key_st = key_st
+        session.commit()
+    return True
+
+
+def mark_key_from_park_zone(guild_id: int, name: str, park_zone_key: str | None) -> None:
+    """If park_zone_key is a keyed zone, set the corresponding key column to True."""
+    if not park_zone_key:
+        return
+    column = KEY_ZONE_TO_COLUMN.get(park_zone_key)
+    if not column:
+        return
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
+        if not character:
+            return
+        setattr(character, column, True)
+        session.commit()
+
+
+def set_character_zone_key(guild_id: int, name: str, key: str, value: bool | None) -> bool:
+    """Set one zone key column (seb, vp, st) to True, False, or None (unknown). Returns False if not found."""
+    column = {"seb": "key_seb", "vp": "key_vp", "st": "key_st"}.get(key)
+    if not column:
+        return False
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
+        if not character:
+            return False
+        setattr(character, column, value)
         session.commit()
     return True
 

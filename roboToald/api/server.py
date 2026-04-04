@@ -640,6 +640,7 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         park_location=msg.get("park_location"),
         level=msg.get("level"),
     )
+    sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
     await ws_manager.notify_guild_async(conn.guild_id)
 
 

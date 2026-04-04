@@ -42,6 +42,11 @@ def build_account_tree(accessible_accounts, active_characters: dict[int, str] | 
                     "bind": char.bind_location,
                     "park": char.park_location,
                     "level": char.level,
+                    "keys": {
+                        "seb": char.key_seb,
+                        "vp": char.key_vp,
+                        "st": char.key_st,
+                    },
                 }
                 for char in account.characters
             },

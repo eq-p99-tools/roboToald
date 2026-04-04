@@ -71,6 +71,11 @@ For example, it might be a good idea to alias accounts with their character name
 - `/sso_admin alias create <username> <alias>` - Create an alias for an account
 - `/sso_admin alias delete <alias>` - Delete an alias
 
+## Character Keys
+Zone keys (Sebilis, Veeshan's Peak, Sleeper's Tomb) can be set per character for tracking and optional dynamic-tag filtering.
+
+- `/sso_admin character keys <character_name> <key> <status>` - Set Seb / VP / ST to Yes, No, or Unknown
+
 ## User Access Revocation
 Revoking access to a user will prevent the user from logging in to otherwise authorized accounts via the P99LoginProxy Application.
 
@@ -89,6 +94,20 @@ Review access and changes to the SSO system.
 
 
 EVENT_CHANNEL_MATCHER = re.compile(r".*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$")
+
+
+def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
+    """Bracket suffix for Discord list: `` [Seb:VP]`` when keys are confirmed True."""
+    parts = []
+    if c.key_seb is True:
+        parts.append("Seb")
+    if c.key_vp is True:
+        parts.append("VP")
+    if c.key_st is True:
+        parts.append("ST")
+    if not parts:
+        return ""
+    return f" [{':'.join(parts)}]"
 
 
 # Autocomplete function for account names
@@ -1511,6 +1530,38 @@ class SSOCommands(commands.Cog):
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id)
 
+    @character_admin.sub_command(description="Set zone key status for a character", name="keys")
+    async def character_keys(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(
+            description="Character name", autocomplete=character_autocomplete
+        ),
+        key: str = commands.Param(description="Which key", choices=["Seb", "VP", "ST"]),
+        status: str = commands.Param(
+            description="Whether the character has the key",
+            choices=["Yes", "No", "Unknown"],
+        ),
+    ):
+        key_map = {"Seb": "seb", "VP": "vp", "ST": "st"}
+        value = {"Yes": True, "No": False, "Unknown": None}[status]
+        try:
+            character_name = character_name.lower().capitalize()
+            ok = sso_model.set_character_zone_key(
+                inter.guild_id, character_name, key_map[key], value
+            )
+            if not ok:
+                message = f"⚠️🧍 **Character not found:** `{character_name}`"
+                await inter.send(content=message, ephemeral=True)
+                return
+            message = f"🔑 Set `{character_name}` **{key}** to **{status}**."
+        except Exception as e:
+            message = f"❌🧍 **Error:**\n```\n{e}\n```"
+            await inter.send(content=message, ephemeral=True)
+            return
+        await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id)
+
     @character.sub_command(description="List all characters for an account", name="list")
     async def character_list(
         self,
@@ -1523,7 +1574,8 @@ class SSOCommands(commands.Cog):
             characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
             if characters:
                 desc = "\n".join(
-                    f" * `{c.name}` ({c.klass.value}){'' if username else f' on `{c.account.real_user}`'}"
+                    f" * `{c.name}` ({c.klass.value}){_character_key_list_suffix(c)}"
+                    f"{'' if username else f' on `{c.account.real_user}`'}"
                     for c in characters
                 )
             else:

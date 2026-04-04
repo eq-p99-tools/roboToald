@@ -75,6 +75,9 @@ erDiagram
         string bind_location
         string park_location
         int level
+        bool key_seb
+        bool key_vp
+        bool key_st
         int account_id FK
     }
 
@@ -217,7 +220,7 @@ An alternative name for a single account. Logging in with an alias resolves to t
 
 ### SSOAccountCharacter
 
-Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution.
+Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) are tri-state: null = unknown, true/false = confirmed.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -228,6 +231,9 @@ Maps a character name and class to an account. Characters have optional bind/par
 | `bind_location` | String(64) | nullable | Zone key where character is bound |
 | `park_location` | String(64) | nullable | Zone key where character is parked |
 | `level` | Integer | nullable | Character level |
+| `key_seb` | Boolean | nullable | Trakanon Idol / Old Sebilis key |
+| `key_vp` | Boolean | nullable | Key of Veeshan |
+| `key_st` | Boolean | nullable | Sleeper's Key |
 | `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
 
 **Unique constraint:** `(name, guild_id)`

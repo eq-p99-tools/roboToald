@@ -29,6 +29,7 @@ All configuration lives in `batphone.ini`. Copy `batphone.ini.example` to `batph
 | `port` | `8080` | API bind port |
 | `forwarded_allow_ips` | `127.0.0.1` | Comma-separated IPs trusted for `X-Forwarded-For` |
 | `inactivity_seconds` | `62` | Seconds before an account is considered inactive (for tag round-robin and session tracking) |
+| `require_keys_for_dynamic_tags` | `false` | When `true`, `seb`/`trak`, `vp`, and `st` dynamic tags require the matching character key flag |
 
 ### `[ds]`
 

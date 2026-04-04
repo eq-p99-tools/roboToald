@@ -26,7 +26,12 @@ The primary data structure returned by the API is the `account_tree` -- a dictio
         "class": "Cleric",
         "bind": "zone_key_or_null",
         "park": "zone_key_or_null",
-        "level": 60
+        "level": 60,
+        "keys": {
+          "seb": true,
+          "vp": null,
+          "st": false
+        }
       }
     },
     "last_login": "2025-01-15T03:22:00+00:00",
@@ -47,6 +52,7 @@ Field details:
 | `characters.*.bind` | `string?` | Zone key where the character is bound (null if unknown) |
 | `characters.*.park` | `string?` | Zone key where the character is parked (null if unknown) |
 | `characters.*.level` | `int?` | Character level (null if unknown) |
+| `characters.*.keys` | `object` | `seb`, `vp`, `st`: each `true` (has key), `false` (confirmed no), or `null` (unknown) |
 | `last_login` | `string?` | ISO 8601 UTC timestamp of last login. Null if never logged in. Accounts with `last_login` before epoch year 2 are treated as never-logged-in. |
 | `last_login_by` | `string?` | Discord display name of the user who last logged in |
 | `active_character` | `string?` | Character name from the most recent active heartbeat session, or null if no active session |
@@ -59,6 +65,8 @@ Dynamic tags are computed zone+class combinations not stored in the database. Th
 
 | Prefix | Zone keys |
 |---|---|
+| `seb` | `sebilis`, `trakanon` |
+| `trak` | (same as `seb`) |
 | `vp` | `veeshan`, `skyfire` |
 | `st` | `sleeper`, `eastwastes` |
 | `tov` | `templeveeshan`, `westwastes` |
@@ -94,6 +102,8 @@ Dynamic tags are computed zone+class combinations not stored in the database. Th
 | `wiz`, `wizard` | Wizard |
 
 Example: `vpclr` = Cleric parked in Veeshan's Peak or Skyfire Mountains.
+
+When `require_keys_for_dynamic_tags` is `true` in `[sso]` in `batphone.ini` (default `false`), dynamic tag resolution for `seb`/`trak`, `vp`, and `st` prefixes additionally requires the matching character key flag (`key_seb`, `key_vp`, or `key_st`) to be `true`. Other zone prefixes are unchanged.
 
 ### Inactivity Threshold
 
