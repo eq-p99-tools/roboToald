@@ -138,11 +138,12 @@ class RaidTargets:
         try:
             r = await client.get(endpoint, headers=headers)
             data = json.loads(r.text, cls=JSONDecoder)
-        except Exception:
-            logger.exception(
-                "Raid targets fetch failed for guild=%s host=%s",
+        except Exception as e:
+            logger.error(
+                "Raid targets fetch failed for guild=%s host=%s: %s",
                 guild_id,
                 safe_host,
+                e,
             )
             cls._cache[guild_id] = {"time": time.time(), "targets": [], "names": []}
             return
