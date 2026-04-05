@@ -377,7 +377,7 @@ def _perform_login_auth(
         details=auth_detail,
         client_version=client_ver,
     )
-    ws_manager.notify_guild(guild_id)
+    ws_manager.notify_guild(guild_id, immediate=True)
 
     guild_label = _guild_label_for_log(discord_client, guild_id)
     user_label = _user_label_for_log(discord_client, guild_id, discord_user_id)
@@ -762,9 +762,10 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         kw["key_seb"] = keys.get("seb")
         kw["key_vp"] = keys.get("vp")
         kw["key_st"] = keys.get("st")
-    sso_model.update_account_character(**kw)
-    sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
-    await ws_manager.notify_guild_async(conn.guild_id)
+    character_changed = sso_model.update_account_character(**kw)
+    key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
+    if character_changed or key_marked:
+        await ws_manager.notify_guild_async(conn.guild_id)
 
 
 async def _ws_handle_fte(conn: ClientConnection, msg: dict):

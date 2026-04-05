@@ -243,6 +243,12 @@ WebSocket endpoint for real-time account data. This is the primary interface for
 6. Bidirectional message exchange begins (heartbeats, location updates, pings, deltas)
 ```
 
+### Delta push timing
+
+Bursts of internal `notify_guild` triggers (e.g. many heartbeats in a short window) are **debounced** per guild (about 3 seconds, see `WS_NOTIFY_DEBOUNCE_SEC` in `api/websocket.py`) so they coalesce into a single `delta` push. Changes from Discord admin commands and successful SSO login use an **immediate** push so clients see RBAC/account updates right away.
+
+`update_location` updates the database only when a field actually changes; if nothing changed, no delta is scheduled for that message.
+
 ### Auth Message (client -> server)
 
 Must be the first message, sent within 15 seconds of connection. Must be valid JSON.

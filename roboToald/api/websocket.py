@@ -13,6 +13,9 @@ from roboToald.db.models import sso as sso_model
 
 logger = logging.getLogger(__name__)
 
+# Coalesce rapid notify_guild calls (heartbeats, location updates) into one delta push per guild.
+WS_NOTIFY_DEBOUNCE_SEC = 3.0
+
 
 def _brief_exc_info() -> str:
     """Return a one-line summary of the current exception (type + message)."""
@@ -172,6 +175,7 @@ class ConnectionManager:
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._discord_client = None
+        self._pending_guild_handles: dict[int, asyncio.TimerHandle] = {}
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -254,19 +258,45 @@ class ConnectionManager:
                 reason,
             )
 
-    def notify_guild(self, guild_id: int):
+    def notify_guild(self, guild_id: int, immediate: bool = False):
         """Schedule a delta push for all clients of a guild.
+
+        By default, notifications are debounced (see ``WS_NOTIFY_DEBOUNCE_SEC``) so
+        bursts of heartbeats/location updates coalesce into one push. Pass *immediate* ``True``
+        when the UI should see a change right away (e.g. Discord admin edits, successful login).
 
         Safe to call from any thread (Discord bot, API handlers, etc.).
         """
         if self._loop is None or self._loop.is_closed():
             logger.warning("Cannot notify guild %s: event loop not available", guild_id)
             return
-        asyncio.run_coroutine_threadsafe(self._notify_guild_async(guild_id), self._loop)
+        asyncio.run_coroutine_threadsafe(self._notify_guild_entry(guild_id, immediate), self._loop)
 
-    async def notify_guild_async(self, guild_id: int):
+    async def notify_guild_async(self, guild_id: int, immediate: bool = False):
         """Await-able version for callers already on the uvicorn event loop."""
-        await self._notify_guild_async(guild_id)
+        await self._notify_guild_entry(guild_id, immediate)
+
+    def _cancel_debounce(self, guild_id: int) -> None:
+        h = self._pending_guild_handles.pop(guild_id, None)
+        if h is not None and not h.cancelled():
+            h.cancel()
+
+    async def _notify_guild_entry(self, guild_id: int, immediate: bool) -> None:
+        if immediate:
+            self._cancel_debounce(guild_id)
+            await self._notify_guild_async(guild_id)
+        else:
+            await self._debounce_schedule(guild_id)
+
+    async def _debounce_schedule(self, guild_id: int) -> None:
+        loop = asyncio.get_running_loop()
+
+        def fire() -> None:
+            self._pending_guild_handles.pop(guild_id, None)
+            asyncio.create_task(self._notify_guild_async(guild_id))
+
+        self._cancel_debounce(guild_id)
+        self._pending_guild_handles[guild_id] = loop.call_later(WS_NOTIFY_DEBOUNCE_SEC, fire)
 
     # -- Internal -------------------------------------------------------------
 

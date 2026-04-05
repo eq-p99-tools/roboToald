@@ -1552,41 +1552,64 @@ def update_account_character(
     key_vp: bool | None = None,
     key_st: bool | None = None,
 ) -> bool:
+    """Update character fields. Returns True if the character existed and any field changed."""
     with base.get_session() as session:
         character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
         if not character:
             return False
+        changed = False
         if klass:
-            character.klass = klass
+            if character.klass != klass:
+                character.klass = klass
+                changed = True
         if bind_location:
-            character.bind_location = bind_location
+            if character.bind_location != bind_location:
+                character.bind_location = bind_location
+                changed = True
         if park_location:
-            character.park_location = park_location
+            if character.park_location != park_location:
+                character.park_location = park_location
+                changed = True
         if level is not None:
-            character.level = level
+            if character.level != level:
+                character.level = level
+                changed = True
         if key_seb is not None:
-            character.key_seb = key_seb
+            if character.key_seb != key_seb:
+                character.key_seb = key_seb
+                changed = True
         if key_vp is not None:
-            character.key_vp = key_vp
+            if character.key_vp != key_vp:
+                character.key_vp = key_vp
+                changed = True
         if key_st is not None:
-            character.key_st = key_st
-        session.commit()
-    return True
+            if character.key_st != key_st:
+                character.key_st = key_st
+                changed = True
+        if changed:
+            session.commit()
+        return changed
 
 
-def mark_key_from_park_zone(guild_id: int, name: str, park_zone_key: str | None) -> None:
-    """If park_zone_key is a keyed zone, set the corresponding key column to True."""
+def mark_key_from_park_zone(guild_id: int, name: str, park_zone_key: str | None) -> bool:
+    """If park_zone_key is a keyed zone, set the corresponding key column to True.
+
+    Returns True if a key column was set to True (was not already True).
+    """
     if not park_zone_key:
-        return
+        return False
     column = KEY_ZONE_TO_COLUMN.get(park_zone_key)
     if not column:
-        return
+        return False
     with base.get_session() as session:
         character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
         if not character:
-            return
+            return False
+        if getattr(character, column):
+            return False
         setattr(character, column, True)
         session.commit()
+    return True
 
 
 def set_character_zone_key(guild_id: int, name: str, key: str, value: bool | None) -> bool:
