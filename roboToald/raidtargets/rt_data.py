@@ -9,7 +9,7 @@ import logging
 import time
 from urllib.parse import urlparse
 
-import httpx
+import requests
 
 from roboToald import config
 
@@ -19,12 +19,7 @@ DEFAULT_SOON_THRESHOLD = 48 * 60 * 60
 
 RAIDTARGETS_CACHE_SECONDS = 60
 SLOW_RAIDTARGETS_WARN_SEC = 3.0
-_CONNECT_TIMEOUT = 10.0
-_READ_TIMEOUT = 30.0
-
-# Sync httpx + asyncio.to_thread: raid-target HTTP runs on the default thread pool so the Discord
-# asyncio loop is not stalled on socket I/O or when other coroutines block the loop (timeouts/slow
-# logs then reflect real network time, not loop starvation).
+_REQUEST_TIMEOUT = 10
 
 
 class RaidWindowStatus(enum.Enum):
@@ -253,8 +248,6 @@ class JSONDecoder(json.JSONDecoder):
 
 
 def _fetch_raidtargets_sync(endpoint: str, headers: dict[str, str]) -> object:
-    """Blocking fetch + JSON parse; intended for asyncio.to_thread only."""
-    timeout = httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT)
-    with httpx.Client(timeout=timeout, trust_env=False) as client:
-        r = client.get(endpoint, headers=headers)
-        return json.loads(r.text, cls=JSONDecoder)
+    """Blocking fetch + JSON parse; runs via asyncio.to_thread to avoid blocking the event loop."""
+    r = requests.get(endpoint, headers=headers, timeout=_REQUEST_TIMEOUT)
+    return r.json(cls=JSONDecoder)
