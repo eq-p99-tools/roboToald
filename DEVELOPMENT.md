@@ -61,6 +61,7 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `enable_timer` | bool | `true` | Enable `/timer` |
 | `enable_batphone` | bool | `false` | Enable `/batphone` |
 | `enable_raidtarget` | bool | `false` | Enable `/raidtarget` |
+| `enable_raid` | bool | `false` | Enable raid/event commands and handlers; requires `[raid.<id>]` and `[eqdkp.<id>]` with `url` and `api_key` |
 | `enable_sso` | bool | `false` | Enable `/sso` and `/sso_admin` |
 | `enable_ds` | bool | `false` | Enable `/ds` |
 | `sso_admin_roles` | comma-separated ints | `""` | Discord role IDs that can use `/sso_admin` |
@@ -77,6 +78,14 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `require_log` | bool | `false` | Require `Log=TRUE` in eqclient.ini |
 | `block_rustle` | bool | `false` | *(see source)* |
 | `block_rustle_exempt_roles` | comma-separated ints | `""` | Roles exempt from the above |
+
+### Per-guild `[eqdkp.<id>]` (required for raid)
+
+Raid commands (`/event`, `/rte`, `/loot`, `/history`), `$submit`, and event-channel message handlers (`+Player`, log paste, etc.) are only enabled when **`enable_raid` is true** and this section exists with **`url`** and **`api_key`** set. Optional keys include `host` and `adjustment_event_id`.
+
+### Per-guild `[raid.<id>]`
+
+Defines raid SQLite path, event categories, batphone channel, etc. See `batphone.ini.example`.
 
 ## Running
 

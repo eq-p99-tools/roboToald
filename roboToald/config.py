@@ -148,11 +148,20 @@ def get_wakeup_exclusions(guild_id: int) -> List[str]:
     return GUILD_SETTINGS[guild_id].get("wakeup_exclusions", [])
 
 
+def eqdkp_is_configured(guild_id: int) -> bool:
+    """True if [eqdkp.<guild_id>] has both url and api_key (required for raid features)."""
+    s = EQDKP_SETTINGS.get(guild_id) or {}
+    return bool(s.get("url") and s.get("api_key"))
+
+
 def guilds_for_command(command_name: str) -> List[int]:
     guild_list = []
     for guild_entry in GUILD_SETTINGS:
-        if GUILD_SETTINGS[guild_entry].get(f"enable_{command_name}", False):
-            guild_list.append(guild_entry)
+        if not GUILD_SETTINGS[guild_entry].get(f"enable_{command_name}", False):
+            continue
+        if command_name == "raid" and not eqdkp_is_configured(guild_entry):
+            continue
+        guild_list.append(guild_entry)
     return guild_list
 
 
@@ -169,8 +178,12 @@ def get_raidtargets_soon_threshold(guild_id: int) -> int:
 
 
 def raid_guild_ids() -> List[int]:
-    """Guild IDs that have both a [raid.<id>] section and enable_raid = true."""
-    return [gid for gid in RAID_SETTINGS if GUILD_SETTINGS.get(gid, {}).get("enable_raid", False)]
+    """Guild IDs with [raid.<id>], enable_raid, and EQdkp (url + api_key) configured."""
+    return [
+        gid
+        for gid in RAID_SETTINGS
+        if GUILD_SETTINGS.get(gid, {}).get("enable_raid", False) and eqdkp_is_configured(gid)
+    ]
 
 
 def get_raid_setting(guild_id: int, key: str):
