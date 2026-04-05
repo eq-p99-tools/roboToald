@@ -225,7 +225,7 @@ async def _perform_create_event(
             "> **What's next?**",
             ">   - Check out available commands using `$help`.",
             ">   - Submit logs to add attendees by pasting or uploading files.",
-            ">   - Add individual players using `+Player reason`.",
+            ">   - Add individual players using `+Player` or `+Player reason`.",
             ">      - Indicate a bot with `+Player on Bot`",
             ">   - Record loot using `$loot <item> <character> <dkp>`",
             "",
@@ -547,10 +547,6 @@ async def _handle_add_player(message: disnake.Message):
 
             if existing:
                 out.append(f"- {char.name} already exists in this event")
-                continue
-
-            if not reason and len(lines) == 1:
-                out.append(f"- Specify a reason or 'on <bot>' for {player_name}")
                 continue
 
             att = Attendee(event_id=evt.id, character_id=str(char.id), reason=reason)
