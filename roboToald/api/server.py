@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -857,11 +858,16 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
 
 
 async def _ws_ping_loop(websocket: WebSocket):
-    """Send application-level pings at a regular interval."""
+    """Send application-level pings at a regular interval.
+
+    The initial sleep includes random jitter so that connections established at the same time
+    (e.g. after a server restart) don't all ping on the same tick.
+    """
     try:
+        await asyncio.sleep(random.uniform(0, WS_PING_INTERVAL))
         while True:
-            await asyncio.sleep(WS_PING_INTERVAL)
             await websocket.send_json({"type": "ping"})
+            await asyncio.sleep(WS_PING_INTERVAL)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception:
