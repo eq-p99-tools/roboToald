@@ -109,6 +109,7 @@ for guild in TEST_GUILDS:
         "enable_raid": CONF.getboolean(f"guild.{guild}", "enable_raid", fallback=False),
         "enable_ds": CONF.getboolean(f"guild.{guild}", "enable_ds", fallback=False),
         "ds_tod_channel": CONF.getint(f"guild.{guild}", "ds_tod_channel", fallback=0),
+        "tod_channel_id": CONF.getint(f"guild.{guild}", "tod_channel_id", fallback=0),
         "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),
         "ds_admin_role": CONF.getint(f"guild.{guild}", "ds_admin_role", fallback=0),
         "wakeup_channels": CONF.get(f"guild.{guild}", "wakeup_channels", fallback=None),
@@ -138,6 +139,11 @@ for guild in TEST_GUILDS:
         GUILD_SETTINGS[guild]["wakeup_exclusions"] = []
     # for item in CONF.items(f"guild.{guild}"):
     #     GUILD_SETTINGS[guild][item[0]] = item[1]
+
+
+def get_tod_channel_id(guild_id: int) -> int:
+    """Discord text channel ID for FTE / raid TOD relay from the login proxy (0 = disabled)."""
+    return GUILD_SETTINGS.get(guild_id, {}).get("tod_channel_id", 0)
 
 
 def get_member_role(guild_id: int) -> int:

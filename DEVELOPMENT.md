@@ -66,6 +66,7 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `enable_ds` | bool | `false` | Enable `/ds` |
 | `sso_admin_roles` | comma-separated ints | `""` | Discord role IDs that can use `/sso_admin` |
 | `ds_tod_channel` | int | `0` | Channel for DS time-of-death and timer messages |
+| `tod_channel_id` | int | `0` | Text channel where the login proxy relays FTE lines and `!tod` raid death messages from EQ logs |
 | `ds_schedule_channel` | int | `0` | Channel for DS late-shift availability messages |
 | `ds_admin_role` | int | `0` | Role that can use `/ds adjust` and `/ds set_spawn` |
 | `wakeup_channels` | `text:voice,...` | *(none)* | Pairs of text:voice channel IDs for wakeup triggers |

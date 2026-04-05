@@ -383,6 +383,48 @@ Performs the same credential lookup as `POST /auth` but over the existing WebSoc
 
 The server replies with a `login_auth_response` message (see below).
 
+#### FTE (First to Engage)
+
+Relayed from the login proxy when the EQ log contains a first-to-engage line (`Mob engages Player!`). The server parses `eq_log_time` and applies the same skew rules as `mob_death` (see below), then posts to `tod_channel_id` after deduplication. The Discord relative time uses the parsed log time. Requires a valid `character_name` the user can access (same RBAC as heartbeat).
+
+```json
+{
+  "type": "fte",
+  "mob": "Cekenar",
+  "player": "Toald",
+  "character_name": "CharName",
+  "eq_log_time": "Fri Jan 31 22:04:02 2025"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `string` | yes | Must be `"fte"` |
+| `mob` | `string` | yes | Raid mob name from the log line |
+| `player` | `string` | yes | Player name from the log line |
+| `character_name` | `string` | yes | Character whose log file produced the line |
+| `eq_log_time` | `string` | yes | Bracket timestamp from the EQ log line (`time` group) |
+
+#### Mob death (raid target TOD)
+
+Relayed when the EQ log shows a raid target death (`You have slain …` or `… has been slain by …`) and the mob matches the proxy's static raid target list. The server parses `eq_log_time` and validates it against the API host clock (naive local time). **Skew rules:** if the absolute difference between parsed log time and server `now` is **more than 24 hours**, the message is rejected. If **within 24 hours**, the client timezone is treated as unknown: **hour and date are ignored**, and only **minute + second** are compared using the shortest distance around the hour (so e.g. :59:50 vs :00:10 is ~20s apart). That distance must be **≤ 60 seconds**. Then `!tod <mob>, <M/D HH:MM:SS>` is built with **month, day, and hour** from the **current time in US Eastern** (`America/New_York`, EDT/EST as appropriate) and **minute and second** from the parsed EQ log timestamp. Messages failing parse or skew checks are dropped with a warning in the API log.
+
+```json
+{
+  "type": "mob_death",
+  "mob": "King Tormax",
+  "eq_log_time": "Sat Feb 15 20:52:45 2025",
+  "character_name": "CharName"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `string` | yes | Must be `"mob_death"` |
+| `mob` | `string` | yes | Raid target name |
+| `eq_log_time` | `string` | yes | Bracket timestamp from the EQ log line (`time` group), e.g. `Sat Feb 15 20:52:45 2025` |
+| `character_name` | `string` | yes | Character whose log file produced the line |
+
 ### Server -> Client Messages
 
 #### Ping

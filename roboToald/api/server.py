@@ -4,9 +4,12 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Union
 import threading
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
@@ -24,6 +27,122 @@ from roboToald.api.websocket import manager as ws_manager, ClientConnection
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+TOD_DEDUP_SECONDS = 60
+EQ_LOG_MAX_SKEW_SECONDS = 60
+SECONDS_PER_HOUR = 3600
+EQ_LOG_MAX_CALENDAR_SKEW_SECONDS = 24 * SECONDS_PER_HOUR
+EQ_LOG_TIME_FMT = "%a %b %d %H:%M:%S %Y"
+# US Eastern for ``!tod`` display (observes DST; colloquially "EST" for guild-facing times).
+EST = ZoneInfo("America/New_York")
+_tod_recent: dict[tuple[int, str, str], float] = {}
+
+
+def _tod_dedup(guild_id: int, event_type: str, mob: str) -> bool:
+    """Return True if this event should be suppressed (duplicate). Cleans stale entries."""
+    now = time.time()
+    key = (guild_id, event_type, mob.lower())
+    stale = [k for k, t in _tod_recent.items() if now - t > TOD_DEDUP_SECONDS]
+    for k in stale:
+        del _tod_recent[k]
+    if now - _tod_recent.get(key, 0) < TOD_DEDUP_SECONDS:
+        return True
+    _tod_recent[key] = now
+    return False
+
+
+def _parse_eq_log_time(eq_log_time: str) -> datetime | None:
+    """Parse the EQ log ``time`` group (e.g. ``Fri Mar 06 11:13:03 2026``)."""
+    try:
+        return datetime.strptime(eq_log_time.strip(), EQ_LOG_TIME_FMT)
+    except ValueError:
+        return None
+
+
+def _format_tod_for_discord(parsed_log: datetime) -> str:
+    """``M/D HH:MM:SS`` for ``!tod``: month/day/hour from **now** in US Eastern; minute/second from EQ log."""
+    now_est = datetime.now(EST)
+    combined = now_est.replace(
+        minute=parsed_log.minute,
+        second=parsed_log.second,
+        microsecond=0,
+    )
+    return f"{combined.month}/{combined.day} {combined.strftime('%H:%M:%S')}"
+
+
+def _verify_eq_log_time_skew(eq_log_time: str, event: str, guild_id: int) -> datetime | None:
+    """Parse EQ log time and verify against server time.
+
+    Client timezone is unknown. If the absolute difference between parsed log time
+    and server ``now`` is **more than 24 hours**, reject.
+
+    If **within 24 hours**, ignore hour (and date) and compare only **minute and
+    second** using the shortest distance on a 60-minute circle (handles hour
+    boundaries). That distance must be **<=** ``EQ_LOG_MAX_SKEW_SECONDS``.
+    """
+    parsed = _parse_eq_log_time(eq_log_time)
+    if parsed is None:
+        server_now = datetime.now()
+        server_str = server_now.strftime(EQ_LOG_TIME_FMT)
+        logger.warning(
+            "%s rejected: unparseable eq_log_time=%r server_time=%s guild_id=%s",
+            event,
+            eq_log_time,
+            server_str,
+            guild_id,
+        )
+        return None
+    server_now = datetime.now()
+    full_diff_sec = abs((server_now - parsed).total_seconds())
+    parsed_str = parsed.strftime(EQ_LOG_TIME_FMT)
+    server_str = server_now.strftime(EQ_LOG_TIME_FMT)
+
+    if full_diff_sec > EQ_LOG_MAX_CALENDAR_SKEW_SECONDS:
+        logger.warning(
+            "%s rejected: log time >24h from server (full_diff=%.0fs max=%ds) eq_log_time=%r parsed_log_time=%s server_time=%s guild_id=%s",
+            event,
+            full_diff_sec,
+            EQ_LOG_MAX_CALENDAR_SKEW_SECONDS,
+            eq_log_time,
+            parsed_str,
+            server_str,
+            guild_id,
+        )
+        return None
+
+    a = parsed.minute * 60 + parsed.second
+    b = server_now.minute * 60 + server_now.second
+    linear = abs(a - b)
+    ms_skew = min(linear, SECONDS_PER_HOUR - linear)
+    if ms_skew > EQ_LOG_MAX_SKEW_SECONDS:
+        logger.warning(
+            "%s rejected: min/sec skew %.0fs (max %ds) eq_log_time=%r parsed_log_time=%s server_time=%s full_diff=%.0fs guild_id=%s — check PC/server timezone or clock",
+            event,
+            ms_skew,
+            EQ_LOG_MAX_SKEW_SECONDS,
+            eq_log_time,
+            parsed_str,
+            server_str,
+            full_diff_sec,
+            guild_id,
+        )
+        return None
+    return parsed
+
+
+def _send_to_tod_channel(guild_id: int, text: str):
+    """Post a message to the guild's TOD channel via Discord (thread-safe)."""
+    tod_ch_id = config.get_tod_channel_id(guild_id)
+    if not tod_ch_id:
+        return
+    discord_client = ws_manager._discord_client
+    if not discord_client:
+        return
+    guild = discord_client.get_guild(guild_id)
+    channel = guild.get_channel(tod_ch_id) if guild else None
+    if not channel:
+        return
+    asyncio.run_coroutine_threadsafe(channel.send(text), discord_client.loop)
 
 
 class _SuppressBareWsLifecycle(logging.Filter):
@@ -581,6 +700,12 @@ async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
 
             elif msg_type == "login_auth":
                 await _ws_handle_login_auth(conn, msg)
+
+            elif msg_type == "fte":
+                await _ws_handle_fte(conn, msg)
+
+            elif msg_type == "mob_death":
+                await _ws_handle_mob_death(conn, msg)
     finally:
         ping_task.cancel()
         try:
@@ -639,6 +764,49 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     sso_model.update_account_character(**kw)
     sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
     await ws_manager.notify_guild_async(conn.guild_id)
+
+
+async def _ws_handle_fte(conn: ClientConnection, msg: dict):
+    """Relay first-to-engage log lines to the guild TOD channel."""
+    character_name = msg.get("character_name", "").strip()
+    mob = msg.get("mob", "").strip()
+    player = msg.get("player", "").strip()
+    eq_log_time = msg.get("eq_log_time", "").strip()
+    if not character_name or not mob or not player or not eq_log_time:
+        return
+    parsed_log = _verify_eq_log_time_skew(eq_log_time, "fte", conn.guild_id)
+    if parsed_log is None:
+        return
+    account = sso_model.find_account_by_character(conn.guild_id, character_name)
+    if not account:
+        return
+    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
+        return
+    if _tod_dedup(conn.guild_id, "fte", mob):
+        return
+    ts = int(parsed_log.timestamp())
+    _send_to_tod_channel(conn.guild_id, f"**FTE**: {mob} engages {player}! <t:{ts}:T>")
+
+
+async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
+    """Relay raid-target death lines to the guild TOD channel as !tod commands."""
+    character_name = msg.get("character_name", "").strip()
+    mob = msg.get("mob", "").strip()
+    eq_log_time = msg.get("eq_log_time", "").strip()
+    if not character_name or not mob or not eq_log_time:
+        return
+    parsed_log = _verify_eq_log_time_skew(eq_log_time, "mob_death", conn.guild_id)
+    if parsed_log is None:
+        return
+    account = sso_model.find_account_by_character(conn.guild_id, character_name)
+    if not account:
+        return
+    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
+        return
+    if _tod_dedup(conn.guild_id, "death", mob):
+        return
+    tod_timestamp = _format_tod_for_discord(parsed_log)
+    _send_to_tod_channel(conn.guild_id, f"!tod {mob}, {tod_timestamp}")
 
 
 async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
