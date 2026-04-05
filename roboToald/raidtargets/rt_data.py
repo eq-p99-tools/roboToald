@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import concurrent.futures
 import datetime
 import enum
 import json
@@ -20,6 +21,21 @@ DEFAULT_SOON_THRESHOLD = 48 * 60 * 60
 RAIDTARGETS_CACHE_SECONDS = 60
 SLOW_RAIDTARGETS_WARN_SEC = 3.0
 _REQUEST_TIMEOUT = 10
+
+# Dedicated pool: asyncio.to_thread() uses the process default executor, which is also shared with
+# other code (e.g. WebSocket full_state DB work). Raid-target HTTP runs here instead so it cannot
+# queue behind dozens of reconnect-time DB jobs.
+_raid_fetch_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_raid_fetch_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _raid_fetch_executor
+    if _raid_fetch_executor is None:
+        _raid_fetch_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="raidtargets",
+        )
+    return _raid_fetch_executor
 
 
 class RaidWindowStatus(enum.Enum):
@@ -103,13 +119,20 @@ class RaidWindow:
 
 
 class RaidTargets:
+    """In-memory cache of parsed raid-target JSON per guild (HTTP result + parse).
+
+    Used to avoid hammering guild-hosted endpoints on every slash autocomplete. The subscription
+    notifier must pass ``force_refresh=True`` so each run sees fresh window definitions.
+    """
+
     _cache: dict[int, dict] = {}
 
     @classmethod
-    async def ensure_loaded(cls, guild_id: int) -> None:
-        cached = cls._cache.get(guild_id)
-        if cached and cached["time"] > (time.time() - RAIDTARGETS_CACHE_SECONDS):
-            return
+    async def ensure_loaded(cls, guild_id: int, *, force_refresh: bool = False) -> None:
+        if not force_refresh:
+            cached = cls._cache.get(guild_id)
+            if cached and cached["time"] > (time.time() - RAIDTARGETS_CACHE_SECONDS):
+                return
 
         endpoint = config.get_raidtargets_endpoint(guild_id)
         if not endpoint:
@@ -123,8 +146,14 @@ class RaidTargets:
 
         safe_host = urlparse(endpoint).netloc or endpoint
         t0 = time.perf_counter()
+        loop = asyncio.get_running_loop()
         try:
-            data = await asyncio.to_thread(_fetch_raidtargets_sync, endpoint, headers)
+            data = await loop.run_in_executor(
+                _get_raid_fetch_executor(),
+                _fetch_raidtargets_sync,
+                endpoint,
+                headers,
+            )
         except Exception as e:
             err = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
             logger.error(
@@ -153,18 +182,18 @@ class RaidTargets:
         }
 
     @classmethod
-    async def get_targets(cls, guild_id: int) -> list[RaidTarget]:
-        await cls.ensure_loaded(guild_id)
+    async def get_targets(cls, guild_id: int, *, force_refresh: bool = False) -> list[RaidTarget]:
+        await cls.ensure_loaded(guild_id, force_refresh=force_refresh)
         return cls._cache.get(guild_id, {}).get("targets", [])
 
     @classmethod
-    async def get_all_names(cls, guild_id: int) -> list[str]:
-        await cls.ensure_loaded(guild_id)
+    async def get_all_names(cls, guild_id: int, *, force_refresh: bool = False) -> list[str]:
+        await cls.ensure_loaded(guild_id, force_refresh=force_refresh)
         return cls._cache.get(guild_id, {}).get("names", [])
 
     @classmethod
-    async def get_by_name(cls, name: str, guild_id: int) -> RaidTarget | None:
-        await cls.ensure_loaded(guild_id)
+    async def get_by_name(cls, name: str, guild_id: int, *, force_refresh: bool = False) -> RaidTarget | None:
+        await cls.ensure_loaded(guild_id, force_refresh=force_refresh)
         for target in cls._cache.get(guild_id, {}).get("targets", []):
             if target.name_matches(name):
                 return target
@@ -248,6 +277,8 @@ class JSONDecoder(json.JSONDecoder):
 
 
 def _fetch_raidtargets_sync(endpoint: str, headers: dict[str, str]) -> object:
-    """Blocking fetch + JSON parse; runs via asyncio.to_thread to avoid blocking the event loop."""
-    r = requests.get(endpoint, headers=headers, timeout=_REQUEST_TIMEOUT)
-    return r.json(cls=JSONDecoder)
+    """Blocking fetch + JSON parse; runs on the raid-target thread pool (not the default executor)."""
+    with requests.Session() as session:
+        session.trust_env = False
+        r = session.get(endpoint, headers=headers, timeout=_REQUEST_TIMEOUT)
+        return r.json(cls=JSONDecoder)

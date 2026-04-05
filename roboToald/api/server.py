@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocke
 from pydantic import BaseModel
 import uvicorn
 
+from roboToald import asyncio_default_executor
 from roboToald import config
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
@@ -185,7 +186,9 @@ app.include_router(dashboard_router)
 
 @app.on_event("startup")
 async def _on_startup():
-    ws_manager.set_event_loop(asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
+    asyncio_default_executor.install_enlarged_default_executor(loop, thread_name_prefix="api-asyncio")
+    ws_manager.set_event_loop(loop)
     uvicorn_logger = logging.getLogger("uvicorn.error")
     for name in ("roboToald", "roboToald.api"):
         lg = logging.getLogger(name)

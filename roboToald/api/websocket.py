@@ -359,8 +359,10 @@ class ConnectionManager:
 
     async def build_full_state(self, guild_id: int, discord_user_id: int) -> dict:
         """Build the full account_tree for a user (used on initial WS auth)."""
-        all_accounts = sso_model.list_accounts(guild_id)
-        active_characters = sso_model.get_active_characters(guild_id)
+        all_accounts, active_characters = await asyncio.gather(
+            asyncio.to_thread(sso_model.list_accounts, guild_id),
+            asyncio.to_thread(sso_model.get_active_characters, guild_id),
+        )
         accessible = self._filter_accessible(discord_user_id, guild_id, all_accounts)
         return build_account_tree(accessible, active_characters)
 

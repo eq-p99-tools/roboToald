@@ -5,6 +5,7 @@ import time
 
 import disnake
 
+from roboToald import asyncio_default_executor
 from roboToald.discord_client import commands
 from roboToald.discord_client.base import DISCORD_CLIENT
 
@@ -28,6 +29,11 @@ async def announce_subscriptions_task():
 @DISCORD_CLIENT.event
 async def on_ready():
     global SUBSCRIPTION_TASK
+
+    asyncio_default_executor.install_enlarged_default_executor(
+        asyncio.get_running_loop(),
+        thread_name_prefix="discord-asyncio",
+    )
 
     logger.info("Logged in as: %s", DISCORD_CLIENT.user.name)
 

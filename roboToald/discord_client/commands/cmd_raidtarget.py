@@ -258,6 +258,12 @@ async def announce_subscriptions():
     now = time.time()
     messages = []
 
+    guild_ids = list(guild_sub_map.keys())
+    if guild_ids:
+        # Always refresh raid-target data for this run (no HTTP cache): notifications depend on
+        # current window definitions. Prefetch in parallel on the dedicated raid-target thread pool.
+        await asyncio.gather(*[rt_data.RaidTargets.ensure_loaded(gid, force_refresh=True) for gid in guild_ids])
+
     for guild_id, sub_map in guild_sub_map.items():
         soon_threshold = config.get_raidtargets_soon_threshold(guild_id)
         raid_targets = await rt_data.RaidTargets.get_targets(guild_id)
