@@ -1,6 +1,6 @@
+import asyncio
 import datetime
 import re
-import time
 import zoneinfo
 
 import disnake
@@ -1331,7 +1331,7 @@ class SSOCommands(commands.Cog):
                 await channel.send(content="$status")
             retries = 10
             while not status_embed and retries > 0:
-                time.sleep(1)
+                await asyncio.sleep(1)
                 retries -= 1
                 async for message in channel.history(limit=5):
                     if message.embeds and message.embeds[0].title == "Raid Status":

@@ -17,7 +17,7 @@ async def announce_subscriptions_task():
     while True:
         start = time.time()
         try:
-            logger.debug("Running Subscription Notifier: %s", datetime.datetime.now())
+            logger.info("Running Subscription Notifier: %s", datetime.datetime.now())
             await commands.cmd_raidtarget.announce_subscriptions()
         except Exception:
             logger.exception("Subscription notifier failed")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections
 import datetime
 import enum
@@ -21,16 +22,9 @@ SLOW_RAIDTARGETS_WARN_SEC = 3.0
 _CONNECT_TIMEOUT = 10.0
 _READ_TIMEOUT = 30.0
 
-_httpx_client: httpx.AsyncClient | None = None
-
-
-def _raidtargets_http_client() -> httpx.AsyncClient:
-    global _httpx_client
-    if _httpx_client is None:
-        _httpx_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),
-        )
-    return _httpx_client
+# Sync httpx + asyncio.to_thread: raid-target HTTP runs on the default thread pool so the Discord
+# asyncio loop is not stalled on socket I/O or when other coroutines block the loop (timeouts/slow
+# logs then reflect real network time, not loop starvation).
 
 
 class RaidWindowStatus(enum.Enum):
@@ -133,11 +127,9 @@ class RaidTargets:
             headers["AuthorizationKey"] = authkey
 
         safe_host = urlparse(endpoint).netloc or endpoint
-        client = _raidtargets_http_client()
         t0 = time.perf_counter()
         try:
-            r = await client.get(endpoint, headers=headers)
-            data = json.loads(r.text, cls=JSONDecoder)
+            data = await asyncio.to_thread(_fetch_raidtargets_sync, endpoint, headers)
         except Exception as e:
             err = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
             logger.error(
@@ -258,3 +250,11 @@ class JSONDecoder(json.JSONDecoder):
                 obj[key] = self.object_hook(obj[key])
 
         return obj
+
+
+def _fetch_raidtargets_sync(endpoint: str, headers: dict[str, str]) -> object:
+    """Blocking fetch + JSON parse; intended for asyncio.to_thread only."""
+    timeout = httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT)
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        r = client.get(endpoint, headers=headers)
+        return json.loads(r.text, cls=JSONDecoder)
