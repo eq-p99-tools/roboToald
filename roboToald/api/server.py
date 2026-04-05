@@ -261,8 +261,7 @@ def _perform_login_auth(
 
     guild_label = _guild_label_for_log(discord_client, guild_id)
     user_label = _user_label_for_log(discord_client, guild_id, discord_user_id)
-    session_ctx = _session_context_log(
-        guild_label, user_label, client_ver or "unknown", client_ip)
+    session_ctx = _session_context_log(guild_label, user_label, client_ver or "unknown", client_ip)
     logger.info(
         "SSO login [%s] | %s | eq_account=%r | requested_as=%r | %s",
         auth_source,
@@ -480,9 +479,7 @@ async def websocket_accounts(websocket: WebSocket):
     # --- Wait for Discord cache to be ready ---
     discord_client = app.state.discord_client if hasattr(app.state, "discord_client") else None
     if discord_client and not discord_client.is_ready():
-        ws_label_early = (
-            f"guild_id={guild_id} | user_id={discord_user_id} | ip={client_host}"
-        )
+        ws_label_early = f"guild_id={guild_id} | user_id={discord_user_id} | ip={client_host}"
         logger.info("WebSocket waiting for Discord to be ready | %s", ws_label_early)
         for _ in range(30):
             await asyncio.sleep(1)
@@ -496,8 +493,7 @@ async def websocket_accounts(websocket: WebSocket):
     guild_label = _guild_label_for_log(discord_client, guild_id)
     user_label = _user_label_for_log(discord_client, guild_id, discord_user_id)
     client_ver = msg.get("client_version", "unknown")
-    session_ctx = _session_context_log(
-        guild_label, user_label, client_ver, client_host)
+    session_ctx = _session_context_log(guild_label, user_label, client_ver, client_host)
 
     # --- Check revocation ---
     if sso_model.is_user_access_revoked(guild_id, discord_user_id):
@@ -514,9 +510,7 @@ async def websocket_accounts(websocket: WebSocket):
             update_msg = guild_settings.get("client_update_message") or (
                 f"Client update required (minimum version: {min_ver})"
             )
-            logger.info(
-                "Rejecting outdated client %s (minimum %s) | %s",
-                client_ver, min_ver, session_ctx)
+            logger.info("Rejecting outdated client %s (minimum %s) | %s", client_ver, min_ver, session_ctx)
             await _ws_close(websocket, 4010, update_msg)
             return
 
@@ -524,8 +518,7 @@ async def websocket_accounts(websocket: WebSocket):
     user_role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
     settings_error = _validate_client_settings(msg.get("client_settings"), guild_id, user_role_ids=user_role_ids)
     if settings_error:
-        logger.info(
-            "Rejecting client due to settings | %s | %s", settings_error, session_ctx)
+        logger.info("Rejecting client due to settings | %s | %s", settings_error, session_ctx)
         await _ws_close(websocket, 4011, settings_error)
         return
 
@@ -553,9 +546,7 @@ async def websocket_accounts(websocket: WebSocket):
                 "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
             }
         )
-        logger.info(
-            "WebSocket connected | %s | accounts=%d",
-            session_ctx, len(account_tree))
+        logger.info("WebSocket connected | %s | accounts=%d", session_ctx, len(account_tree))
 
         # --- Phase 3: listen for client messages + send keepalive pings ---
         await _ws_message_loop(websocket, conn)
@@ -633,13 +624,19 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     sso_model.update_last_login(account.id, login_by=login_name)
     sso_model.record_heartbeat_session(conn.guild_id, account.id, character_name, conn.discord_user_id)
     sso_model.expire_other_sessions(conn.guild_id, conn.discord_user_id, account.id)
-    sso_model.update_account_character(
-        guild_id=conn.guild_id,
-        name=character_name,
-        bind_location=msg.get("bind_location"),
-        park_location=msg.get("park_location"),
-        level=msg.get("level"),
-    )
+    kw = {
+        "guild_id": conn.guild_id,
+        "name": character_name,
+        "bind_location": msg.get("bind_location"),
+        "park_location": msg.get("park_location"),
+        "level": msg.get("level"),
+    }
+    keys = msg.get("keys")
+    if keys is not None:
+        kw["key_seb"] = keys.get("seb")
+        kw["key_vp"] = keys.get("vp")
+        kw["key_st"] = keys.get("st")
+    sso_model.update_account_character(**kw)
     sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
     await ws_manager.notify_guild_async(conn.guild_id)
 
@@ -649,12 +646,14 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
     request_id = msg.get("request_id")
     username = msg.get("username")
     if not request_id or not username:
-        await conn.websocket.send_json({
-            "type": "login_auth_response",
-            "request_id": request_id,
-            "error": "Missing request_id or username",
-            "status": 400,
-        })
+        await conn.websocket.send_json(
+            {
+                "type": "login_auth_response",
+                "request_id": request_id,
+                "error": "Missing request_id or username",
+                "status": 400,
+            }
+        )
         return
 
     discord_client = ws_manager._discord_client
@@ -670,19 +669,23 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
 
     if result.success:
         encrypted = _des_encrypt_credentials(result.real_user, result.real_pass)
-        await conn.websocket.send_json({
-            "type": "login_auth_response",
-            "request_id": request_id,
-            "real_user": result.real_user,
-            "encrypted_credentials": base64.b64encode(encrypted).decode(),
-        })
+        await conn.websocket.send_json(
+            {
+                "type": "login_auth_response",
+                "request_id": request_id,
+                "real_user": result.real_user,
+                "encrypted_credentials": base64.b64encode(encrypted).decode(),
+            }
+        )
     else:
-        await conn.websocket.send_json({
-            "type": "login_auth_response",
-            "request_id": request_id,
-            "error": result.error_detail,
-            "status": result.error_status,
-        })
+        await conn.websocket.send_json(
+            {
+                "type": "login_auth_response",
+                "request_id": request_id,
+                "error": result.error_detail,
+                "status": result.error_status,
+            }
+        )
 
 
 async def _ws_ping_loop(websocket: WebSocket):
@@ -754,9 +757,7 @@ def _session_context_log(
     client_ip: str,
 ) -> str:
     """Pipe-delimited session fields shared by SSO login and WebSocket logs."""
-    return (
-        f"guild={guild_label} | user={user_label} | v={client_ver} | ip={client_ip}"
-    )
+    return f"guild={guild_label} | user={user_label} | v={client_ver} | ip={client_ip}"
 
 
 def _resolve_display_name(discord_client, guild_id: int, discord_user_id: int) -> str | None:

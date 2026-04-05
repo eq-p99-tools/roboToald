@@ -342,7 +342,8 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
   "character_name": "CharName",
   "bind_location": "zone_key",
   "park_location": "zone_key",
-  "level": 60
+  "level": 60,
+  "keys": { "seb": true, "vp": false, "st": false }
 }
 ```
 
@@ -352,9 +353,13 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
 | `bind_location` | `string?` | no | New bind zone key (only updated if present) |
 | `park_location` | `string?` | no | New park zone key (only updated if present) |
 | `level` | `int?` | no | New level (only updated if present and non-null) |
+| `keys` | `object?` | no | Zone key flags from inventory parsing (only sent when present). Each field is optional; if omitted for a key, that column is not updated. |
+
+When `keys` is present, each boolean field maps to `SSOAccountCharacter.key_seb`, `key_vp`, or `key_st` (Sebilis, Veeshan's Peak, Sleeper's Tomb). `true`/`false` updates the column; `null` or missing sub-field leaves that column unchanged.
 
 Side effects (same as heartbeat, plus):
 - `SSOAccountCharacter.bind_location`, `park_location`, and/or `level` updated
+- If `keys` is present, `key_seb` / `key_vp` / `key_st` updated per the rules above
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 
