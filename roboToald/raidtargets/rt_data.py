@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import collections
-import concurrent.futures
 import datetime
 import enum
 import json
@@ -10,7 +8,7 @@ import logging
 import time
 from urllib.parse import urlparse
 
-import requests
+import httpx
 
 from roboToald import config
 
@@ -19,23 +17,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOON_THRESHOLD = 48 * 60 * 60
 
 RAIDTARGETS_CACHE_SECONDS = 60
-SLOW_RAIDTARGETS_WARN_SEC = 3.0
-_REQUEST_TIMEOUT = 10
-
-# Dedicated pool: asyncio.to_thread() uses the process default executor, which is also shared with
-# other code (e.g. WebSocket full_state DB work). Raid-target HTTP runs here instead so it cannot
-# queue behind dozens of reconnect-time DB jobs.
-_raid_fetch_executor: concurrent.futures.ThreadPoolExecutor | None = None
-
-
-def _get_raid_fetch_executor() -> concurrent.futures.ThreadPoolExecutor:
-    global _raid_fetch_executor
-    if _raid_fetch_executor is None:
-        _raid_fetch_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=4,
-            thread_name_prefix="raidtargets",
-        )
-    return _raid_fetch_executor
+SLOW_RAIDTARGETS_WARN_SEC = 5.0
+# Single async GET; healthy JSON is usually sub-second.
+_HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0, read=10.0)
 
 
 class RaidWindowStatus(enum.Enum):
@@ -146,14 +130,8 @@ class RaidTargets:
 
         safe_host = urlparse(endpoint).netloc or endpoint
         t0 = time.perf_counter()
-        loop = asyncio.get_running_loop()
         try:
-            data = await loop.run_in_executor(
-                _get_raid_fetch_executor(),
-                _fetch_raidtargets_sync,
-                endpoint,
-                headers,
-            )
+            data = await _fetch_raidtargets(endpoint, headers)
         except Exception as e:
             err = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
             logger.error(
@@ -276,9 +254,7 @@ class JSONDecoder(json.JSONDecoder):
         return obj
 
 
-def _fetch_raidtargets_sync(endpoint: str, headers: dict[str, str]) -> object:
-    """Blocking fetch + JSON parse; runs on the raid-target thread pool (not the default executor)."""
-    with requests.Session() as session:
-        session.trust_env = False
-        r = session.get(endpoint, headers=headers, timeout=_REQUEST_TIMEOUT)
-        return r.json(cls=JSONDecoder)
+async def _fetch_raidtargets(endpoint: str, headers: dict[str, str]) -> object:
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, trust_env=False) as client:
+        r = await client.get(endpoint, headers=headers or None)
+        return json.loads(r.text, cls=JSONDecoder)
