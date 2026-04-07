@@ -12,7 +12,8 @@ WORKDIR /app
 
 COPY pyproject.toml README.md batphone.py /app/
 COPY roboToald/ /app/roboToald/
-RUN uv pip install --system --no-cache-dir --only-binary :all: --no-binary geoip2fast .
+# Do not use --only-binary :all: — the local package (.) must be built from the tree.
+RUN uv pip install --system --no-cache-dir .
 
 COPY *.wav /app/
 COPY scripts/ /app/scripts/
