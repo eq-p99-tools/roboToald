@@ -10,15 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libopus0 \
 
 WORKDIR /app
 
-COPY requirements.txt /app/
-RUN uv pip install --system --only-binary :all: --no-binary geoip2fast -r requirements.txt
+COPY pyproject.toml README.md batphone.py /app/
+COPY roboToald/ /app/roboToald/
+RUN uv pip install --system --no-cache-dir --only-binary :all: --no-binary geoip2fast .
 
 COPY *.wav /app/
 COPY scripts/ /app/scripts/
 COPY alembic.ini /app/
 COPY migrations/ /app/migrations/
 COPY raid_migrations/ /app/raid_migrations/
-COPY roboToald/ /app/roboToald/
-COPY batphone.py /app/
 
-CMD ["python", "-u", "./batphone.py"]
+CMD ["robotoald"]

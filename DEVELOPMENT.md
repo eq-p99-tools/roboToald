@@ -93,9 +93,19 @@ Defines raid SQLite path, event categories, batphone channel, etc. See `batphone
 
 ### Standalone
 
+Install the package (editable is typical for development):
+
 ```bash
-pip install -r requirements.txt
-python batphone.py
+pip install -e .
+# optional: tests, ruff, etc.
+pip install -e ".[dev]"
+```
+
+Run the bot via the console script or module:
+
+```bash
+robotoald
+# or: python batphone.py
 ```
 
 On startup, the bot:
@@ -132,7 +142,7 @@ roboToald/
 ├── batphone.py                         # Entry point
 ├── batphone.ini                        # Configuration (not committed)
 ├── batphone.ini.example                # Configuration template
-├── requirements.txt                    # Python dependencies
+├── pyproject.toml                      # Project metadata, dependencies, ruff/pytest
 ├── alembic.ini                         # Alembic config
 ├── Dockerfile / docker-compose.yml
 ├── scripts/

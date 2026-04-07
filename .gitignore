@@ -8,5 +8,6 @@ batphone.ini*
 .python-version
 certs
 .venv*
+*.egg-info/
 .mypy_cache
 *.csv

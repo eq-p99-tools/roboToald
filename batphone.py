@@ -5,7 +5,8 @@ from roboToald import config
 from roboToald.api import server
 from roboToald.db import base
 
-if __name__ == "__main__":
+
+def main() -> None:
     _fmt = logging.Formatter(
         "%(asctime)s %(levelname)-5.5s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -46,3 +47,7 @@ if __name__ == "__main__":
     )
 
     discord_client.DISCORD_CLIENT.run(config.DISCORD_TOKEN)
+
+
+if __name__ == "__main__":
+    main()
