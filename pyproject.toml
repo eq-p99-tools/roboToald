@@ -44,10 +44,15 @@ robotoald = "batphone:main"
 
 [tool.setuptools]
 py-modules = ["batphone"]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["roboToald*"]
+
+[tool.setuptools.package-data]
+"roboToald.words" = ["*.list"]
+"roboToald.api" = ["templates/**/*.html"]
 
 [tool.ruff]
 line-length = 120
