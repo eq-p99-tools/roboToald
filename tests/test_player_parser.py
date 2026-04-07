@@ -13,7 +13,7 @@ FAKE_GUILD_ID = 12345
 
 def _parse(content: str, session, known_chars=None):
     """Helper that patches the session used by parse_players_from_content."""
-    for char_name in (known_chars or []):
+    for char_name in known_chars or []:
         session.add(Character(name=char_name))
     session.flush()
 
@@ -54,9 +54,7 @@ def test_unknown_anon_goes_to_anon_list(raid_session):
 
 
 def test_parse_leveled_guild_member(raid_session):
-    content = (
-        "[Wed Aug 31 10:37:51 2022] [52 Wanderer] Portlia (Wood Elf) <Good Guys>\n"
-    )
+    content = "[Wed Aug 31 10:37:51 2022] [52 Wanderer] Portlia (Wood Elf) <Good Guys>\n"
     players, anon = _parse(content, raid_session)
     assert sorted(p.name for p in players) == ["Portlia"]
     assert players[0].klass == "Wanderer"
@@ -73,9 +71,7 @@ def test_linkdead_member(raid_session):
 
 
 def test_known_character_anonymous(raid_session):
-    content = (
-        "[Wed Aug 31 13:14:45 2022] [ANONYMOUS] Portlia\n"
-    )
+    content = "[Wed Aug 31 13:14:45 2022] [ANONYMOUS] Portlia\n"
     players, anon = _parse(content, raid_session, known_chars=["Portlia"])
     assert sorted(p.name for p in players) == ["Portlia"]
     assert anon == []

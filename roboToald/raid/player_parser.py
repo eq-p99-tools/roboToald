@@ -16,9 +16,7 @@ EQ_LINE_RE = re.compile(
     r"\[(.*?)\] (\w+)\s?(\(.*?\))?( <.*?>)?"
 )
 
-NL_LINE_RE = re.compile(
-    r"^\[(.*?)\] \[ANONYMOUS\] (\w+)\s(<.*?>) (\{.*?\})"
-)
+NL_LINE_RE = re.compile(r"^\[(.*?)\] \[ANONYMOUS\] (\w+)\s(<.*?>) (\{.*?\})")
 
 
 @dataclass
@@ -74,22 +72,17 @@ def parse_players_from_content(
                 guild = ""
 
             player = ParsedPlayer(
-                name=name, guild=guild, race=race, level=level, klass=klass,
+                name=name,
+                guild=guild,
+                race=race,
+                level=level,
+                klass=klass,
             )
 
-            existing = (
-                session.query(Character)
-                .filter(Character.name.ilike(name))
-                .first()
-            )
+            existing = session.query(Character).filter(Character.name.ilike(name)).first()
             in_guild = guild.lower() in GUILDS
 
-            if (
-                not existing
-                and not in_guild
-                and not guild
-                and level == "ANONYMOUS"
-            ):
+            if not existing and not in_guild and not guild and level == "ANONYMOUS":
                 anonymous_players.append(player)
             elif (in_guild or existing) and name.lower() not in found_names:
                 players.append(player)

@@ -21,6 +21,7 @@ def main() -> None:
     base.initialize_database()
 
     from roboToald.db.raid_base import initialize_raid_database
+
     for _raid_gid in config.raid_guild_ids():
         initialize_raid_database(_raid_gid)
 

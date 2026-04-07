@@ -88,9 +88,7 @@ async def add(
             )
             return
 
-        attendee = session.query(Attendee).filter_by(
-            event_id=evt.id, character_id=str(char.id)
-        ).first()
+        attendee = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
         loot_rec = session.query(Loot).filter_by(item_id=item_record.id).first()
         if not loot_rec:
@@ -127,9 +125,7 @@ async def remove(
 ):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "unloot", guild_id):
-        await inter.response.send_message(
-            "```diff\n- No permission.```", ephemeral=True
-        )
+        await inter.response.send_message("```diff\n- No permission.```", ephemeral=True)
         return
 
     loot_id_str = entry.strip()
@@ -142,39 +138,29 @@ async def remove(
     loot_id = int(loot_id_str)
 
     with get_raid_session(guild_id) as session:
-        evt = session.query(Event).filter_by(
-            channel_id=str(inter.channel.id)
-        ).first()
+        evt = session.query(Event).filter_by(channel_id=str(inter.channel.id)).first()
         if not evt:
             await inter.response.send_message(
                 "```diff\n- No event found for this channel.```",
                 ephemeral=True,
             )
             return
-        el = session.query(EventLoot).filter_by(
-            event_id=evt.id, id=loot_id
-        ).first()
+        el = session.query(EventLoot).filter_by(event_id=evt.id, id=loot_id).first()
         if not el:
             await inter.response.send_message(
                 f"```diff\n- Loot ID {loot_id} not found.```",
                 ephemeral=True,
             )
             return
-        item_rec = (
-            session.query(Item).get(el.item_id) if el.item_id else None
-        )
-        char = (
-            session.query(Character).get(el.character_id)
-            if el.character_id else None
-        )
+        item_rec = session.query(Item).get(el.item_id) if el.item_id else None
+        char = session.query(Character).get(el.character_id) if el.character_id else None
         item_name = item_rec.name if item_rec else "?"
         char_name = char.name if char else "?"
         el_dkp = el.dkp or 0
         session.delete(el)
         session.commit()
         await inter.response.send_message(
-            f"```diff\n+ Loot ID {loot_id} removed."
-            f" ({item_name}, {char_name}, {el_dkp})```"
+            f"```diff\n+ Loot ID {loot_id} removed. ({item_name}, {char_name}, {el_dkp})```"
         )
 
 
@@ -186,11 +172,7 @@ async def remove(
 def _character_choices(query: str, guild_id: int) -> dict[str, str]:
     query = query.strip().lower()
     with get_raid_session(guild_id) as session:
-        q = (
-            session.query(Character)
-            .filter(sa.func.length(Character.name) > 0)
-            .order_by(Character.name)
-        )
+        q = session.query(Character).filter(sa.func.length(Character.name) > 0).order_by(Character.name)
         if query:
             q = q.filter(sa.func.lower(Character.name).startswith(query))
         return {c.name: c.name for c in q.limit(25).all()}
@@ -201,9 +183,7 @@ async def _ac_item(inter: disnake.ApplicationCommandInteraction, query: str):
     query = query.strip().lower()
     guild_id = inter.guild.id
     with get_raid_session(guild_id) as session:
-        evt = session.query(Event).filter_by(
-            channel_id=str(inter.channel.id)
-        ).first()
+        evt = session.query(Event).filter_by(channel_id=str(inter.channel.id)).first()
         target_id = evt.target_id if evt else None
 
         if target_id:
@@ -214,9 +194,7 @@ async def _ac_item(inter: disnake.ApplicationCommandInteraction, query: str):
                 .order_by(Item.name)
             )
         else:
-            q = session.query(Item).filter(
-                sa.func.length(Item.name) > 0
-            ).order_by(Item.name)
+            q = session.query(Item).filter(sa.func.length(Item.name) > 0).order_by(Item.name)
 
         if query:
             q = q.filter(sa.func.lower(Item.name).contains(query))
@@ -224,31 +202,17 @@ async def _ac_item(inter: disnake.ApplicationCommandInteraction, query: str):
 
 
 @remove.autocomplete("entry")
-async def _ac_remove_entry(
-    inter: disnake.ApplicationCommandInteraction, query: str
-):
+async def _ac_remove_entry(inter: disnake.ApplicationCommandInteraction, query: str):
     query = query.strip().lower()
     with get_raid_session(inter.guild.id) as session:
-        evt = session.query(Event).filter_by(
-            channel_id=str(inter.channel.id)
-        ).first()
+        evt = session.query(Event).filter_by(channel_id=str(inter.channel.id)).first()
         if not evt:
             return {}
-        entries = (
-            session.query(EventLoot)
-            .filter_by(event_id=evt.id)
-            .all()
-        )
+        entries = session.query(EventLoot).filter_by(event_id=evt.id).all()
         choices: dict[str, str] = {}
         for el in entries:
-            item_rec = (
-                session.query(Item).get(el.item_id)
-                if el.item_id else None
-            )
-            char = (
-                session.query(Character).get(el.character_id)
-                if el.character_id else None
-            )
+            item_rec = session.query(Item).get(el.item_id) if el.item_id else None
+            char = session.query(Character).get(el.character_id) if el.character_id else None
             item_name = item_rec.name if item_rec else "?"
             char_name = char.name if char else "?"
             label = f"{item_name} ({char_name}, {el.dkp or 0} DKP)"

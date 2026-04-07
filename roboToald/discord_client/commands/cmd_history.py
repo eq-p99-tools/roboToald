@@ -65,6 +65,7 @@ async def character(
             return
 
         from roboToald.eqdkp.client import EqdkpClient
+
         eqdkp = EqdkpClient(guild_id)
 
         all_chars = session.query(Character).filter_by(eqdkp_user_id=char.eqdkp_user_id).all()
@@ -206,12 +207,7 @@ async def _item_search(inter, criteria: str, session):
         return
 
     it = items[0]
-    loots = (
-        session.query(EventLoot)
-        .filter_by(item_id=it.id)
-        .order_by(EventLoot.created_at.desc())
-        .all()
-    )
+    loots = session.query(EventLoot).filter_by(item_id=it.id).order_by(EventLoot.created_at.desc()).all()
 
     cutoff = datetime.utcnow() - timedelta(days=60)
     recent = [el for el in loots if el.created_at and el.created_at >= cutoff]
@@ -237,11 +233,7 @@ async def _ac_character(inter: disnake.ApplicationCommandInteraction, query: str
     guild_id = inter.guild.id
     query = query.strip().lower()
     with get_raid_session(guild_id) as session:
-        q = (
-            session.query(Character)
-            .filter(sa.func.length(Character.name) > 0)
-            .order_by(Character.name)
-        )
+        q = session.query(Character).filter(sa.func.length(Character.name) > 0).order_by(Character.name)
         if query:
             q = q.filter(sa.func.lower(Character.name).startswith(query))
         return {c.name: c.name for c in q.limit(25).all()}

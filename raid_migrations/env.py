@@ -19,9 +19,7 @@ if config.config_file_name is not None:
 target_metadata = RaidBase.metadata
 
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_section_option(
-        config.config_ini_section, "sqlalchemy.url", "sqlite:///data/raids.db"
-    )
+    config.set_section_option(config.config_ini_section, "sqlalchemy.url", "sqlite:///data/raids.db")
 
 
 def run_migrations_offline() -> None:

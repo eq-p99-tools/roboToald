@@ -47,7 +47,9 @@ async def start(
     ),
     character: str = disnake.ext.commands.Param(description="Your character name", autocomplete=True),
     target_name: str = disnake.ext.commands.Param(description="Target name", name="target", autocomplete=True),
-    on_character: str = disnake.ext.commands.Param(description="Character you are on (if different)", default=None, autocomplete=True),
+    on_character: str = disnake.ext.commands.Param(
+        description="Character you are on (if different)", default=None, autocomplete=True
+    ),
 ):
     guild_id = inter.guild.id
     await inter.response.defer(ephemeral=True)
@@ -72,14 +74,10 @@ async def start(
         targets, _ = resolve_target(target_name, session)
         if len(targets) > 1:
             names = ", ".join(t.name for t in targets)
-            await inter.followup.send(
-                f"```diff\n- Multiple targets found ({names}). Be more specific.```"
-            )
+            await inter.followup.send(f"```diff\n- Multiple targets found ({names}). Be more specific.```")
             return
         if not targets:
-            await inter.followup.send(
-                f"```diff\n- Target {target_name} not found.```"
-            )
+            await inter.followup.send(f"```diff\n- Target {target_name} not found.```")
             return
 
         tgt = targets[0]
@@ -118,7 +116,9 @@ async def start(
         chan_text = f"+ {char.name} started RTEing {tgt.name}"
         if on_char:
             chan_text += f" on {on_char.name}"
-        chan_text += f" as {tracking.role_name} by {inter.author.display_name} (DKP Per Hour: {rate}, ID: {tracking.id})"
+        chan_text += (
+            f" as {tracking.role_name} by {inter.author.display_name} (DKP Per Hour: {rate}, ID: {tracking.id})"
+        )
 
         tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
         tracking_ch = inter.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
@@ -153,9 +153,7 @@ def _rte_target_choices(query: str, guild_id: int) -> dict[str, str]:
         )
         if query:
             alias_ids = (
-                session.query(TargetAlias.target_id)
-                .filter(sa.func.lower(TargetAlias.name).startswith(query))
-                .all()
+                session.query(TargetAlias.target_id).filter(sa.func.lower(TargetAlias.name).startswith(query)).all()
             )
             alias_target_ids = [a[0] for a in alias_ids]
             q = q.filter(
@@ -170,11 +168,7 @@ def _rte_target_choices(query: str, guild_id: int) -> dict[str, str]:
 def _character_choices(query: str, guild_id: int) -> dict[str, str]:
     query = query.strip().lower()
     with get_raid_session(guild_id) as session:
-        q = (
-            session.query(Character)
-            .filter(sa.func.length(Character.name) > 0)
-            .order_by(Character.name)
-        )
+        q = session.query(Character).filter(sa.func.length(Character.name) > 0).order_by(Character.name)
         if query:
             q = q.filter(sa.func.lower(Character.name).startswith(query))
         return {c.name: c.name for c in q.limit(25).all()}
@@ -211,14 +205,16 @@ async def stop(
 
         tgt = targets[0] if len(targets) == 1 else None
         if not tgt:
-            await inter.response.send_message(f"```diff\n- Multiple targets found for {target_name}, be more specific.```", ephemeral=True)
+            await inter.response.send_message(
+                f"```diff\n- Multiple targets found for {target_name}, be more specific.```", ephemeral=True
+            )
             return
 
-        tracking = session.query(Tracking).filter_by(
-            character_id=char.id, target_id=tgt.id, end_time=None
-        ).first()
+        tracking = session.query(Tracking).filter_by(character_id=char.id, target_id=tgt.id, end_time=None).first()
         if not tracking:
-            await inter.response.send_message("```diff\n- No active RTE found for that character/target.```", ephemeral=True)
+            await inter.response.send_message(
+                "```diff\n- No active RTE found for that character/target.```", ephemeral=True
+            )
             return
 
         tracking.end_time = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -284,13 +280,15 @@ async def status(inter: disnake.ApplicationCommandInteraction):
             on_char = session.query(Character).get(t.on_character_id) if t.on_character_id else None
             dur = (now - t.start_time).total_seconds() if t.start_time else 0
             key = tgt.name
-            tracks.setdefault(key, []).append({
-                "id": t.id,
-                "role": t.role_name,
-                "player": char.name,
-                "on": on_char.name if on_char else None,
-                "duration": _fmt_duration(dur),
-            })
+            tracks.setdefault(key, []).append(
+                {
+                    "id": t.id,
+                    "role": t.role_name,
+                    "player": char.name,
+                    "on": on_char.name if on_char else None,
+                    "duration": _fmt_duration(dur),
+                }
+            )
 
         embed = disnake.Embed(title="Current Tracking & Readiness Status")
         for tgt_name, players in tracks.items():
@@ -320,9 +318,7 @@ async def pending(inter: disnake.ApplicationCommandInteraction):
     guild_id = inter.guild.id
     with get_raid_session(guild_id) as session:
         trackings = (
-            session.query(Tracking)
-            .filter(Tracking.adjustment_id.is_(None), Tracking.end_time.isnot(None))
-            .all()
+            session.query(Tracking).filter(Tracking.adjustment_id.is_(None), Tracking.end_time.isnot(None)).all()
         )
         if not trackings:
             await inter.response.send_message("No pending trackings.", ephemeral=True)
@@ -337,12 +333,14 @@ async def pending(inter: disnake.ApplicationCommandInteraction):
             dkp = t.dkp_amount
             if dkp <= 0 and char.eqdkp_member_id:
                 continue
-            tracks.setdefault(tgt.name, {}).setdefault(char.name, []).append({
-                "id": t.id,
-                "role": t.role_name,
-                "duration": _fmt_duration(t.duration),
-                "dkp": dkp,
-            })
+            tracks.setdefault(tgt.name, {}).setdefault(char.name, []).append(
+                {
+                    "id": t.id,
+                    "role": t.role_name,
+                    "duration": _fmt_duration(t.duration),
+                    "dkp": dkp,
+                }
+            )
 
         if not tracks:
             await inter.response.send_message("No pending trackings.", ephemeral=True)
@@ -391,6 +389,7 @@ async def submit(
         tgt = targets[0]
         try:
             from roboToald.eqdkp.client import EqdkpClient
+
             eqdkp = EqdkpClient(guild_id)
 
             trackings = (
@@ -425,7 +424,10 @@ async def submit(
                 reason = f"RTE {tgt.name} as {role_names} for {_fmt_duration(total_duration)} (Start: {min_start.strftime('%Y-%m-%d %I:%M %p')})"
 
                 adj_id = await eqdkp.add_adjustment(
-                    char.eqdkp_member_id, total_dkp, reason, time=max_end,
+                    char.eqdkp_member_id,
+                    total_dkp,
+                    reason,
+                    time=max_end,
                 )
                 for i in items:
                     i.adjustment_id = adj_id
@@ -445,11 +447,13 @@ async def submit(
 def _make_stop_rte_view(guild_id: int, tracking_id: int) -> disnake.ui.View:
     """Create a persistent Stop RTE button view with guild and tracking IDs in the custom_id."""
     view = disnake.ui.View(timeout=None)
-    view.add_item(disnake.ui.Button(
-        label="Stop RTE",
-        style=disnake.ButtonStyle.danger,
-        custom_id=f"stop_rte:{guild_id}:{tracking_id}",
-    ))
+    view.add_item(
+        disnake.ui.Button(
+            label="Stop RTE",
+            style=disnake.ButtonStyle.danger,
+            custom_id=f"stop_rte:{guild_id}:{tracking_id}",
+        )
+    )
     return view
 
 
@@ -466,9 +470,7 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
     with get_raid_session(guild_id) as session:
         tracking = session.get(Tracking, tracking_id)
         if not tracking or tracking.end_time is not None:
-            await inter.response.send_message(
-                "```diff\n- No active RTE found for this message.```", ephemeral=True
-            )
+            await inter.response.send_message("```diff\n- No active RTE found for this message.```", ephemeral=True)
             return
 
         tracking.end_time = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -495,12 +497,14 @@ async def on_stop_rte_button(inter: disnake.MessageInteraction):
     dm_summary += f" as {role_name} due to button end. Total time was about {time_diff} (DKP Award: {dkp_earned}, ID: {tracking_id})"
 
     stopped_view = disnake.ui.View()
-    stopped_view.add_item(disnake.ui.Button(
-        label="RTE Stopped",
-        style=disnake.ButtonStyle.secondary,
-        disabled=True,
-        custom_id=custom_id,
-    ))
+    stopped_view.add_item(
+        disnake.ui.Button(
+            label="RTE Stopped",
+            style=disnake.ButtonStyle.secondary,
+            disabled=True,
+            custom_id=custom_id,
+        )
+    )
     await inter.response.edit_message(view=stopped_view)
     await inter.followup.send(f"```diff\n{dm_summary}```")
 
@@ -614,19 +618,16 @@ async def _handle_remove_tracking_time(message: disnake.Message):
             )
         else:
             from roboToald.db.raid_models.raid import Attendee
+
             session.query(Attendee).filter_by(tracking_id=str(tracking_id)).delete()
             session.delete(tracking)
             session.commit()
-            await message.channel.send(
-                f"```diff\n+ {char_name} tracking on {tgt_name} deleted by Admin. (DKP: 0)```"
-            )
+            await message.channel.send(f"```diff\n+ {char_name} tracking on {tgt_name} deleted by Admin. (DKP: 0)```")
 
             if tracking.user_id:
                 try:
                     user = await base.DISCORD_CLIENT.fetch_user(int(tracking.user_id))
-                    await user.send(
-                        f"```diff\n+ Your RTE on {tgt_name} was removed by Admin. (DKP: 0)```"
-                    )
+                    await user.send(f"```diff\n+ Your RTE on {tgt_name} was removed by Admin. (DKP: 0)```")
                 except (disnake.Forbidden, disnake.HTTPException):
                     pass
 

@@ -3,23 +3,23 @@ import sqlalchemy as sa
 from roboToald.db.raid_base import RaidBase
 
 RTE_ROLES = {
-    1:  {"name": "Tank",      "column": "rte_tank"},
-    2:  {"name": "Ramp",      "column": "rte_ramp"},
-    3:  {"name": "Kiter",     "column": "rte_kiter"},
-    4:  {"name": "Bumper",    "column": "rte_bumper"},
-    5:  {"name": "Puller",    "column": "rte_puller"},
-    6:  {"name": "Racer",     "column": "rte_racer"},
-    7:  {"name": "Tracker",   "column": "rte_tracker"},
-    8:  {"name": "Trainer",   "column": "rte_trainer"},
-    9:  {"name": "Tagger",    "column": "rte_tagger"},
-    10: {"name": "Cother",    "column": "rte_cother"},
-    11: {"name": "Anchor",    "column": "rte_anchor"},
-    12: {"name": "Sower",     "column": "rte_sower"},
-    13: {"name": "DMF",       "column": "rte_dmf"},
-    14: {"name": "Cleric",    "column": "rte_cleric"},
+    1: {"name": "Tank", "column": "rte_tank"},
+    2: {"name": "Ramp", "column": "rte_ramp"},
+    3: {"name": "Kiter", "column": "rte_kiter"},
+    4: {"name": "Bumper", "column": "rte_bumper"},
+    5: {"name": "Puller", "column": "rte_puller"},
+    6: {"name": "Racer", "column": "rte_racer"},
+    7: {"name": "Tracker", "column": "rte_tracker"},
+    8: {"name": "Trainer", "column": "rte_trainer"},
+    9: {"name": "Tagger", "column": "rte_tagger"},
+    10: {"name": "Cother", "column": "rte_cother"},
+    11: {"name": "Anchor", "column": "rte_anchor"},
+    12: {"name": "Sower", "column": "rte_sower"},
+    13: {"name": "DMF", "column": "rte_dmf"},
+    14: {"name": "Cleric", "column": "rte_cleric"},
     15: {"name": "Enchanter", "column": "rte_enchanter"},
-    16: {"name": "Shaman",    "column": "rte_shaman"},
-    17: {"name": "Bard",      "column": "rte_bard"},
+    16: {"name": "Shaman", "column": "rte_shaman"},
+    17: {"name": "Bard", "column": "rte_bard"},
 }
 
 RTE_ROLE_NAMES = [v["name"].lower() for v in RTE_ROLES.values()]
@@ -73,6 +73,7 @@ class Tracking(RaidBase):
     @property
     def dkp_amount(self) -> int:
         from roboToald.raid.dkp_calculator import dkp_from_duration
+
         dur = self.duration
         if dur is not None:
             return dkp_from_duration(self.rate_per_hour, dur)

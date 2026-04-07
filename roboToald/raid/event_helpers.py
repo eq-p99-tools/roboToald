@@ -105,17 +105,13 @@ def rte_tracking_creator(
             )
             messages.append(f"```diff\n+ All active RTE for {target.name} was closed due to event.```")
     elif is_quake:
-        quake_ids = [
-            t.id for t in session.query(Target).filter_by(close_on_quake=True).all()
-        ]
+        quake_ids = [t.id for t in session.query(Target).filter_by(close_on_quake=True).all()]
         if quake_ids:
-            trackings = session.query(Tracking).filter(
-                Tracking.target_id.in_(quake_ids), Tracking.end_time.is_(None)
-            ).all()
+            trackings = (
+                session.query(Tracking).filter(Tracking.target_id.in_(quake_ids), Tracking.end_time.is_(None)).all()
+            )
             if trackings:
-                session.query(Tracking).filter(
-                    Tracking.target_id.in_(quake_ids), Tracking.end_time.is_(None)
-                ).update(
+                session.query(Tracking).filter(Tracking.target_id.in_(quake_ids), Tracking.end_time.is_(None)).update(
                     {"end_time": datetime.now(timezone.utc), "close_event_id": evt.id},
                     synchronize_session="fetch",
                 )
@@ -129,9 +125,7 @@ def rte_tracking_creator(
 
     trackings_to_add: list[Tracking] = []
     if pull_other:
-        exclude_ids = [
-            t.id for t in session.query(Target).filter_by(rte_attendence=False).all()
-        ]
+        exclude_ids = [t.id for t in session.query(Target).filter_by(rte_attendence=False).all()]
         q = session.query(Tracking).filter(Tracking.end_time.is_(None))
         if exclude_ids:
             q = q.filter(~Tracking.target_id.in_(exclude_ids))
@@ -140,16 +134,10 @@ def rte_tracking_creator(
         trackings_to_add.extend(q.all())
 
     if this_event_tracker_ids:
-        trackings_to_add.extend(
-            session.query(Tracking).filter(Tracking.id.in_(this_event_tracker_ids)).all()
-        )
+        trackings_to_add.extend(session.query(Tracking).filter(Tracking.id.in_(this_event_tracker_ids)).all())
 
     for tracking in trackings_to_add:
-        existing = (
-            session.query(Attendee)
-            .filter_by(character_id=str(tracking.character_id), event_id=evt.id)
-            .first()
-        )
+        existing = session.query(Attendee).filter_by(character_id=str(tracking.character_id), event_id=evt.id).first()
         if existing:
             continue
         tracked_target = session.query(Target).get(tracking.target_id)
@@ -181,10 +169,7 @@ def build_target_loot_table_lines(evt: Event, target: Target, session: Session) 
         "+ Loot Table:",
     ]
     items = (
-        session.query(Item)
-        .join(LootTable, LootTable.item_id == Item.id)
-        .filter(LootTable.target_id == target.id)
-        .all()
+        session.query(Item).join(LootTable, LootTable.item_id == Item.id).filter(LootTable.target_id == target.id).all()
     )
     for item in items:
         lines.append(f"+  {item.name} (ID: {item.id})")
@@ -219,9 +204,9 @@ def build_raid_status_embed(channel_id: str, guild_id: int) -> disnake.Embed:
             attendance_lines.append("- There are no attendees added yet. Please submit logs.")
 
         tracker_lines = []
-        tracker_attendees = session.query(Attendee).filter(
-            Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)
-        ).all()
+        tracker_attendees = (
+            session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).all()
+        )
         for att in tracker_attendees:
             tracking = session.query(Tracking).get(int(att.tracking_id)) if att.tracking_id else None
             if not tracking:

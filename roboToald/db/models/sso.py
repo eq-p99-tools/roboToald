@@ -20,6 +20,7 @@ _log = logging.getLogger(__name__)
 
 try:
     from geoip2fast import GeoIP2Fast
+
     _geoip = GeoIP2Fast()
 except Exception:
     _geoip = None
@@ -365,7 +366,9 @@ def find_account_by_username(username: str, guild_id: int = None, inactive_only:
             char_level_by_account = {c.account_id: (c.level or 0) for c in characters}
             unique_accounts = list({c.account for c in characters})
             now = datetime.datetime.now()
-            unique_accounts.sort(key=lambda a: _login_sort_key(a, now, lambda acct: char_level_by_account.get(acct.id, 0)))
+            unique_accounts.sort(
+                key=lambda a: _login_sort_key(a, now, lambda acct: char_level_by_account.get(acct.id, 0))
+            )
             if not unique_accounts:
                 raise SSOTagTemporarilyEmptyError(f"Tag '{username}' is temporarily empty")
             # Re-query with full eager loads (the accounts from
@@ -1106,9 +1109,7 @@ class SSORevocation(base.Base):
 
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
-    __table_args__ = (
-        sqlalchemy.Index("ix_revocation_lookup", "guild_id", "discord_user_id", "active"),
-    )
+    __table_args__ = (sqlalchemy.Index("ix_revocation_lookup", "guild_id", "discord_user_id", "active"),)
 
     def __init__(
         self,
@@ -1235,9 +1236,7 @@ class SSOAuditLog(base.Base):
     details = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
     client_version = sqlalchemy.Column(sqlalchemy.String(32), nullable=True)
 
-    __table_args__ = (
-        sqlalchemy.Index("ix_audit_rate_limit", "ip_address", "success", "timestamp"),
-    )
+    __table_args__ = (sqlalchemy.Index("ix_audit_rate_limit", "ip_address", "success", "timestamp"),)
 
     def __init__(
         self,

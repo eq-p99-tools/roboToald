@@ -20,7 +20,9 @@ def _db_path(guild_id: int) -> str:
 def get_raid_engine(guild_id: int) -> sqlalchemy.engine.Engine:
     if guild_id not in _engines:
         _engines[guild_id] = sqlalchemy.create_engine(
-            f"sqlite:///{_db_path(guild_id)}", echo=False, future=True,
+            f"sqlite:///{_db_path(guild_id)}",
+            echo=False,
+            future=True,
         )
     return _engines[guild_id]
 

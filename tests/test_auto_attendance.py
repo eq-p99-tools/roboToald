@@ -261,9 +261,7 @@ async def test_apply_button_creates_attendees(
     inter = MagicMock()
     inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_APPLY}:{GUILD_ID}"
     inter.channel_id = EVENT_CHANNEL_ID
-    inter.message.content = (
-        "Suggested attendance\n```\n+Amy on Boxchar1 (30m)\n+Betty (20m)\n```"
-    )
+    inter.message.content = "Suggested attendance\n```\n+Amy on Boxchar1 (30m)\n+Betty (20m)\n```"
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
@@ -283,7 +281,9 @@ async def test_apply_button_creates_attendees(
     attendees = raid_session.query(Attendee).filter_by(event_id=evt.id).all()
     assert len(attendees) == 2
     box = raid_session.query(Character).filter_by(name="Boxchar1").one()
-    amy_att = next(a for a in attendees if raid_session.query(Character).filter_by(id=int(a.character_id)).one().name == "Amy")
+    amy_att = next(
+        a for a in attendees if raid_session.query(Character).filter_by(id=int(a.character_id)).one().name == "Amy"
+    )
     assert amy_att.on_character_id == str(box.id)
 
 

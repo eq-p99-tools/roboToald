@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 EQDKP_GUILDS = list(config.EQDKP_SETTINGS.keys())
 
 
-@base.DISCORD_CLIENT.slash_command(
-    description="Look up EQDKP characters", guild_ids=EQDKP_GUILDS
-)
+@base.DISCORD_CLIENT.slash_command(description="Look up EQDKP characters", guild_ids=EQDKP_GUILDS)
 async def lookup(inter: disnake.ApplicationCommandInteraction):
     pass
 
@@ -51,6 +49,7 @@ async def user(
     await inter.response.defer(ephemeral=True)
 
     from roboToald.eqdkp.client import EqdkpClient
+
     eqdkp = EqdkpClient(guild_id)
 
     characters = await eqdkp.find_characters_by_discord_id(member.id)
@@ -67,13 +66,9 @@ async def user(
         try:
             dkp_amount = _format_dkp(await eqdkp.find_points(user_id))
         except Exception:
-            logger.exception(
-                "EQdkp point lookup failed for user_id=%s", user_id
-            )
+            logger.exception("EQdkp point lookup failed for user_id=%s", user_id)
 
-    embed = disnake.Embed(
-        title=f"EQDKP Characters for {member.display_name}"
-    )
+    embed = disnake.Embed(title=f"EQDKP Characters for {member.display_name}")
     char_lines = [_char_line(c) for c in characters]
     embed.add_field(
         name=f"DKP: {dkp_amount}",
@@ -87,13 +82,15 @@ async def user(
 async def character(
     inter: disnake.ApplicationCommandInteraction,
     name: str = commands.Param(
-        description="Character name", autocomplete=True,
+        description="Character name",
+        autocomplete=True,
     ),
 ):
     guild_id = inter.guild.id
     await inter.response.defer(ephemeral=True)
 
     from roboToald.eqdkp.client import EqdkpClient
+
     eqdkp = EqdkpClient(guild_id)
 
     result = await eqdkp.find_character(name)
@@ -118,9 +115,7 @@ async def character(
 
     if auth_account and str(auth_account).isdigit():
         discord_val = f"<@{auth_account}>"
-        embed.add_field(
-            name="Discord", value=discord_val, inline=True
-        )
+        embed.add_field(name="Discord", value=discord_val, inline=True)
     else:
         embed.add_field(name="Discord", value="Not linked", inline=True)
 
@@ -129,9 +124,7 @@ async def character(
         try:
             dkp_amount = _format_dkp(await eqdkp.find_points(user_id))
         except Exception:
-            logger.exception(
-                "EQdkp point lookup failed for user_id=%s", user_id
-            )
+            logger.exception("EQdkp point lookup failed for user_id=%s", user_id)
     embed.add_field(name="DKP", value=str(dkp_amount), inline=True)
 
     if auth_account and str(auth_account).isdigit():
@@ -149,7 +142,8 @@ async def character(
 
 @character.autocomplete("name")
 async def _ac_character(
-    inter: disnake.ApplicationCommandInteraction, query: str,
+    inter: disnake.ApplicationCommandInteraction,
+    query: str,
 ):
     guild_id = inter.guild.id
     query = query.strip().lower()
@@ -157,20 +151,11 @@ async def _ac_character(
         from roboToald.db.raid_base import get_raid_session
         from roboToald.db.raid_models.character import Character
         import sqlalchemy as sa
+
         with get_raid_session(guild_id) as session:
-            q = (
-                session.query(Character)
-                .filter(sa.func.length(Character.name) > 0)
-                .order_by(Character.name)
-            )
+            q = session.query(Character).filter(sa.func.length(Character.name) > 0).order_by(Character.name)
             if query:
-                q = q.filter(
-                    sa.func.lower(Character.name)
-                    .startswith(query)
-                )
-            return {
-                c.name: c.name
-                for c in q.limit(25).all()
-            }
+                q = q.filter(sa.func.lower(Character.name).startswith(query))
+            return {c.name: c.name for c in q.limit(25).all()}
     except Exception:
         return {}

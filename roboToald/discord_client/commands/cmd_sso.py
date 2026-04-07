@@ -955,9 +955,7 @@ class SSOCommands(commands.Cog):
                 discord_user = f"<@{log.discord_user_id}>" if log.discord_user_id else "`Unknown`"
                 ver = f"v{log.client_version}" if log.client_version else ""
 
-                formatted_log = (
-                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
-                )
+                formatted_log = f"{status}\u2003{flag}🌐`{ip:<15}`\u2003👤{discord_user}\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
 
             # Create the response message
@@ -1010,9 +1008,7 @@ class SSOCommands(commands.Cog):
                 ip = hash_ip(log.ip_address) if log.ip_address else "N/A"
                 ver = f"v{log.client_version}" if log.client_version else ""
 
-                formatted_log = (
-                    f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
-                )
+                formatted_log = f"{status}\u2003{flag}🌐`{ip:<15}`\u2003🤖`{username:<12}`\u2003📅{discord_timestamp}\u2003{ver}\u2003*{details}*"
                 formatted_logs.append(formatted_log)
 
             # Create the response message
@@ -1359,9 +1355,7 @@ class SSOCommands(commands.Cog):
                 event_time = event_time.replace(tzinfo=zoneinfo.ZoneInfo("America/New_York"))
             except ValueError:
                 if inter:
-                    await inter.send(
-                        content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True
-                    )
+                    await inter.send(content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True)
                 return
 
         if not event_time:
@@ -1534,9 +1528,7 @@ class SSOCommands(commands.Cog):
     async def character_keys(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        character_name: str = commands.Param(
-            description="Character name", autocomplete=character_autocomplete
-        ),
+        character_name: str = commands.Param(description="Character name", autocomplete=character_autocomplete),
         key: str = commands.Param(description="Which key", choices=["Seb", "VP", "ST"]),
         status: str = commands.Param(
             description="Whether the character has the key",
@@ -1547,9 +1539,7 @@ class SSOCommands(commands.Cog):
         value = {"Yes": True, "No": False, "Unknown": None}[status]
         try:
             character_name = character_name.lower().capitalize()
-            ok = sso_model.set_character_zone_key(
-                inter.guild_id, character_name, key_map[key], value
-            )
+            ok = sso_model.set_character_zone_key(inter.guild_id, character_name, key_map[key], value)
             if not ok:
                 message = f"⚠️🧍 **Character not found:** `{character_name}`"
                 await inter.send(content=message, ephemeral=True)
