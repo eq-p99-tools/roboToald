@@ -143,6 +143,27 @@ def _fmt_minutes(seconds: float) -> str:
     return f"{max(1, int(seconds / 60))}m"
 
 
+def _discord_name_suffix(member: disnake.Member | None, user_id: int) -> str:
+    """Trailing `` [label]`` for suggestion lines; brackets in the label are sanitized."""
+    if member is None:
+        inner = str(user_id)
+    else:
+        raw = (member.display_name or member.name or "").strip() or str(user_id)
+        inner = raw.replace("[", "(").replace("]", ")")
+    return f" [{inner}]"
+
+
+async def _resolve_member(guild: disnake.Guild, user_id: int) -> disnake.Member | None:
+    member = guild.get_member(user_id)
+    if member is not None:
+        return member
+    try:
+        return await guild.fetch_member(user_id)
+    except (disnake.NotFound, disnake.HTTPException):
+        logger.debug("Could not resolve guild member user_id=%s in guild %s", user_id, guild.id)
+        return None
+
+
 def _make_proposal_view(guild_id: int) -> disnake.ui.View:
     view = disnake.ui.View(timeout=None)
     view.add_item(
@@ -227,6 +248,10 @@ async def propose_online_players(guild_id: int, mob_name: str, discord_client) -
         if not qualifying:
             continue
 
+        guild = discord_client.get_guild(guild_id)
+        if not guild:
+            continue
+
         # Resolve EQDKP characters and build suggestion lines
         lines: list[str] = []
         for discord_user_id, overlap_secs, online_char in sorted(qualifying, key=lambda x: x[2].lower()):
@@ -235,27 +260,26 @@ async def propose_online_players(guild_id: int, mob_name: str, discord_client) -
                 continue
             player_char, all_eqdkp_chars = result
             time_str = _fmt_minutes(overlap_secs)
+            member = await _resolve_member(guild, discord_user_id)
+            disc_suffix = _discord_name_suffix(member, discord_user_id)
             if online_char.lower() in all_eqdkp_chars:
                 # Online character belongs to this user -- add directly
-                lines.append(f"+{online_char} ({time_str})")
+                lines.append(f"+{online_char} ({time_str}){disc_suffix}")
             else:
                 # Online character is a shared/bot account -- add as "player on box"
-                lines.append(f"+{player_char} on {online_char} ({time_str})")
+                lines.append(f"+{player_char} on {online_char} ({time_str}){disc_suffix}")
 
         if not lines:
             continue
 
-        guild = discord_client.get_guild(guild_id)
-        if not guild:
-            continue
         channel = guild.get_channel(int(evt_channel_id))
         if not channel:
             continue
 
         event_mins = _fmt_minutes(event_duration)
-        header = f"Suggested attendance for {mob_name} ({len(lines)} qualifying, event open {event_mins}):"
+        header = f"**Suggested attendance for `{mob_name}`** (`{len(lines)}` qualifying, event open `{event_mins}`):"
         body = "\n".join(lines)
-        content = f"{header}\n```\n{body}\n```"
+        content = f"{header}\n```diff\n{body}\n```"
         await channel.send(content, view=_make_proposal_view(guild_id))
         logger.info(
             "Posted auto-attendance suggestion for %s in channel %s (%d lines)",
@@ -285,7 +309,7 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
         return
 
     # Apply: parse +lines from the code block in the original message, strip (Xm) annotations
-    code_match = re.search(r"```\n(.*?)\n```", inter.message.content or "", re.DOTALL)
+    code_match = re.search(r"```\w*\n(.*?)\n```", inter.message.content or "", re.DOTALL)
     if not code_match:
         await inter.response.send_message("```diff\n- Could not parse suggestion lines.```", ephemeral=True)
         return
@@ -297,8 +321,8 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
         )
         return
 
-    # Strip trailing (Xm) annotation before processing
-    cleaned_lines = [re.sub(r"\s*\(\d+m\)\s*$", "", ln) for ln in raw_lines]
+    # Strip trailing (Xm) and optional " [Discord name]" suffix before processing
+    cleaned_lines = [re.sub(r"\s*\(\d+m\)\s*(\[[^\]]+\])?\s*$", "", ln) for ln in raw_lines]
 
     eqdkp_client: EqdkpClient | None = None
     if config.eqdkp_is_configured(guild_id):

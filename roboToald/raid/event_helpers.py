@@ -54,7 +54,13 @@ def _time_ago_in_words(dt: datetime) -> str:
 
 
 def resolve_target(name: str, session: Session) -> tuple[list[Target], list[TargetAlias]]:
-    """Resolve a target by name or alias, returning (targets, aliases)."""
+    """Resolve a target by name or alias, returning (targets, aliases).
+
+    Pass 1: substring match where the query appears inside ``Target.name`` / alias (user-typed
+    partials). Pass 2: when pass 1 finds nothing, match where the **incoming string contains**
+    the stored name or alias (EQ log lines often use full mob names; DB rows use short names).
+    On multiple pass-2 hits, prefer the longest matching stored token.
+    """
     name_lower = name.strip().lower()
     aliases = session.query(TargetAlias).filter(TargetAlias.name.ilike(f"%{name_lower}%")).all()
     if len(aliases) > 1:
@@ -73,6 +79,33 @@ def resolve_target(name: str, session: Session) -> tuple[list[Target], list[Targ
         exact = [t for t in targets if t.name.lower().strip() == name_lower]
         if exact:
             targets = exact
+
+    if not targets:
+        # Pass 2: full EQ mob string contains short ``Target.name`` or ``TargetAlias.name``.
+        best_by_id: dict[int, tuple[int, Target]] = {}
+        for t in session.query(Target).all():
+            tn = t.name.lower().strip()
+            if tn and tn in name_lower:
+                score = len(tn)
+                prev = best_by_id.get(t.id)
+                if prev is None or score > prev[0]:
+                    best_by_id[t.id] = (score, t)
+        for a in session.query(TargetAlias).all():
+            an = a.name.lower().strip()
+            if not an or an not in name_lower:
+                continue
+            tgt = session.query(Target).filter_by(id=a.target_id).first()
+            if not tgt:
+                continue
+            score = len(an)
+            prev = best_by_id.get(tgt.id)
+            if prev is None or score > prev[0]:
+                best_by_id[tgt.id] = (score, tgt)
+        if best_by_id:
+            max_score = max(s for s, _ in best_by_id.values())
+            picked = [t for s, t in best_by_id.values() if s == max_score]
+            targets = [picked[0]] if len(picked) > 1 else picked
+            aliases = []
 
     return targets, aliases
 

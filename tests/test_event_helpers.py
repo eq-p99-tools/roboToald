@@ -44,6 +44,43 @@ def test_resolve_target_single_hit(raid_session):
     assert targets[0].name == "Test Boss Mob"
 
 
+def test_resolve_target_pass2_eq_full_name_db_short(raid_session):
+    """Log-style full mob name; DB stores simplified ``Target.name`` (incoming contains stored)."""
+    raid_session.add(Target(name="dozekar"))
+    raid_session.commit()
+    targets, aliases = resolve_target("Dozekar the Cursed", raid_session)
+    assert len(targets) == 1
+    assert targets[0].name == "dozekar"
+    assert aliases == []
+
+
+def test_resolve_target_pass2_article_prefix(raid_session):
+    raid_session.add(Target(name="dracoliche"))
+    raid_session.commit()
+    targets, _aliases = resolve_target("a dracoliche", raid_session)
+    assert len(targets) == 1
+    assert targets[0].name == "dracoliche"
+
+
+def test_resolve_target_pass2_prefers_longest_matching_token(raid_session):
+    raid_session.add_all([Target(name="ab"), Target(name="abc")])
+    raid_session.commit()
+    targets, _aliases = resolve_target("prefix abc suffix", raid_session)
+    assert len(targets) == 1
+    assert targets[0].name == "abc"
+
+
+def test_resolve_target_pass2_alias_contained_in_log(raid_session):
+    t = Target(name="short")
+    raid_session.add(t)
+    raid_session.flush()
+    raid_session.add(TargetAlias(target_id=t.id, name="nagafen"))
+    raid_session.commit()
+    targets, _aliases = resolve_target("Lord Nagafen", raid_session)
+    assert len(targets) == 1
+    assert targets[0].name == "short"
+
+
 def test_get_shortest_alias_prefers_short_alias(raid_session):
     t = Target(name="Very Long Target Name Here")
     raid_session.add(t)

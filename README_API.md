@@ -435,6 +435,8 @@ Relayed when the EQ log shows a raid target death (`You have slain …` or `… 
 
 If `auto_attendance = true` is set in the guild's `[raid.<guild_id>]` config and EQdkp is configured, a valid `mob_death` that passes deduplication also triggers an auto-attendance suggestion posted to each open event channel whose target matches the mob name.
 
+**Matching `mob` to raid targets:** The bot resolves the `mob` string to a `Target` row with `resolve_target` (same helper as slash commands). It first tries the usual “query is a substring of the stored name” match; if that finds nothing, it tries the reverse (the incoming string contains the stored `Target.name` or a `TargetAlias` name), preferring the longest match. That covers EQ log lines that use full mob names (e.g. `Dozekar the Cursed`) while the database stores short names (e.g. `dozekar`). For odd cases, add a **`TargetAlias`** row with the exact substring you need.
+
 The suggestion is based on **SSO character session history** for the event window (`Event.created_at` → death time). Only users whose total session overlap with that window meets the minimum presence threshold are included:
 
 > `threshold = min(event_duration_seconds × 0.5, 120)`

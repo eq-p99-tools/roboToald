@@ -25,6 +25,7 @@ from roboToald.raid.auto_attendance import (
     MIN_PRESENCE_SECONDS,
     _build_user_overlaps,
     _compute_overlap_seconds,
+    _discord_name_suffix,
     on_auto_att_button,
     propose_online_players,
 )
@@ -157,6 +158,17 @@ def test_threshold_filtering_short_and_long_events():
     assert 3 in q2 and 4 not in q2
 
 
+def test_discord_name_suffix_fallback_user_id():
+    assert _discord_name_suffix(None, 12345) == " [12345]"
+
+
+def test_discord_name_suffix_sanitizes_brackets_in_display_name():
+    m = MagicMock()
+    m.display_name = "Lo[r]d"
+    m.name = "lord"
+    assert _discord_name_suffix(m, 1) == " [Lo(r)d]"
+
+
 # ---------------------------------------------------------------------------
 # propose_online_players e2e
 # ---------------------------------------------------------------------------
@@ -212,6 +224,14 @@ async def test_propose_online_players_e2e(
     channel = AsyncMock()
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
+
+    def fake_get_member(uid: int) -> MagicMock:
+        m = MagicMock()
+        m.display_name = {100: "AliceD", 200: "BobD"}.get(uid, f"User{uid}")
+        m.name = str(uid)
+        return m
+
+    guild.get_member = MagicMock(side_effect=fake_get_member)
     discord_client = MagicMock()
     discord_client.get_guild = MagicMock(return_value=guild)
 
@@ -220,8 +240,9 @@ async def test_propose_online_players_e2e(
     channel.send.assert_awaited_once()
     content = channel.send.call_args[0][0]
     assert "Suggested attendance" in content and MOB_NAME in content
-    assert "+Amy on Boxchar1" in content
-    assert "+Ownmain" in content
+    assert "```diff" in content
+    assert "+Amy on Boxchar1" in content and "[AliceD]" in content
+    assert "+Ownmain" in content and "[BobD]" in content
     assert "Ownmain on" not in content
     assert "Shortie" not in content
     assert "view" in channel.send.call_args.kwargs
@@ -261,7 +282,7 @@ async def test_apply_button_creates_attendees(
     inter = MagicMock()
     inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_APPLY}:{GUILD_ID}"
     inter.channel_id = EVENT_CHANNEL_ID
-    inter.message.content = "Suggested attendance\n```\n+Amy on Boxchar1 (30m)\n+Betty (20m)\n```"
+    inter.message.content = "Suggested attendance\n```diff\n+Amy on Boxchar1 (30m) [AliceD]\n+Betty (20m) [BettyD]\n```"
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
