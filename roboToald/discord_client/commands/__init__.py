@@ -16,11 +16,17 @@ if config.guilds_for_command("raid"):
     from roboToald.discord_client.commands import cmd_rte  # noqa: F401
     from roboToald.discord_client.commands import cmd_loot  # noqa: F401
     from roboToald.discord_client.commands import cmd_history  # noqa: F401
+    from roboToald.raid import auto_attendance  # noqa: F401  registers on_auto_att_button listener
 
 BUTTON_LISTENERS = {}
 _MODULES = (
-    cmd_random, cmd_batphone, cmd_timer,
-    cmd_raidtarget, cmd_ds, cmd_ds_data, cmd_sso,
+    cmd_random,
+    cmd_batphone,
+    cmd_timer,
+    cmd_raidtarget,
+    cmd_ds,
+    cmd_ds_data,
+    cmd_sso,
 )
 for module in _MODULES:
     try:

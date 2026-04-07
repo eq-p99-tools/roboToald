@@ -431,6 +431,23 @@ Relayed when the EQ log shows a raid target death (`You have slain …` or `… 
 | `eq_log_time` | `string` | yes | Bracket timestamp from the EQ log line (`time` group), e.g. `Sat Feb 15 20:52:45 2025` |
 | `character_name` | `string` | yes | Character whose log file produced the line |
 
+##### Auto-attendance proposal
+
+If `auto_attendance = true` is set in the guild's `[raid.<guild_id>]` config and EQdkp is configured, a valid `mob_death` that passes deduplication also triggers an auto-attendance suggestion posted to each open event channel whose target matches the mob name.
+
+The suggestion is based on **SSO character session history** for the event window (`Event.created_at` → death time). Only users whose total session overlap with that window meets the minimum presence threshold are included:
+
+> `threshold = min(event_duration_seconds × 0.5, 120)`
+
+i.e. at least 50% of the event duration, or at least 2 minutes — whichever requirement is lower.
+
+For each qualifying Discord user, the bot looks up their EQDKP characters (cached in memory for 1 hour). The character with the most overlap time becomes the "online character":
+
+- If the online character belongs to the user in EQDKP, the line is `+<online_char>`.
+- Otherwise (shared/bot account), the line is `+<eqdkp_char> on <online_char>`.
+
+The suggestion message is posted to the event channel with **Apply** and **Ignore** buttons. The +lines are formatted as a copy-pasteable code block so a raid lead can also paste a subset manually. Clicking **Apply** inserts the Attendee records (with full EQDKP validation and deduplication matching `+Player` manual adds). Clicking **Ignore** dismisses the suggestion.
+
 ### Server -> Client Messages
 
 #### Ping

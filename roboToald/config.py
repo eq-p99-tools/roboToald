@@ -48,6 +48,7 @@ for _section in CONF.sections():
                 x.strip() for x in CONF.get(_section, "allowed_reload_ids", fallback="").split(",") if x.strip()
             ],
             "loot_channel_id": CONF.getint(_section, "loot_channel_id", fallback=0),
+            "auto_attendance": CONF.getboolean(_section, "auto_attendance", fallback=False),
         }
 
 # Per-guild EQdkp settings — parsed from [eqdkp.<guild_id>] sections

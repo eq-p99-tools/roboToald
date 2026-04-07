@@ -147,6 +147,19 @@ def _send_to_tod_channel(guild_id: int, text: str):
     asyncio.run_coroutine_threadsafe(channel.send(text), discord_client.loop)
 
 
+def _schedule_auto_attendance(guild_id: int, mob_name: str) -> None:
+    """Schedule an auto-attendance proposal on the Discord event loop (thread-safe)."""
+    discord_client = ws_manager._discord_client
+    if not discord_client:
+        return
+    from roboToald.raid.auto_attendance import propose_online_players
+
+    asyncio.run_coroutine_threadsafe(
+        propose_online_players(guild_id, mob_name, discord_client),
+        discord_client.loop,
+    )
+
+
 class _SuppressBareWsLifecycle(logging.Filter):
     """Drop uvicorn's generic 'connection open'/'connection closed' messages.
 
@@ -812,6 +825,7 @@ async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
         return
     tod_timestamp = _format_tod_for_discord(parsed_log)
     _send_to_tod_channel(conn.guild_id, f"!tod {mob}, {tod_timestamp}")
+    _schedule_auto_attendance(conn.guild_id, mob)
 
 
 async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
