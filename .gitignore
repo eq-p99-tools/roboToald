@@ -12,3 +12,4 @@ certs
 build/
 .mypy_cache
 *.csv
+.coverage
