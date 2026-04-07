@@ -17,8 +17,5 @@ RUN uv pip install --system --no-cache-dir .
 
 COPY *.wav /app/
 COPY scripts/ /app/scripts/
-COPY alembic.ini /app/
-COPY migrations/ /app/migrations/
-COPY raid_migrations/ /app/raid_migrations/
 
 CMD ["robotoald"]

@@ -10,13 +10,18 @@ from alembic.config import Config
 logger = logging.getLogger(__name__)
 
 
+def _package_root() -> Path:
+    """Directory of the ``roboToald`` package (contains ``alembic.ini`` and ``migrations/``)."""
+    return Path(__file__).resolve().parent.parent
+
+
 def get_alembic_config():
     """Get Alembic configuration."""
-    project_root = Path(__file__).parent.parent.parent.absolute()
-    alembic_cfg = Config(os.path.join(project_root, "alembic.ini"))
+    root = _package_root()
+    alembic_cfg = Config(os.path.join(root, "alembic.ini"))
     alembic_cfg.set_main_option(
         "script_location",
-        os.path.join(project_root, "migrations"),
+        os.path.join(root, "migrations"),
     )
     return alembic_cfg
 

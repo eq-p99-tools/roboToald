@@ -51,6 +51,11 @@ where = ["."]
 include = ["roboToald*"]
 
 [tool.setuptools.package-data]
+"roboToald" = [
+    "alembic.ini",
+    "migrations/**/*",
+    "raid_migrations/**/*",
+]
 "roboToald.words" = ["*.list"]
 "roboToald.api" = ["templates/**/*.html"]
 

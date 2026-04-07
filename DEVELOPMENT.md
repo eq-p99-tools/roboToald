@@ -143,13 +143,9 @@ roboToald/
 ├── batphone.ini                        # Configuration (not committed)
 ├── batphone.ini.example                # Configuration template
 ├── pyproject.toml                      # Project metadata, dependencies, ruff/pytest
-├── alembic.ini                         # Alembic config
 ├── Dockerfile / docker-compose.yml
 ├── scripts/
 │   └── import_accounts.py              # Bulk CSV import for SSO accounts
-├── migrations/                         # Alembic migrations
-│   ├── env.py
-│   └── versions/
 ├── erd/                                # Database schema documentation
 │   ├── sso_schema.md
 │   ├── points_schema.md
@@ -157,6 +153,11 @@ roboToald/
 │   ├── timer_schema.md
 │   └── subscription_schema.md
 └── roboToald/                          # Main package
+    ├── alembic.ini                     # Alembic config (SSO + raid sections)
+    ├── migrations/                     # SSO Alembic scripts
+    │   ├── env.py
+    │   └── versions/
+    ├── raid_migrations/                # Raid DB Alembic scripts
     ├── config.py                       # Reads batphone.ini
     ├── constants.py                    # Enums, timezone map
     ├── exceptions.py

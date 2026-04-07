@@ -10,13 +10,18 @@ from alembic.config import Config
 logger = logging.getLogger(__name__)
 
 
+def _package_root() -> Path:
+    """Directory of the ``roboToald`` package (contains ``alembic.ini`` and ``raid_migrations/``)."""
+    return Path(__file__).resolve().parent.parent
+
+
 def get_raid_alembic_config(db_path: str):
     """Get Alembic configuration for a raid database at *db_path*."""
-    project_root = Path(__file__).parent.parent.parent.absolute()
-    alembic_cfg = Config(os.path.join(project_root, "alembic.ini"), ini_section="alembic:raid")
+    root = _package_root()
+    alembic_cfg = Config(os.path.join(root, "alembic.ini"), ini_section="alembic:raid")
     alembic_cfg.set_main_option(
         "script_location",
-        os.path.join(project_root, "raid_migrations"),
+        os.path.join(root, "raid_migrations"),
     )
     alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     return alembic_cfg
