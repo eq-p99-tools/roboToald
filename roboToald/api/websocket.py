@@ -36,6 +36,13 @@ def _character_items_payload(char) -> dict:
         "neck": char.item_neck,
         "lizard": char.item_lizard,
         "thurg": char.item_thurg,
+        "reaper": char.item_reaper,
+        "brass_idol": char.item_brass_idol,
+        "pearl": char.item_pearl,
+        "peridot": char.item_peridot,
+        "mb3": char.item_mb3,
+        "mb4": char.item_mb4,
+        "mb5": char.item_mb5,
     }
 
 

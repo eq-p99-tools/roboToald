@@ -1,8 +1,9 @@
 """Auto-attendance proposal on mob death.
 
 When a raid target dies and an open event channel exists for it, computes which
-SSO users were online for a meaningful portion of the event window (using session
-history) and posts a suggested +Player attendance list with Apply/Ignore buttons.
+SSO users were online for at least the configured percentage of the event window (using session
+history) and posts a suggested +Player attendance list with Kill / No Kill / Ignore
+buttons (legacy messages may still show Apply).
 
 The suggestion message contains copy-pasteable +lines so a raid lead can also
 manually pick a subset by pasting into the channel (handled by _handle_add_player).
@@ -24,23 +25,24 @@ from roboToald.db.raid_models.character import Character
 from roboToald.db.raid_models.raid import Attendee, Event
 from roboToald.discord_client import base as discord_base
 from roboToald.eqdkp.client import EqdkpClient
+from roboToald.raid import permissions as perms
 from roboToald.raid.event_helpers import resolve_target
 
 logger = logging.getLogger(__name__)
 
-# Presence threshold: user must have been online for at least whichever is LOWER:
-#   - 50% of the event duration, OR
-#   - 2 minutes (MIN_PRESENCE_SECONDS)
-# i.e. threshold = min(event_duration * 0.5, 120)
-MIN_PRESENCE_SECONDS = 120.0
-MIN_PRESENCE_FRACTION = 0.5
+# Presence threshold: overlap must be at least ``presence_percent``% of the event duration (default 50%).
+# Users can re-run reconcile with a lower percentage to include more people.
+MIN_PRESENCE_PERCENT = 50.0
 
 # Player character cache: (guild_id, discord_user_id) -> (player_char_name, all_char_names_lower, timestamp)
 _player_char_cache: dict[tuple[int, int], tuple[str, frozenset[str], float]] = {}
 PLAYER_CHAR_CACHE_TTL = 3600.0  # 1 hour
 
-CUSTOM_ID_APPLY = "auto_att_apply"
+CUSTOM_ID_KILL = "auto_att_kill"
+CUSTOM_ID_NOKILL = "auto_att_nokill"
 CUSTOM_ID_IGNORE = "auto_att_ignore"
+# Legacy suggestion messages (before Kill / No Kill buttons)
+CUSTOM_ID_APPLY = "auto_att_apply"
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +91,34 @@ def _build_user_overlaps(
         dominant_char = max(char_map, key=char_map.__getitem__)
         result[uid] = (total, dominant_char)
     return result
+
+
+def qualifying_players_for_event_window(
+    guild_id: int,
+    event_start: datetime,
+    end_time: datetime,
+    presence_percent: float = MIN_PRESENCE_PERCENT,
+) -> tuple[list[tuple[int, float, str]], float]:
+    """
+    Return (qualifying rows, threshold_seconds) using the same rules as auto-attendance proposals.
+
+    Each row is ``(discord_user_id, overlap_seconds, dominant_character_name)``, sorted by character name.
+    ``event_start`` and ``end_time`` must be naive datetimes in local time (same convention as SSO sessions).
+
+    ``presence_percent`` is the minimum percentage of the event duration (e.g. ``50`` for 50%).
+    """
+    if presence_percent <= 0 or presence_percent > 100:
+        msg = f"presence_percent must be in (0, 100], got {presence_percent}"
+        raise ValueError(msg)
+    event_duration = max(1.0, (end_time - event_start).total_seconds())
+    threshold = event_duration * (presence_percent / 100.0)
+    sessions = sso_model.get_sessions_in_range(guild_id, event_start, end_time)
+    if not sessions:
+        return [], threshold
+    user_overlaps = _build_user_overlaps(sessions, event_start, end_time)
+    qualifying = [(uid, overlap, char) for uid, (overlap, char) in user_overlaps.items() if overlap >= threshold]
+    qualifying.sort(key=lambda x: x[2].lower())
+    return qualifying, threshold
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +194,42 @@ async def _resolve_member(guild: disnake.Guild, user_id: int) -> disnake.Member 
         return None
 
 
+async def format_qualifying_proposal_lines(
+    guild_id: int,
+    qualifying: list[tuple[int, float, str]],
+    guild: disnake.Guild,
+) -> list[str]:
+    """Build ``+`` lines (EQDKP / on-box logic) for mob-death suggestions and ``/sso reconcile`` proposals."""
+    lines: list[str] = []
+    for discord_user_id, overlap_secs, online_char in sorted(qualifying, key=lambda x: x[2].lower()):
+        result = await _get_player_character(guild_id, discord_user_id)
+        if result is None:
+            continue
+        player_char, all_eqdkp_chars = result
+        time_str = _fmt_minutes(overlap_secs)
+        member = await _resolve_member(guild, discord_user_id)
+        disc_suffix = _discord_name_suffix(member, discord_user_id)
+        if online_char.lower() in all_eqdkp_chars:
+            lines.append(f"+{online_char} ({time_str}){disc_suffix}")
+        else:
+            lines.append(f"+{player_char} on {online_char} ({time_str}){disc_suffix}")
+    return lines
+
+
 def _make_proposal_view(guild_id: int) -> disnake.ui.View:
     view = disnake.ui.View(timeout=None)
     view.add_item(
         disnake.ui.Button(
-            label="Apply",
-            style=disnake.ButtonStyle.green,
-            custom_id=f"{CUSTOM_ID_APPLY}:{guild_id}",
+            label="Kill",
+            style=disnake.ButtonStyle.success,
+            custom_id=f"{CUSTOM_ID_KILL}:{guild_id}",
+        )
+    )
+    view.add_item(
+        disnake.ui.Button(
+            label="No Kill",
+            style=disnake.ButtonStyle.primary,
+            custom_id=f"{CUSTOM_ID_NOKILL}:{guild_id}",
         )
     )
     view.add_item(
@@ -236,39 +295,20 @@ async def propose_online_players(guild_id: int, mob_name: str, discord_client) -
         # Event.created_at is naive UTC; convert to naive local for session comparison
         event_start_local = evt_created_at.replace(tzinfo=timezone.utc).astimezone(local_tz).replace(tzinfo=None)
 
-        event_duration = max(1.0, (death_time_local - event_start_local).total_seconds())
-        threshold = min(event_duration * MIN_PRESENCE_FRACTION, MIN_PRESENCE_SECONDS)
-
-        sessions = sso_model.get_sessions_in_range(guild_id, event_start_local, death_time_local)
-        if not sessions:
-            continue
-
-        user_overlaps = _build_user_overlaps(sessions, event_start_local, death_time_local)
-        qualifying = [(uid, overlap, char) for uid, (overlap, char) in user_overlaps.items() if overlap >= threshold]
+        qualifying, _threshold = qualifying_players_for_event_window(
+            guild_id, event_start_local, death_time_local, MIN_PRESENCE_PERCENT
+        )
         if not qualifying:
             continue
+
+        event_duration = max(1.0, (death_time_local - event_start_local).total_seconds())
+        event_mins = _fmt_minutes(event_duration)
 
         guild = discord_client.get_guild(guild_id)
         if not guild:
             continue
 
-        # Resolve EQDKP characters and build suggestion lines
-        lines: list[str] = []
-        for discord_user_id, overlap_secs, online_char in sorted(qualifying, key=lambda x: x[2].lower()):
-            result = await _get_player_character(guild_id, discord_user_id)
-            if result is None:
-                continue
-            player_char, all_eqdkp_chars = result
-            time_str = _fmt_minutes(overlap_secs)
-            member = await _resolve_member(guild, discord_user_id)
-            disc_suffix = _discord_name_suffix(member, discord_user_id)
-            if online_char.lower() in all_eqdkp_chars:
-                # Online character belongs to this user -- add directly
-                lines.append(f"+{online_char} ({time_str}){disc_suffix}")
-            else:
-                # Online character is a shared/bot account -- add as "player on box"
-                lines.append(f"+{player_char} on {online_char} ({time_str}){disc_suffix}")
-
+        lines = await format_qualifying_proposal_lines(guild_id, qualifying, guild)
         if not lines:
             continue
 
@@ -276,7 +316,13 @@ async def propose_online_players(guild_id: int, mob_name: str, discord_client) -
         if not channel:
             continue
 
-        event_mins = _fmt_minutes(event_duration)
+        # Record mob-death (ToD) time on the event for kill / no-kill bookkeeping.
+        with get_raid_session(guild_id) as session:
+            evt_row = session.query(Event).filter_by(id=evt_id).first()
+            if evt_row:
+                evt_row.tod_at = death_time_local
+                session.commit()
+
         header = f"**Suggested attendance for `{mob_name}`** (`{len(lines)}` qualifying, event open `{event_mins}`):"
         body = "\n".join(lines)
         content = f"{header}\n```diff\n{body}\n```"
@@ -290,38 +336,83 @@ async def propose_online_players(guild_id: int, mob_name: str, discord_client) -
 
 
 # ---------------------------------------------------------------------------
-# Button handler -- Apply / Ignore
+# Button handler -- Kill / No Kill / Ignore (legacy Apply)
 # ---------------------------------------------------------------------------
+
+
+def _guild_member_for_perms(inter: disnake.MessageInteraction) -> disnake.Member | None:
+    if isinstance(inter.author, disnake.Member):
+        return inter.author
+    g = inter.guild
+    if g is None:
+        return None
+    return g.get_member(inter.author.id)
 
 
 @discord_base.DISCORD_CLIENT.listen("on_button_click")
 async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
     custom_id = inter.component.custom_id or ""
-    is_apply = custom_id.startswith(f"{CUSTOM_ID_APPLY}:")
-    is_ignore = custom_id.startswith(f"{CUSTOM_ID_IGNORE}:")
-    if not is_apply and not is_ignore:
+    parts = custom_id.split(":", 1)
+    if len(parts) != 2:
+        return
+    prefix, guild_s = parts
+    try:
+        guild_id = int(guild_s)
+    except ValueError:
         return
 
-    guild_id = int(custom_id.split(":", 1)[1])
+    is_ignore = prefix == CUSTOM_ID_IGNORE
+    is_kill = prefix == CUSTOM_ID_KILL
+    is_nokill = prefix == CUSTOM_ID_NOKILL
+    is_apply = prefix == CUSTOM_ID_APPLY
+    if not is_ignore and not is_kill and not is_nokill and not is_apply:
+        return
 
     if is_ignore:
         await inter.response.edit_message(view=_make_resolved_view(f"Ignored by {inter.author.display_name}"))
         return
 
-    # Apply: parse +lines from the code block in the original message, strip (Xm) annotations
-    code_match = re.search(r"```\w*\n(.*?)\n```", inter.message.content or "", re.DOTALL)
-    if not code_match:
-        await inter.response.send_message("```diff\n- Could not parse suggestion lines.```", ephemeral=True)
-        return
+    kill_flag: bool | None
+    if is_kill:
+        kill_flag = True
+    elif is_nokill:
+        kill_flag = False
+    else:
+        kill_flag = None
 
-    raw_lines = [ln.strip() for ln in code_match.group(1).splitlines() if ln.strip().startswith("+")]
-    if not raw_lines:
+    if is_kill or is_nokill:
+        member = _guild_member_for_perms(inter)
+        if member is None:
+            await inter.response.send_message(
+                "```diff\n- Could not resolve member for permission check.```",
+                ephemeral=True,
+            )
+            return
+        if is_kill and not perms.can(member, "kill", guild_id):
+            await inter.response.send_message(
+                "```diff\n- You do not have permission for Kill (requires kill permission).```",
+                ephemeral=True,
+            )
+            return
+        if is_nokill and not perms.can(member, "nokill", guild_id):
+            await inter.response.send_message(
+                "```diff\n- You do not have permission for No Kill (requires nokill permission).```",
+                ephemeral=True,
+            )
+            return
+
+    code_match = re.search(r"```\w*\n(.*?)\n```", inter.message.content or "", re.DOTALL)
+    if code_match:
+        raw_lines = [ln.strip() for ln in code_match.group(1).splitlines() if ln.strip().startswith("+")]
+    else:
+        # e.g. reconcile with no EQDKP lines — plain-text body, no fence
+        raw_lines = []
+    if not raw_lines and kill_flag is None:
         await inter.response.edit_message(
             view=_make_resolved_view(f"Applied by {inter.author.display_name} (nothing to add)")
         )
         return
 
-    # Strip trailing (Xm) and optional " [Discord name]" suffix before processing
     cleaned_lines = [re.sub(r"\s*\(\d+m\)\s*(\[[^\]]+\])?\s*$", "", ln) for ln in raw_lines]
 
     eqdkp_client: EqdkpClient | None = None
@@ -329,6 +420,9 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
         eqdkp_client = EqdkpClient(guild_id)
 
     out = ["```diff"]
+    resolved_suffix = inter.author.display_name
+    dkp_for_rename: int | None = None
+    rename_channel: bool = False
 
     with get_raid_session(guild_id) as session:
         evt = session.query(Event).filter_by(channel_id=str(inter.channel_id)).first()
@@ -355,15 +449,15 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
 
             if eqdkp_client and not char.eqdkp_member_id:
                 try:
-                    member = await eqdkp_client.find_character(char.name)
+                    eqdkp_member = await eqdkp_client.find_character(char.name)
                 except Exception as exc:
                     logger.exception("EQdkp find_character failed for %s", char.name)
                     out.append(f"- {char.name}: EQdkp lookup failed ({exc}). Skipped.")
                     continue
-                if member:
-                    char.eqdkp_member_id = member.get("id")
-                    char.eqdkp_user_id = member.get("user_id")
-                    char.eqdkp_main_id = member.get("main_id")
+                if eqdkp_member:
+                    char.eqdkp_member_id = eqdkp_member.get("id")
+                    char.eqdkp_user_id = eqdkp_member.get("user_id")
+                    char.eqdkp_main_id = eqdkp_member.get("main_id")
                     session.flush()
                 else:
                     out.append(f"- {player_name}: not found on EQDKP. Skipped.")
@@ -411,8 +505,40 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
                     session.delete(dup)
                     out.append(f"- {on_character.name} removed (replaced by boxed entry)")
 
+        if kill_flag is not None:
+            evt.killed = kill_flag
+            if evt.tod_at is None:
+                evt.tod_at = datetime.now()
+            dkp_for_rename = evt.dkp_value
+            rename_channel = dkp_for_rename is not None
+            if dkp_for_rename is None:
+                out.append(
+                    "- Must specify a target or dkp value using `/event target` or $dkp before kill/no-kill DKP applies."
+                )
+            else:
+                out.append(
+                    f"+ Event marked as {'killed' if kill_flag else 'not killed'}; DKP reward will be {dkp_for_rename}."
+                )
+            resolved_suffix = f"{resolved_suffix} ({'kill' if kill_flag else 'no kill'})"
+
         session.commit()
 
     out.append("```")
-    await inter.response.edit_message(view=_make_resolved_view(f"Applied by {inter.author.display_name}"))
+
+    await inter.response.edit_message(view=_make_resolved_view(f"Applied by {resolved_suffix}"))
     await inter.followup.send("\n".join(out))
+
+    if kill_flag is not None and rename_channel and dkp_for_rename is not None:
+        ch = inter.channel
+        if ch is not None and hasattr(ch, "edit"):
+            new_name: str | None = None
+            with get_raid_session(guild_id) as session:
+                evt_rename = session.query(Event).filter_by(channel_id=str(inter.channel_id)).first()
+                if evt_rename:
+                    emoji = "\U0001f480" if kill_flag else "\u26d4"
+                    new_name = f"{emoji}{evt_rename.channel_name}"
+            if new_name:
+                try:
+                    await ch.edit(name=new_name)
+                except disnake.HTTPException:
+                    logger.debug("Could not rename channel after auto-attendance kill mark", exc_info=True)

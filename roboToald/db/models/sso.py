@@ -500,7 +500,8 @@ KEY_ZONE_TO_COLUMN: dict[str, str] = {
     "sleeper": "key_st",
 }
 
-# WebSocket ``items`` / legacy ``keys`` short wire name -> SSOAccountCharacter boolean column.
+# WebSocket ``items`` / legacy ``keys`` short wire name -> SSOAccountCharacter column
+# (booleans for zone keys + most items; integers for stack counts: lizard, pearl, peridot, mb3–mb5).
 WIRE_KEY_TO_ATTR: dict[str, str] = {
     "seb": "key_seb",
     "vp": "key_vp",
@@ -509,7 +510,39 @@ WIRE_KEY_TO_ATTR: dict[str, str] = {
     "neck": "item_neck",
     "lizard": "item_lizard",
     "thurg": "item_thurg",
+    "reaper": "item_reaper",
+    "brass_idol": "item_brass_idol",
+    "pearl": "item_pearl",
+    "peridot": "item_peridot",
+    "mb3": "item_mb3",
+    "mb4": "item_mb4",
+    "mb5": "item_mb5",
 }
+
+# Value column -> server-side-only ``*_updated_at`` column (not exposed to WebSocket clients).
+VALUE_ATTR_TO_UPDATED_AT_COL: dict[str, str] = {
+    "key_seb": "key_seb_updated_at",
+    "key_vp": "key_vp_updated_at",
+    "key_st": "key_st_updated_at",
+    "item_void": "item_void_updated_at",
+    "item_neck": "item_neck_updated_at",
+    "item_lizard": "item_lizard_updated_at",
+    "item_thurg": "item_thurg_updated_at",
+    "item_reaper": "item_reaper_updated_at",
+    "item_brass_idol": "item_brass_idol_updated_at",
+    "item_pearl": "item_pearl_updated_at",
+    "item_peridot": "item_peridot_updated_at",
+    "item_mb3": "item_mb3_updated_at",
+    "item_mb4": "item_mb4_updated_at",
+    "item_mb5": "item_mb5_updated_at",
+}
+
+
+def _touch_field_updated_at(character: "SSOAccountCharacter", value_attr: str) -> None:
+    """Set the ``*_updated_at`` column for *value_attr* to now (server-side audit only)."""
+    ts_col = VALUE_ATTR_TO_UPDATED_AT_COL.get(value_attr)
+    if ts_col is not None:
+        setattr(character, ts_col, datetime.datetime.now())
 
 
 def merge_keys_and_items_message(msg: dict) -> dict:
@@ -521,12 +554,18 @@ def merge_keys_and_items_message(msg: dict) -> dict:
     return {**keys, **items}
 
 
+_INT_ITEM_ATTRS = frozenset({"item_lizard", "item_pearl", "item_peridot", "item_mb3", "item_mb4", "item_mb5"})
+
+
 def merged_wires_to_character_kwargs(merged: dict) -> dict:
     """Map merged wire dict to keyword names accepted by :func:`update_account_character`."""
     kw = {}
     for wire, attr in WIRE_KEY_TO_ATTR.items():
         if wire in merged:
-            kw[attr] = merged[wire]
+            val = merged[wire]
+            if attr in _INT_ITEM_ATTRS and isinstance(val, bool):
+                val = 1 if val else 0
+            kw[attr] = val
     return kw
 
 
@@ -1485,8 +1524,31 @@ class SSOAccountCharacter(base.Base):
 
     item_void = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
     item_neck = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
-    item_lizard = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_lizard = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
     item_thurg = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+
+    item_reaper = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_brass_idol = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_pearl = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+    item_peridot = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+    item_mb3 = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+    item_mb4 = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+    item_mb5 = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+
+    key_seb_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    key_vp_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    key_st_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_void_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_neck_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_lizard_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_thurg_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_reaper_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_brass_idol_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_pearl_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_peridot_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_mb3_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_mb4_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    item_mb5_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
 
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
@@ -1586,8 +1648,15 @@ def update_account_character(
     key_st: bool | None = None,
     item_void: bool | None = None,
     item_neck: bool | None = None,
-    item_lizard: bool | None = None,
+    item_lizard: int | None = None,
     item_thurg: bool | None = None,
+    item_reaper: bool | None = None,
+    item_brass_idol: bool | None = None,
+    item_pearl: int | None = None,
+    item_peridot: int | None = None,
+    item_mb3: int | None = None,
+    item_mb4: int | None = None,
+    item_mb5: int | None = None,
 ) -> bool:
     """Update character fields. Returns True if the character existed and any field changed."""
     with base.get_session() as session:
@@ -1612,33 +1681,61 @@ def update_account_character(
                 character.level = level
                 changed = True
         if key_seb is not None:
-            if character.key_seb != key_seb:
-                character.key_seb = key_seb
-                changed = True
+            character.key_seb = key_seb
+            _touch_field_updated_at(character, "key_seb")
+            changed = True
         if key_vp is not None:
-            if character.key_vp != key_vp:
-                character.key_vp = key_vp
-                changed = True
+            character.key_vp = key_vp
+            _touch_field_updated_at(character, "key_vp")
+            changed = True
         if key_st is not None:
-            if character.key_st != key_st:
-                character.key_st = key_st
-                changed = True
+            character.key_st = key_st
+            _touch_field_updated_at(character, "key_st")
+            changed = True
         if item_void is not None:
-            if character.item_void != item_void:
-                character.item_void = item_void
-                changed = True
+            character.item_void = item_void
+            _touch_field_updated_at(character, "item_void")
+            changed = True
         if item_neck is not None:
-            if character.item_neck != item_neck:
-                character.item_neck = item_neck
-                changed = True
+            character.item_neck = item_neck
+            _touch_field_updated_at(character, "item_neck")
+            changed = True
         if item_lizard is not None:
-            if character.item_lizard != item_lizard:
-                character.item_lizard = item_lizard
-                changed = True
+            character.item_lizard = item_lizard
+            _touch_field_updated_at(character, "item_lizard")
+            changed = True
         if item_thurg is not None:
-            if character.item_thurg != item_thurg:
-                character.item_thurg = item_thurg
-                changed = True
+            character.item_thurg = item_thurg
+            _touch_field_updated_at(character, "item_thurg")
+            changed = True
+        if item_reaper is not None:
+            character.item_reaper = item_reaper
+            _touch_field_updated_at(character, "item_reaper")
+            changed = True
+        if item_brass_idol is not None:
+            character.item_brass_idol = item_brass_idol
+            _touch_field_updated_at(character, "item_brass_idol")
+            changed = True
+        if item_pearl is not None:
+            character.item_pearl = item_pearl
+            _touch_field_updated_at(character, "item_pearl")
+            changed = True
+        if item_peridot is not None:
+            character.item_peridot = item_peridot
+            _touch_field_updated_at(character, "item_peridot")
+            changed = True
+        if item_mb3 is not None:
+            character.item_mb3 = item_mb3
+            _touch_field_updated_at(character, "item_mb3")
+            changed = True
+        if item_mb4 is not None:
+            character.item_mb4 = item_mb4
+            _touch_field_updated_at(character, "item_mb4")
+            changed = True
+        if item_mb5 is not None:
+            character.item_mb5 = item_mb5
+            _touch_field_updated_at(character, "item_mb5")
+            changed = True
         if changed:
             session.commit()
         return changed
@@ -1661,20 +1758,46 @@ def mark_key_from_park_zone(guild_id: int, name: str, park_zone_key: str | None)
         if getattr(character, column):
             return False
         setattr(character, column, True)
+        _touch_field_updated_at(character, column)
         session.commit()
     return True
 
 
 def set_character_item(guild_id: int, name: str, wire_key: str, value: bool | None) -> bool:
-    """Set one tracked wire flag (zone keys + inventory items) to True, False, or None. Returns False if not found."""
+    """Set one tracked wire flag (zone keys + inventory booleans) to True, False, or None. Returns False if not found."""
     column = WIRE_KEY_TO_ATTR.get(wire_key)
     if not column:
+        return False
+    table_col = SSOAccountCharacter.__table__.c.get(column)
+    if table_col is None or not isinstance(table_col.type, sqlalchemy.Boolean):
         return False
     with base.get_session() as session:
         character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
         if not character:
             return False
         setattr(character, column, value)
+        _touch_field_updated_at(character, column)
+        session.commit()
+    return True
+
+
+def set_character_stack_item(guild_id: int, name: str, wire_key: str, value: int | None) -> bool:
+    """Set one stack-count inventory wire (``lizard``, ``pearl``, ``peridot``, ``mb3``–``mb5``) to an int or ``None`` (unknown).
+
+    Returns False if the character or wire key is not found, or the column is not an integer stack field.
+    """
+    column = WIRE_KEY_TO_ATTR.get(wire_key)
+    if not column or column not in _INT_ITEM_ATTRS:
+        return False
+    table_col = SSOAccountCharacter.__table__.c.get(column)
+    if table_col is None or not isinstance(table_col.type, sqlalchemy.Integer):
+        return False
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
+        if not character:
+            return False
+        setattr(character, column, value)
+        _touch_field_updated_at(character, column)
         session.commit()
     return True
 

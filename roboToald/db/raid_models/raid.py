@@ -19,6 +19,7 @@ class Event(RaidBase):
     dkp = sa.Column(sa.Integer)
     nokill_dkp = sa.Column(sa.Integer)
     killed = sa.Column(sa.Boolean)
+    tod_at = sa.Column(sa.DateTime)
     created_at = sa.Column(sa.DateTime)
     raid_status_post_id = sa.Column(sa.Text)
     first_message_id = sa.Column(sa.Text)

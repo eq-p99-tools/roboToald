@@ -24,6 +24,13 @@ def _char(name, klass=None, **kwargs):
         "item_neck": kwargs.get("item_neck"),
         "item_lizard": kwargs.get("item_lizard"),
         "item_thurg": kwargs.get("item_thurg"),
+        "item_reaper": kwargs.get("item_reaper"),
+        "item_brass_idol": kwargs.get("item_brass_idol"),
+        "item_pearl": kwargs.get("item_pearl"),
+        "item_peridot": kwargs.get("item_peridot"),
+        "item_mb3": kwargs.get("item_mb3"),
+        "item_mb4": kwargs.get("item_mb4"),
+        "item_mb5": kwargs.get("item_mb5"),
     }
     return SimpleNamespace(**defaults)
 
@@ -46,6 +53,12 @@ def test_merge_keys_and_items_message():
         "seb": True,
     }
     assert sso_model.merge_keys_and_items_message({"keys": {"vp": True}, "items": {}}) == {"vp": True}
+
+
+def test_merged_wires_coerces_bool_to_int_for_stack_items():
+    kw = sso_model.merged_wires_to_character_kwargs({"lizard": True, "pearl": False})
+    assert kw["item_lizard"] == 1
+    assert kw["item_pearl"] == 0
 
 
 def test_build_account_tree_shape():
@@ -77,6 +90,13 @@ def test_build_account_tree_shape():
                         "neck": None,
                         "lizard": None,
                         "thurg": None,
+                        "reaper": None,
+                        "brass_idol": None,
+                        "pearl": None,
+                        "peridot": None,
+                        "mb3": None,
+                        "mb4": None,
+                        "mb5": None,
                     },
                     "keys": {"seb": None, "vp": None, "st": None},
                 }
@@ -151,6 +171,13 @@ def test_compute_diff_character_add_remove_update():
             "neck": None,
             "lizard": None,
             "thurg": None,
+            "reaper": None,
+            "brass_idol": None,
+            "pearl": None,
+            "peridot": None,
+            "mb3": None,
+            "mb4": None,
+            "mb5": None,
         },
         "keys": {"seb": None, "vp": None, "st": None},
     }

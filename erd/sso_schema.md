@@ -224,7 +224,7 @@ An alternative name for a single account. Logging in with an alias resolves to t
 
 ### SSOAccountCharacter
 
-Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) and tracked inventory flags (`item_void`, `item_neck`, `item_lizard`, `item_thurg`) are tri-state: null = unknown, true/false = confirmed. WebSocket wire names are in `WIRE_KEY_TO_ATTR` in `sso.py`.
+Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) and tracked inventory fields use WebSocket wire names from `WIRE_KEY_TO_ATTR` in `sso.py`. Booleans are tri-state (`null` = unknown). Stack-count columns are nullable integers (`null` = unknown).
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -240,8 +240,16 @@ Maps a character name and class to an account. Characters have optional bind/par
 | `key_st` | Boolean | nullable | Sleeper's Key |
 | `item_void` | Boolean | nullable | Box of the Void (inventory) |
 | `item_neck` | Boolean | nullable | Necklace of Resolution |
-| `item_lizard` | Boolean | nullable | Lizard Blood Potion |
+| `item_lizard` | Integer | nullable | Lizard Blood Potion stack count |
 | `item_thurg` | Boolean | nullable | Vial of Velium Vapors |
+| `item_reaper` | Boolean | nullable | Reaper of the Dead |
+| `item_brass_idol` | Boolean | nullable | Shiny Brass Idol |
+| `item_pearl` | Integer | nullable | Pearl stack count |
+| `item_peridot` | Integer | nullable | Peridot stack count |
+| `item_mb3` | Integer | nullable | Mana Battery - Class Three stack count |
+| `item_mb4` | Integer | nullable | Mana Battery - Class Four stack count |
+| `item_mb5` | Integer | nullable | Mana Battery - Class Five stack count |
+| `key_seb_updated_at`, `key_vp_updated_at`, `key_st_updated_at`, `item_void_updated_at`, `item_neck_updated_at`, `item_lizard_updated_at`, `item_thurg_updated_at`, `item_reaper_updated_at`, `item_brass_idol_updated_at`, `item_pearl_updated_at`, `item_peridot_updated_at`, `item_mb3_updated_at`, `item_mb4_updated_at`, `item_mb5_updated_at` | DateTime | nullable | Server-side only: last time the matching value column was written (not exposed on WebSocket/API) |
 | `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
 
 **Unique constraint:** `(name, guild_id)`

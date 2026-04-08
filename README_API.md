@@ -33,8 +33,15 @@ The primary data structure returned by the API is the `account_tree` -- a dictio
           "st": false,
           "void": true,
           "neck": null,
-          "lizard": false,
-          "thurg": null
+          "lizard": 0,
+          "thurg": null,
+          "reaper": false,
+          "brass_idol": false,
+          "pearl": 0,
+          "peridot": 0,
+          "mb3": 0,
+          "mb4": 1,
+          "mb5": 0
         },
         "keys": {
           "seb": true,
@@ -61,11 +68,13 @@ Field details:
 | `characters.*.bind` | `string?` | Zone key where the character is bound (null if unknown) |
 | `characters.*.park` | `string?` | Zone key where the character is parked (null if unknown) |
 | `characters.*.level` | `int?` | Character level (null if unknown) |
-| `characters.*.items` | `object` | Canonical map: `seb`, `vp`, `st` (zone keys) plus `void`, `neck`, `lizard`, `thurg` (tracked inventory). Each value is `true`, `false`, or `null` (unknown). |
+| `characters.*.items` | `object` | Canonical map: `seb`, `vp`, `st` (zone keys); booleans `void`, `neck`, `thurg`, `reaper`, `brass_idol`; integer stack counts `lizard`, `pearl`, `peridot`, `mb3`, `mb4`, `mb5` (Mana Battery Class Three/Four/Five). Booleans use `true` / `false` / `null` (unknown). Stack keys use a non-negative integer or `null` (unknown). |
 | `characters.*.keys` | `object` | **Legacy (optional):** duplicate of `seb` / `vp` / `st` only, for older login-proxy builds. New clients should read `items` only. May be omitted when legacy support is disabled server-side (`INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE` in `api/websocket.py`). |
 | `last_login` | `string?` | ISO 8601 UTC timestamp of last login. Null if never logged in. Accounts with `last_login` before epoch year 2 are treated as never-logged-in. |
 | `last_login_by` | `string?` | Discord display name of the user who last logged in |
 | `active_character` | `string?` | Character name from the most recent active heartbeat session, or null if no active session |
+
+Per-field “last updated” timestamps for keys and inventory are stored **only in the database** (for server-side use). They are **not** included in `full_state`, WebSocket payloads, or HTTP responses to clients.
 
 ### Dynamic Tags
 

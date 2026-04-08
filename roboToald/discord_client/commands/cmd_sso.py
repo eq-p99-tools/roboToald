@@ -74,7 +74,7 @@ For example, it might be a good idea to alias accounts with their character name
 ## Character items
 Zone keys (Sebilis, Veeshan's Peak, Sleeper's Tomb) and tracked inventory items can be set per character for the login proxy UI and optional dynamic-tag filtering.
 
-- `/sso_admin character items <character_name> <item> <status>` - Set a zone key or tracked item to Yes, No, or Unknown
+- `/sso_admin character items <character_name> <item> [status] [stack_count]` - Set a zone key or boolean item (Yes/No/Unknown), or a stack count for stack-tracked items (Lizard Blood Potion, Pearl, Peridot, Mana Battery Class Three/Four/Five) (use **stack_count**, omit for Unknown)
 
 ## User Access Revocation
 Revoking access to a user will prevent the user from logging in to otherwise authorized accounts via the P99LoginProxy Application.
@@ -96,6 +96,30 @@ Review access and changes to the SSO system.
 EVENT_CHANNEL_MATCHER = re.compile(r".*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$")
 
 
+def _message_is_dollar_kill_or_nokill(content: str | None) -> bool:
+    if not content:
+        return False
+    parts = content.strip().split(None, 1)
+    if not parts:
+        return False
+    return parts[0].lower() in ("$kill", "$nokill")
+
+
+async def _infer_tod_naive_local_from_first_kill_message(
+    channel: disnake.TextChannel,
+    evt: Event,
+    local_tz: datetime.tzinfo,
+) -> datetime.datetime | None:
+    """First ``$kill`` / ``$nokill`` after event creation; naive local time from Discord message timestamp."""
+    if not evt.created_at:
+        return None
+    after_dt = evt.created_at.replace(tzinfo=datetime.timezone.utc)
+    async for msg in channel.history(limit=250, after=after_dt, oldest_first=True):
+        if _message_is_dollar_kill_or_nokill(msg.content):
+            return msg.created_at.astimezone(local_tz).replace(tzinfo=None)
+    return None
+
+
 def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
     """Bracket suffix for Discord list when flags are confirmed True."""
     parts = []
@@ -109,10 +133,14 @@ def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
         parts.append("Void")
     if c.item_neck is True:
         parts.append("Neck")
-    if c.item_lizard is True:
-        parts.append("Liz")
+    if c.item_lizard is not None and c.item_lizard > 0:
+        parts.append(f"Liz×{c.item_lizard}")
     if c.item_thurg is True:
         parts.append("Thurg")
+    for label, attr in (("MB3", "item_mb3"), ("MB4", "item_mb4"), ("MB5", "item_mb5")):
+        n = getattr(c, attr, None)
+        if n is not None and n > 0:
+            parts.append(f"{label}×{n}")
     if not parts:
         return ""
     return f" [{':'.join(parts)}]"
@@ -204,6 +232,42 @@ async def character_autocomplete(inter: disnake.ApplicationCommandInteraction, s
         return filtered_characters[:25]
     except Exception:
         # In case of error, return an empty list
+        return []
+
+
+# (display label, wire key) — matches inventory / key names; value sent to slash handler is the wire key.
+TRACKED_INVENTORY_ITEM_AC_CHOICES: tuple[tuple[str, str], ...] = (
+    ("Trakanon Idol (Sebilis key)", "seb"),
+    ("Key of Veeshan", "vp"),
+    ("Sleeper's Key", "st"),
+    ("Box of the Void", "void"),
+    ("Necklace of Resolution", "neck"),
+    ("Vial of Velium Vapors", "thurg"),
+    ("Lizard Blood Potion", "lizard"),
+    ("Pearl", "pearl"),
+    ("Peridot", "peridot"),
+    ("Mana Battery - Class Three", "mb3"),
+    ("Mana Battery - Class Four", "mb4"),
+    ("Mana Battery - Class Five", "mb5"),
+)
+
+TRACKED_ITEM_WIRE_TO_LABEL: dict[str, str] = {wire: label for label, wire in TRACKED_INVENTORY_ITEM_AC_CHOICES}
+
+BOOL_ITEM_WIRES: frozenset[str] = frozenset(("seb", "vp", "st", "void", "neck", "thurg"))
+STACK_ITEM_WIRES: frozenset[str] = frozenset(("lizard", "pearl", "peridot", "mb3", "mb4", "mb5"))
+
+
+async def tracked_inventory_item_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete for `/sso_admin character items`: full item names, values are wire keys."""
+    try:
+        needle = (string or "").lower()
+        choices = [
+            disnake.OptionChoice(name=label, value=wire)
+            for label, wire in TRACKED_INVENTORY_ITEM_AC_CHOICES
+            if not needle or needle in label.lower()
+        ]
+        return choices[:25]
+    except Exception:
         return []
 
 
@@ -1310,20 +1374,224 @@ class SSOCommands(commands.Cog):
 
     @staticmethod
     async def _get_reconcile_embed_response(
-        channel: disnake.TextChannel, inter: disnake.ApplicationCommandInteraction = None
-    ) -> list[disnake.Embed] | None:
+        channel: disnake.TextChannel,
+        inter: disnake.ApplicationCommandInteraction = None,
+        *,
+        attendance_percent: float = 50.0,
+    ) -> tuple[list[disnake.Embed] | None, tuple[str, disnake.ui.View] | None]:
         guild_id = channel.guild.id
         event_time = None
+        legacy_warning: str | None = None
+        evt: Event | None = None
+
+        def split_fields(lines, maxlen=1024):
+            chunks = []
+            current = []
+            current_len = 0
+            for line in lines:
+                add_len = len(line) + 1
+                if current_len + add_len > maxlen:
+                    chunks.append("\n".join(current))
+                    current = [line]
+                    current_len = add_len
+                else:
+                    current.append(line)
+                    current_len += add_len
+            if current:
+                chunks.append("\n".join(current))
+            return chunks
+
+        def build_auto_attendance_embeds(
+            note: str | None,
+            window_text: str,
+            rule_text: str,
+            qual_lines: list[str],
+        ) -> list[disnake.Embed]:
+            embed_title = "SSO Reconciliation (auto-attendance)"
+            embeds_out: list[disnake.Embed] = []
+            current_embed = disnake.Embed(title=embed_title)
+            current_size = len(embed_title)
+            current_fields = 0
+
+            def add_field(name: str, value: str) -> None:
+                nonlocal current_embed, current_size, current_fields, embeds_out
+                field_size = len(name) + len(value)
+                if current_size + field_size > 6000 or current_fields >= 25:
+                    embeds_out.append(current_embed)
+                    current_embed = disnake.Embed(title=embed_title)
+                    current_size = len(embed_title)
+                    current_fields = 0
+                current_embed.add_field(name=name, value=value, inline=False)
+                current_size += field_size
+                current_fields += 1
+
+            add_field("Window", window_text)
+            if note:
+                add_field("Note", note)
+            add_field("Attendance rule", rule_text)
+            qual_chunks = split_fields(qual_lines) if qual_lines else []
+            if qual_chunks:
+                for i, chunk in enumerate(qual_chunks, 1):
+                    add_field(
+                        f"Qualifying {i}" if len(qual_chunks) > 1 else "Qualifying",
+                        chunk,
+                    )
+            else:
+                add_field("Qualifying", "_No characters meet the overlap threshold for this window._")
+
+            if len(current_embed.fields) > 0:
+                embeds_out.append(current_embed)
+            return embeds_out
 
         if guild_id in config.raid_guild_ids():
-            # Fast path: read event time directly from the raid database
             with get_raid_session(guild_id) as session:
                 evt = session.query(Event).filter_by(channel_id=str(channel.id)).first()
             if not evt or not evt.created_at:
                 if inter:
                     await inter.send(content="⚠️ **No event found for this channel.**", ephemeral=True)
-                return
+                return None, None
             event_time = evt.created_at.replace(tzinfo=datetime.timezone.utc)
+
+            local_tz = datetime.datetime.now().astimezone().tzinfo
+            tod_local: datetime.datetime | None = evt.tod_at
+            inferred_note: str | None = None
+
+            if config.get_raid_setting(guild_id, "auto_attendance"):
+                # Imported here to avoid circular import (auto_attendance → discord_client.base → cmd_sso).
+                from roboToald.raid.auto_attendance import (
+                    _make_proposal_view,
+                    format_qualifying_proposal_lines,
+                    qualifying_players_for_event_window,
+                )
+
+                event_start_local = (
+                    evt.created_at.replace(tzinfo=datetime.timezone.utc).astimezone(local_tz).replace(tzinfo=None)
+                )
+
+                async def make_reconcile_proposal(qualifying_players):
+                    guild = channel.guild
+                    proposal_lines = await format_qualifying_proposal_lines(guild_id, qualifying_players, guild)
+                    if proposal_lines:
+                        body = "\n".join(proposal_lines)
+                        header = f"**Suggested attendance (reconcile)** (`{len(proposal_lines)}` qualifying):"
+                        proposal_content = f"{header}\n```diff\n{body}\n```"
+                    else:
+                        proposal_content = (
+                            "**Suggested attendance (reconcile)** — **empty** (no EQDKP `+` lines for these overlaps). "
+                            "You can still use the buttons below."
+                        )
+                    return (proposal_content, _make_proposal_view(guild_id))
+
+                # Open event: overlap through reconcile time (treat "now" as ToD) + same Kill / No Kill / Ignore as mob death.
+                if evt.killed is None:
+                    tod_effective = datetime.datetime.now()
+                    if tod_effective < event_start_local:
+                        if inter:
+                            await inter.send(
+                                content="⚠️ **Event ToD is before event start — cannot reconcile.**", ephemeral=True
+                            )
+                        return None, None
+                    presence_percent = max(0.01, min(100.0, attendance_percent))
+                    try:
+                        qualifying, threshold = qualifying_players_for_event_window(
+                            guild_id, event_start_local, tod_effective, presence_percent
+                        )
+                    except ValueError as exc:
+                        if inter:
+                            await inter.send(content=f"⚠️ **Invalid attendance percent:** `{exc}`", ephemeral=True)
+                        return None, None
+
+                    event_duration_sec = max(1.0, (tod_effective - event_start_local).total_seconds())
+                    dur_min = event_duration_sec / 60.0
+                    thresh_min = max(1, int(threshold / 60))
+                    rule_text = (
+                        f"Minimum overlap: **{thresh_min}m** (**{attendance_percent:g}%** of the **{dur_min:.1f}** min window). "
+                        f"**{len(qualifying)}** qualifying. Re-run with a lower `attendance_percent` to widen."
+                    )
+
+                    es_aware = event_start_local.replace(tzinfo=local_tz)
+                    tod_aware = tod_effective.replace(tzinfo=local_tz)
+                    window_text = (
+                        f"<t:{int(es_aware.timestamp())}:F> → <t:{int(tod_aware.timestamp())}:F> "
+                        "(event start → now, reconcile time)"
+                    )
+                    open_note = (
+                        "Open event — the overlap window ends **now** (when you ran this command). "
+                        "Use **Kill**, **No Kill**, or **Ignore** on the suggestion below (same as a mob-death proposal)."
+                    )
+
+                    qual_lines = [
+                        f"<@{uid}> `{char}` — {max(1, int(ov / 60))}m overlap" for uid, ov, char in qualifying
+                    ]
+                    embeds = build_auto_attendance_embeds(open_note, window_text, rule_text, qual_lines)
+
+                    return embeds, await make_reconcile_proposal(qualifying)
+
+                if tod_local is None and evt.killed is not None:
+                    inferred = await _infer_tod_naive_local_from_first_kill_message(channel, evt, local_tz)
+                    if inferred is not None:
+                        tod_local = inferred
+                        inferred_note = (
+                            "ToD was missing; used the timestamp of the first `$kill` or `$nokill` after event start "
+                            "(saved to this event)."
+                        )
+                        with get_raid_session(guild_id) as session:
+                            row = session.query(Event).filter_by(id=evt.id).first()
+                            if row is not None and row.tod_at is None:
+                                row.tod_at = tod_local
+                                session.commit()
+
+                if tod_local is not None:
+                    if tod_local < event_start_local:
+                        if inter:
+                            await inter.send(
+                                content="⚠️ **Event ToD is before event start — cannot reconcile.**", ephemeral=True
+                            )
+                        return None, None
+                    presence_percent = max(0.01, min(100.0, attendance_percent))
+                    try:
+                        qualifying, threshold = qualifying_players_for_event_window(
+                            guild_id, event_start_local, tod_local, presence_percent
+                        )
+                    except ValueError as exc:
+                        if inter:
+                            await inter.send(content=f"⚠️ **Invalid attendance percent:** `{exc}`", ephemeral=True)
+                        return None, None
+
+                    event_duration_sec = max(1.0, (tod_local - event_start_local).total_seconds())
+                    dur_min = event_duration_sec / 60.0
+                    thresh_min = max(1, int(threshold / 60))
+                    rule_text = (
+                        f"Minimum overlap: **{thresh_min}m** (**{attendance_percent:g}%** of the **{dur_min:.1f}** min window). "
+                        f"**{len(qualifying)}** qualifying. Re-run with a lower `attendance_percent` to widen."
+                    )
+
+                    es_aware = event_start_local.replace(tzinfo=local_tz)
+                    tod_aware = tod_local.replace(tzinfo=local_tz)
+                    window_text = (
+                        f"<t:{int(es_aware.timestamp())}:F> → <t:{int(tod_aware.timestamp())}:F> (event start → ToD)"
+                    )
+
+                    qual_lines = [
+                        f"<@{uid}> `{char}` — {max(1, int(ov / 60))}m overlap" for uid, ov, char in qualifying
+                    ]
+
+                    embeds = build_auto_attendance_embeds(inferred_note, window_text, rule_text, qual_lines)
+                    return embeds, await make_reconcile_proposal(qualifying)
+
+                legacy_warning = (
+                    "⚠️ **No ToD on file** and no `$kill` / `$nokill` message found after event start — using the "
+                    "legacy session window. Use **Kill** / **No Kill** on an auto-attendance suggestion to record "
+                    "ToD, or run `$kill` / `$nokill` in this channel."
+                )
+            else:
+                if evt.killed is None:
+                    legacy_warning = (
+                        "⚠️ **Event still open** (kill / no-kill not decided) — using the legacy session window "
+                        "(−5 min / +1 h from event creation). Mark `$kill` or `$nokill`, or enable auto-attendance."
+                    )
+                else:
+                    legacy_warning = None
         else:
             # Fallback: scrape the Raid Status embed from channel history
             status_embed = None
@@ -1345,7 +1613,7 @@ class SSOCommands(commands.Cog):
             if not status_embed:
                 if inter:
                     await inter.send(content="⚠️ **No Raid Status message found in this channel.**", ephemeral=True)
-                return
+                return None, None
 
             event_field = ([f for f in status_embed.fields if f.name == "Event Review"] or [None])[0]
             if not event_field:
@@ -1353,7 +1621,7 @@ class SSOCommands(commands.Cog):
                     await inter.send(
                         content="⚠️ **Could not find Event Review field in Raid Status message.**", ephemeral=True
                     )
-                return
+                return None, None
             event_header = event_field.value.splitlines()[1]
             event_time = event_header.split(" added at ")[1]
             event_time = " ".join(event_time.split(" ")[:3])
@@ -1364,14 +1632,14 @@ class SSOCommands(commands.Cog):
             except ValueError:
                 if inter:
                     await inter.send(content="⚠️ **Could not parse event time in Raid Status message.**", ephemeral=True)
-                return
+                return None, None
 
         if not event_time:
             if inter:
                 await inter.send(content="⚠️ **Could not find event time in Raid Status message.**", ephemeral=True)
-            return
+            return None, None
 
-        # Get character sessions overlapping the event window (-5 min to +1 hour)
+        # Legacy: character sessions overlapping the event window (-5 min to +1 hour)
         start_time = event_time - datetime.timedelta(minutes=5)
         end_time = event_time + datetime.timedelta(hours=1)
 
@@ -1389,43 +1657,24 @@ class SSOCommands(commands.Cog):
             logins.append(f"<t:{first}:T>–<t:{last}:T> <@{s.discord_user_id}>: `{s.character_name}`")
         logins.sort()
 
-        def split_fields(lines, maxlen=1024):
-            chunks = []
-            current = []
-            current_len = 0
-            for line in lines:
-                # +1 for the newline character
-                add_len = len(line) + 1
-                if current_len + add_len > maxlen:
-                    chunks.append("\n".join(current))
-                    current = [line]
-                    current_len = add_len
-                else:
-                    current.append(line)
-                    current_len += add_len
-            if current:
-                chunks.append("\n".join(current))
-            return chunks
-
-        # Format response message
         embed_title = "SSO Reconciliation"
         embeds = []
         current_embed = disnake.Embed(title=embed_title)
         current_size = len(embed_title)
         current_fields = 0
-        # Add Event Time field first
         event_time_field = ("Event Time", f"<t:{int(event_time.timestamp())}:F>")
         current_embed.add_field(name=event_time_field[0], value=event_time_field[1], inline=False)
         current_size += len(event_time_field[0]) + len(event_time_field[1])
         current_fields += 1
-        # Chunk logins into field-sized groups
+        if legacy_warning:
+            current_embed.add_field(name="Note", value=legacy_warning, inline=False)
+            current_size += len("Note") + len(legacy_warning)
+            current_fields += 1
         login_chunks = split_fields(logins)
-        # Add login_chunks fields
         for i, chunk in enumerate(login_chunks, 1):
             field_name = f"Active Sessions {i}" if len(login_chunks) > 1 else "Active Sessions"
             field_value = chunk
             field_size = len(field_name) + len(field_value)
-            # 6000 char limit per embed and 25 fields per embed
             if current_size + field_size > 6000 or current_fields >= 25:
                 embeds.append(current_embed)
                 current_embed = disnake.Embed(title=embed_title)
@@ -1444,13 +1693,27 @@ class SSOCommands(commands.Cog):
             current_embed.add_field(name="Active Sessions", value=no_logs_value, inline=False)
             current_size += len("Active Sessions") + len(no_logs_value)
             current_fields += 1
-        # Append last embed if it has fields
         if len(current_embed.fields) > 0:
             embeds.append(current_embed)
-        return embeds
+        return embeds, None
 
-    @sso.sub_command(description="Show event-channel-specific audit", name="reconcile")
-    async def reconcile(self, inter: disnake.ApplicationCommandInteraction):
+    @sso.sub_command(
+        description=(
+            "Event-channel SSO audit. Optional min-online % (1–100, default 50) when auto-attendance applies."
+        ),
+        name="reconcile",
+    )
+    async def reconcile(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        attendance_percent: float = commands.Param(
+            default=50.0,
+            name="attendance_percent",
+            description="Min % of event→ToD window online (auto-attendance only). Default 50.",
+            ge=1.0,
+            le=100.0,
+        ),
+    ):
         # check if this is an event channel (the channel name will have some emoji followed by target-mon-DD-HH(am/pm))
 
         if not EVENT_CHANNEL_MATCHER.match(inter.channel.name):
@@ -1458,11 +1721,16 @@ class SSOCommands(commands.Cog):
             return
 
         await inter.response.defer()
-        embeds = await self._get_reconcile_embed_response(channel=inter.channel, inter=inter)
+        embeds, proposal = await self._get_reconcile_embed_response(
+            channel=inter.channel, inter=inter, attendance_percent=attendance_percent
+        )
 
         if embeds:
             for embed in embeds:
                 await inter.send(embed=embed, allowed_mentions=disnake.AllowedMentions(users=False))
+        if proposal:
+            proposal_content, proposal_view = proposal
+            await inter.send(content=proposal_content, view=proposal_view)
 
     @sso.sub_command_group(description="Character commands", name="character")
     async def character(self, inter: disnake.ApplicationCommandInteraction):
@@ -1532,38 +1800,68 @@ class SSOCommands(commands.Cog):
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
-    @character_admin.sub_command(description="Set zone key or tracked inventory item for a character", name="items")
+    @character_admin.sub_command(
+        description="Set zone key, boolean item, or stack-count item for a character", name="items"
+    )
     async def character_items(
         self,
         inter: disnake.ApplicationCommandInteraction,
         character_name: str = commands.Param(description="Character name", autocomplete=character_autocomplete),
         item: str = commands.Param(
-            description="Which item",
-            choices=["Seb", "VP", "ST", "Void", "Neck", "Lizard", "Thurg"],
+            description="Tracked key or inventory item (search by name)",
+            autocomplete=tracked_inventory_item_autocomplete,
         ),
-        status: str = commands.Param(
-            description="Whether the character has the item",
+        status: str | None = commands.Param(
+            default=None,
+            description="Yes/No/Unknown for zone keys and boolean items (not used for stack-count items)",
             choices=["Yes", "No", "Unknown"],
         ),
+        stack_count: int | None = commands.Param(
+            default=None,
+            description="Count for stack items (0+). Omit for Unknown. Not for keys / Vial / Idol / Necklace / Void.",
+            ge=0,
+            le=999_999,
+        ),
     ):
-        item_map = {
-            "Seb": "seb",
-            "VP": "vp",
-            "ST": "st",
-            "Void": "void",
-            "Neck": "neck",
-            "Lizard": "lizard",
-            "Thurg": "thurg",
-        }
-        value = {"Yes": True, "No": False, "Unknown": None}[status]
         try:
             character_name = character_name.lower().capitalize()
-            ok = sso_model.set_character_item(inter.guild_id, character_name, item_map[item], value)
-            if not ok:
-                message = f"⚠️🧍 **Character not found:** `{character_name}`"
-                await inter.send(content=message, ephemeral=True)
+            item_label = TRACKED_ITEM_WIRE_TO_LABEL.get(item, item)
+            if item in BOOL_ITEM_WIRES:
+                if stack_count is not None:
+                    await inter.send(
+                        content="⚠️🧍 **stack_count** is only for stack items (e.g. **Lizard Blood Potion**, **Pearl**, **Peridot**, **Mana Battery - Class Three/Four/Five**).",
+                        ephemeral=True,
+                    )
+                    return
+                if status is None:
+                    await inter.send(
+                        content="⚠️🧍 Choose **Yes**, **No**, or **Unknown** for this item.",
+                        ephemeral=True,
+                    )
+                    return
+                value = {"Yes": True, "No": False, "Unknown": None}[status]
+                ok = sso_model.set_character_item(inter.guild_id, character_name, item, value)
+                if not ok:
+                    message = f"⚠️🧍 **Character not found:** `{character_name}`"
+                    await inter.send(content=message, ephemeral=True)
+                    return
+                message = f"🔑 Set `{character_name}` **{item_label}** to **{status}**."
+            elif item in STACK_ITEM_WIRES:
+                ok = sso_model.set_character_stack_item(inter.guild_id, character_name, item, stack_count)
+                if not ok:
+                    message = f"⚠️🧍 **Character not found:** `{character_name}`"
+                    await inter.send(content=message, ephemeral=True)
+                    return
+                if stack_count is None:
+                    message = f"🔑 Set `{character_name}` **{item_label}** count to **Unknown**."
+                else:
+                    message = f"🔑 Set `{character_name}` **{item_label}** count to **{stack_count}**."
+            else:
+                await inter.send(
+                    content="⚠️🧍 **Unknown item.** Pick from the list (or re-open the command after a bot update).",
+                    ephemeral=True,
+                )
                 return
-            message = f"🔑 Set `{character_name}` **{item}** to **{status}**."
         except Exception as e:
             message = f"❌🧍 **Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)

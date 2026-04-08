@@ -231,3 +231,52 @@ def test_list_accounts_filter_by_group_and_tag(sso_session):
     by_tag = sso.list_accounts(GUILD_ID, tag="vessel")
     assert len(by_tag) == 1
     assert by_tag[0].real_user == "beta"
+
+
+def test_set_character_stack_item_pearl_and_unknown(sso_session):
+    sso.create_account(GUILD_ID, "stackuser", "pw")
+    sso.add_account_character(GUILD_ID, "stackuser", "Tank", sso.CharacterClass.Warrior)
+    assert sso.set_character_stack_item(GUILD_ID, "Tank", "pearl", 12)
+    ch = sso_session.query(sso.SSOAccountCharacter).filter_by(name="Tank", guild_id=GUILD_ID).one()
+    assert ch.item_pearl == 12
+    assert sso.set_character_stack_item(GUILD_ID, "Tank", "pearl", None)
+    sso_session.refresh(ch)
+    assert ch.item_pearl is None
+    assert sso.set_character_stack_item(GUILD_ID, "Tank", "lizard", 0)
+    sso_session.refresh(ch)
+    assert ch.item_lizard == 0
+    assert not sso.set_character_stack_item(GUILD_ID, "Tank", "void", 3)
+    assert not sso.set_character_stack_item(GUILD_ID, "Nope", "pearl", 1)
+
+
+def test_set_character_stack_item_mb4_sets_updated_at(sso_session):
+    sso.create_account(GUILD_ID, "mbuser", "pw")
+    sso.add_account_character(GUILD_ID, "mbuser", "Clr", sso.CharacterClass.Cleric)
+    frozen = datetime.datetime(2024, 6, 1, 12, 0, 0)
+    with freeze_time(frozen):
+        assert sso.set_character_stack_item(GUILD_ID, "Clr", "mb4", 2)
+    ch = sso_session.query(sso.SSOAccountCharacter).filter_by(name="Clr", guild_id=GUILD_ID).one()
+    assert ch.item_mb4 == 2
+    assert ch.item_mb4_updated_at == frozen
+
+
+def test_set_character_item_sets_updated_at(sso_session):
+    sso.create_account(GUILD_ID, "booluser", "pw")
+    sso.add_account_character(GUILD_ID, "booluser", "Dru", sso.CharacterClass.Druid)
+    t0 = datetime.datetime(2024, 7, 1, 9, 0, 0)
+    with freeze_time(t0):
+        assert sso.set_character_item(GUILD_ID, "Dru", "void", True)
+    ch = sso_session.query(sso.SSOAccountCharacter).filter_by(name="Dru", guild_id=GUILD_ID).one()
+    assert ch.item_void is True
+    assert ch.item_void_updated_at == t0
+
+
+def test_mark_key_from_park_zone_sets_key_updated_at(sso_session):
+    sso.create_account(GUILD_ID, "parkuser", "pw")
+    sso.add_account_character(GUILD_ID, "parkuser", "Wiz", sso.CharacterClass.Wizard)
+    t1 = datetime.datetime(2024, 8, 15, 18, 30, 0)
+    with freeze_time(t1):
+        assert sso.mark_key_from_park_zone(GUILD_ID, "Wiz", "sebilis")
+    ch = sso_session.query(sso.SSOAccountCharacter).filter_by(name="Wiz", guild_id=GUILD_ID).one()
+    assert ch.key_seb is True
+    assert ch.key_seb_updated_at == t1

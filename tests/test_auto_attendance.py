@@ -1,4 +1,4 @@
-"""Tests for raid auto-attendance (session overlap, proposals, Apply button).
+"""Tests for raid auto-attendance (session overlap, proposals, Kill / No Kill buttons).
 
 Uses the in-memory ``raid_session`` fixture for real DB operations; mocks only
 Discord, EQDKP HTTP (via ``EqdkpClient`` methods), and ``sso_model.get_sessions_in_range``.
@@ -21,13 +21,13 @@ from roboToald.db.raid_models.target import Target
 from roboToald.eqdkp.client import EqdkpClient
 from roboToald.raid import auto_attendance
 from roboToald.raid.auto_attendance import (
-    MIN_PRESENCE_FRACTION,
-    MIN_PRESENCE_SECONDS,
+    MIN_PRESENCE_PERCENT,
     _build_user_overlaps,
     _compute_overlap_seconds,
     _discord_name_suffix,
     on_auto_att_button,
     propose_online_players,
+    qualifying_players_for_event_window,
 )
 
 GUILD_ID = 900_001
@@ -86,7 +86,7 @@ def fake_auto_att_config(monkeypatch):
 
 def _presence_threshold_seconds(event_start: datetime, death_time: datetime) -> float:
     event_duration = max(1.0, (death_time - event_start).total_seconds())
-    return min(event_duration * MIN_PRESENCE_FRACTION, MIN_PRESENCE_SECONDS)
+    return event_duration * (MIN_PRESENCE_PERCENT / 100.0)
 
 
 def _qualifying_discord_ids(sessions: list, event_start: datetime, death_time: datetime) -> set[int]:
@@ -135,9 +135,18 @@ def test_build_user_overlaps_picks_dominant_char():
     assert dominant == "CharA"
 
 
+def test_qualifying_players_presence_percent_validation():
+    es = datetime(2025, 1, 1, 10, 0, 0)
+    ee = datetime(2025, 1, 1, 11, 0, 0)
+    with pytest.raises(ValueError, match="presence_percent"):
+        qualifying_players_for_event_window(1, es, ee, presence_percent=0)
+    with pytest.raises(ValueError, match="presence_percent"):
+        qualifying_players_for_event_window(1, es, ee, presence_percent=100.01)
+
+
 def test_threshold_filtering_short_and_long_events():
     es = datetime(2025, 1, 1, 10, 0, 0)
-    # Short 3-minute event: threshold = min(90, 120) = 90s
+    # Short 3-minute event: 50% of 180s = 90s
     de_short = es + timedelta(minutes=3)
     assert _presence_threshold_seconds(es, de_short) == 90.0
     sessions_short = [
@@ -147,12 +156,12 @@ def test_threshold_filtering_short_and_long_events():
     q = _qualifying_discord_ids(sessions_short, es, de_short)
     assert 1 in q and 2 not in q
 
-    # Long 30-minute event: threshold = 120s
+    # Long 30-minute event: 50% of 1800s = 900s
     de_long = es + timedelta(minutes=30)
-    assert _presence_threshold_seconds(es, de_long) == 120.0
+    assert _presence_threshold_seconds(es, de_long) == 900.0
     sessions_long = [
-        SessionStub(es, es + timedelta(seconds=121), "C", 3),
-        SessionStub(es, es + timedelta(seconds=119), "D", 4),
+        SessionStub(es, es + timedelta(seconds=901), "C", 3),
+        SessionStub(es, es + timedelta(seconds=899), "D", 4),
     ]
     q2 = _qualifying_discord_ids(sessions_long, es, de_long)
     assert 3 in q2 and 4 not in q2
@@ -249,7 +258,7 @@ async def test_propose_online_players_e2e(
 
 
 # ---------------------------------------------------------------------------
-# Apply button
+# Kill / No Kill buttons
 # ---------------------------------------------------------------------------
 
 
@@ -269,6 +278,8 @@ async def test_apply_button_creates_attendees(
             channel_id=str(EVENT_CHANNEL_ID),
             created_at=datetime.now(timezone.utc).replace(tzinfo=None),
             killed=False,
+            dkp=50,
+            nokill_dkp=10,
         )
     )
     raid_session.add(Character(name="Boxchar1"))
@@ -278,14 +289,18 @@ async def test_apply_button_creates_attendees(
         return {"id": 101, "user_id": 201, "main_id": None}
 
     monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
+    monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
     inter = MagicMock()
-    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_APPLY}:{GUILD_ID}"
+    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_KILL}:{GUILD_ID}"
     inter.channel_id = EVENT_CHANNEL_ID
     inter.message.content = "Suggested attendance\n```diff\n+Amy on Boxchar1 (30m) [AliceD]\n+Betty (20m) [BettyD]\n```"
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
+    inter.channel = MagicMock()
+    inter.channel.edit = AsyncMock()
 
     await on_auto_att_button(inter)
 
@@ -306,6 +321,8 @@ async def test_apply_button_creates_attendees(
         a for a in attendees if raid_session.query(Character).filter_by(id=int(a.character_id)).one().name == "Amy"
     )
     assert amy_att.on_character_id == str(box.id)
+    assert evt.killed is True
+    assert evt.tod_at is not None
 
 
 @pytest.mark.asyncio
@@ -326,6 +343,8 @@ async def test_apply_button_dedup(
         channel_id=str(EVENT_CHANNEL_ID),
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         killed=False,
+        dkp=50,
+        nokill_dkp=10,
     )
     raid_session.add(evt)
     raid_session.flush()
@@ -337,14 +356,18 @@ async def test_apply_button_dedup(
         return {"id": 101, "user_id": 201, "main_id": None}
 
     monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
+    monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
     inter = MagicMock()
-    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_APPLY}:{GUILD_ID}"
+    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_KILL}:{GUILD_ID}"
     inter.channel_id = EVENT_CHANNEL_ID
     inter.message.content = "```\n+Amy on Boxchar1 (30m)\n+Betty (20m)\n```"
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
+    inter.channel = MagicMock()
+    inter.channel.edit = AsyncMock()
 
     await on_auto_att_button(inter)
 
