@@ -252,14 +252,14 @@ def _max_character_level(account: "SSOAccount") -> int:
 def _login_sort_key(account: "SSOAccount", now: datetime.datetime, level_fn) -> tuple:
     """Sort key for tag-based account selection.
 
-    Buckets last_login so that level acts as a meaningful tiebreaker:
+    Prefer least-recently-used accounts (cold before warm):
       - < 20 min ago: 30-second buckets (higher bucket = older = preferred)
-      - >= 20 min ago: all equivalent (bucket 0)
-    Within a bucket, higher level wins.
+      - >= 20 min ago: shared sentinel bucket (1200) so all cold accounts beat any warm
+        account; among cold accounts, higher level wins (tiebreaker).
     """
     age = (now - account.last_login).total_seconds()
     if age >= 1200:
-        bucket = 0
+        bucket = 1200
     else:
         bucket = int(age // 30)
     return (-bucket, -(level_fn(account)))

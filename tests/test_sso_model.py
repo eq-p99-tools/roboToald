@@ -58,6 +58,10 @@ def test_login_sort_key_buckets_and_level():
     k_hi = sso._login_sort_key(a3, now, lambda _: 50)
     k_lo = sso._login_sort_key(a2, now, lambda _: 10)
     assert k_hi < k_lo  # more negative second element = higher level
+    # cold (>20m idle) beats warm (<20m)
+    a_cold = type("A", (), {"last_login": now - datetime.timedelta(hours=1), "characters": []})()
+    a_warm = type("A", (), {"last_login": now - datetime.timedelta(minutes=5), "characters": []})()
+    assert sso._login_sort_key(a_cold, now, lambda _: 0) < sso._login_sort_key(a_warm, now, lambda _: 0)
 
 
 def test_get_dynamic_tags_structure():
@@ -116,6 +120,28 @@ def test_find_account_by_static_tag_picks_most_stale_in_bucket(sso_session, monk
     with freeze_time(now):
         found = sso.find_account_by_username("sharedtag", guild_id=GUILD_ID, inactive_only=True)
     assert found.real_user == "second"
+
+
+def test_find_account_by_static_tag_cold_beats_warm(sso_session, monkeypatch):
+    """Accounts idle >20m are preferred over any account used within the last 20m."""
+    monkeypatch.setattr(config, "SSO_INACTIVITY_SECONDS", 62)
+    sso.create_account(GUILD_ID, "warm", "p1")
+    sso.create_account(GUILD_ID, "cold", "p2")
+    cold_acc = sso.get_account(GUILD_ID, "cold")
+    warm_acc = sso.get_account(GUILD_ID, "warm")
+    now = datetime.datetime(2021, 6, 1, 12, 0, 0)
+    sso_session.query(sso.SSOAccount).filter(sso.SSOAccount.id == warm_acc.id).update(
+        {"last_login": now - datetime.timedelta(minutes=5)}
+    )
+    sso_session.query(sso.SSOAccount).filter(sso.SSOAccount.id == cold_acc.id).update(
+        {"last_login": now - datetime.timedelta(days=1)}
+    )
+    sso_session.commit()
+    sso.tag_account(GUILD_ID, "warm", "pooltag")
+    sso.tag_account(GUILD_ID, "cold", "pooltag")
+    with freeze_time(now):
+        found = sso.find_account_by_username("pooltag", guild_id=GUILD_ID, inactive_only=True)
+    assert found.real_user == "cold"
 
 
 def test_find_account_dynamic_tag_vpclr(sso_session, monkeypatch):
