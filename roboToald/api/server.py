@@ -61,14 +61,24 @@ def _parse_eq_log_time(eq_log_time: str) -> datetime | None:
         return None
 
 
+def _combine_est_now_with_log_minute_second(now_est: datetime, parsed_log: datetime) -> datetime:
+    """Return *now_est* with minute and second taken from *parsed_log* (naive EQ log time).
+
+    *now_est* must be timezone-aware in ``America/New_York``. Hour, month, and day from
+    *parsed_log* are ignored (same semantics as ``!tod`` / FTE Discord timestamps; skew
+    checks validate only minute + second vs the API clock).
+    """
+    return now_est.replace(minute=parsed_log.minute, second=parsed_log.second, microsecond=0)
+
+
+def _est_now_with_log_minute_second(parsed_log: datetime) -> datetime:
+    """US Eastern ``now`` with minute/second from EQ log; shared by ``!tod`` and FTE ``<t:…>``."""
+    return _combine_est_now_with_log_minute_second(datetime.now(EST), parsed_log)
+
+
 def _format_tod_for_discord(parsed_log: datetime) -> str:
     """``M/D HH:MM:SS`` for ``!tod``: month/day/hour from **now** in US Eastern; minute/second from EQ log."""
-    now_est = datetime.now(EST)
-    combined = now_est.replace(
-        minute=parsed_log.minute,
-        second=parsed_log.second,
-        microsecond=0,
-    )
+    combined = _est_now_with_log_minute_second(parsed_log)
     return f"{combined.month}/{combined.day} {combined.strftime('%H:%M:%S')}"
 
 
@@ -802,7 +812,7 @@ async def _ws_handle_fte(conn: ClientConnection, msg: dict):
         return
     if _tod_dedup(conn.guild_id, "fte", mob):
         return
-    ts = int(parsed_log.timestamp())
+    ts = int(_est_now_with_log_minute_second(parsed_log).timestamp())
     _send_to_tod_channel(conn.guild_id, f"**FTE**: {mob} engages {player}! <t:{ts}:T>")
 
 

@@ -391,7 +391,7 @@ The server replies with a `login_auth_response` message (see below).
 
 #### FTE (First to Engage)
 
-Relayed from the login proxy when the EQ log contains a first-to-engage line (`Mob engages Player!`). The server parses `eq_log_time` and applies the same skew rules as `mob_death` (see below), then posts to `tod_channel_id` after deduplication. The Discord relative time uses the parsed log time. Requires a valid `character_name` the user can access (same RBAC as heartbeat).
+Relayed from the login proxy when the EQ log contains a first-to-engage line (`Mob engages Player!`). The server parses `eq_log_time` and applies the same skew rules as `mob_death` (see below), then posts to `tod_channel_id` after deduplication. The Discord dynamic timestamp (`<t:…:T>`) uses the **same rule as raid ToD relay**: **month, day, and hour** from the **current time in US Eastern** (`America/New_York`) and **minute and second** from the parsed EQ log (the log’s wall-clock hour is not used). Requires a valid `character_name` the user can access (same RBAC as heartbeat).
 
 ```json
 {

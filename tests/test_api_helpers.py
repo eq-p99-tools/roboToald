@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from zoneinfo import ZoneInfo
 
 from freezegun import freeze_time
 from starlette.requests import Request
@@ -85,6 +86,26 @@ def test_parse_eq_log_time():
 
 def test_parse_eq_log_time_invalid():
     assert server._parse_eq_log_time("not a date") is None
+
+
+def test_combine_est_now_with_log_minute_second_preserves_est_clock():
+    """ToD/FTE use Eastern now + log min:sec; log hour/date are ignored."""
+    est = ZoneInfo("America/New_York")
+    now_est = datetime.datetime(2026, 6, 15, 22, 30, 15, tzinfo=est)
+    parsed_naive = datetime.datetime(2020, 1, 1, 3, 17, 45)
+    combined = server._combine_est_now_with_log_minute_second(now_est, parsed_naive)
+    assert combined == datetime.datetime(2026, 6, 15, 22, 17, 45, tzinfo=est)
+
+
+def test_combine_est_now_with_log_minute_second_timestamp_independent_of_host_tz():
+    """Aware Eastern instant: .timestamp() does not depend on process default TZ."""
+    est = ZoneInfo("America/New_York")
+    now_est = datetime.datetime(2026, 1, 10, 14, 0, 0, tzinfo=est)
+    parsed_naive = datetime.datetime(1999, 7, 4, 23, 5, 9)
+    combined = server._combine_est_now_with_log_minute_second(now_est, parsed_naive)
+    expected = datetime.datetime(2026, 1, 10, 14, 5, 9, tzinfo=est)
+    assert combined == expected
+    assert int(combined.timestamp()) == int(expected.timestamp())
 
 
 @freeze_time("2026-03-06T11:13:03")
