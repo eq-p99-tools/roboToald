@@ -783,11 +783,9 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         "park_location": msg.get("park_location"),
         "level": msg.get("level"),
     }
-    keys = msg.get("keys")
-    if keys is not None:
-        kw["key_seb"] = keys.get("seb")
-        kw["key_vp"] = keys.get("vp")
-        kw["key_st"] = keys.get("st")
+    merged = sso_model.merge_keys_and_items_message(msg)
+    if merged:
+        kw.update(sso_model.merged_wires_to_character_kwargs(merged))
     character_changed = sso_model.update_account_character(**kw)
     key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
     if character_changed or key_marked:

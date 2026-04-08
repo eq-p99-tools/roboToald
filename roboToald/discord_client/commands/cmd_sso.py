@@ -71,10 +71,10 @@ For example, it might be a good idea to alias accounts with their character name
 - `/sso_admin alias create <username> <alias>` - Create an alias for an account
 - `/sso_admin alias delete <alias>` - Delete an alias
 
-## Character Keys
-Zone keys (Sebilis, Veeshan's Peak, Sleeper's Tomb) can be set per character for tracking and optional dynamic-tag filtering.
+## Character items
+Zone keys (Sebilis, Veeshan's Peak, Sleeper's Tomb) and tracked inventory items can be set per character for the login proxy UI and optional dynamic-tag filtering.
 
-- `/sso_admin character keys <character_name> <key> <status>` - Set Seb / VP / ST to Yes, No, or Unknown
+- `/sso_admin character items <character_name> <item> <status>` - Set a zone key or tracked item to Yes, No, or Unknown
 
 ## User Access Revocation
 Revoking access to a user will prevent the user from logging in to otherwise authorized accounts via the P99LoginProxy Application.
@@ -97,7 +97,7 @@ EVENT_CHANNEL_MATCHER = re.compile(r".*?(\w+)-(\w{3})-(\d{2})-(\d{2})(am|pm)$")
 
 
 def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
-    """Bracket suffix for Discord list: `` [Seb:VP]`` when keys are confirmed True."""
+    """Bracket suffix for Discord list when flags are confirmed True."""
     parts = []
     if c.key_seb is True:
         parts.append("Seb")
@@ -105,6 +105,14 @@ def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
         parts.append("VP")
     if c.key_st is True:
         parts.append("ST")
+    if c.item_void is True:
+        parts.append("Void")
+    if c.item_neck is True:
+        parts.append("Neck")
+    if c.item_lizard is True:
+        parts.append("Liz")
+    if c.item_thurg is True:
+        parts.append("Thurg")
     if not parts:
         return ""
     return f" [{':'.join(parts)}]"
@@ -1524,27 +1532,38 @@ class SSOCommands(commands.Cog):
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
-    @character_admin.sub_command(description="Set zone key status for a character", name="keys")
-    async def character_keys(
+    @character_admin.sub_command(description="Set zone key or tracked inventory item for a character", name="items")
+    async def character_items(
         self,
         inter: disnake.ApplicationCommandInteraction,
         character_name: str = commands.Param(description="Character name", autocomplete=character_autocomplete),
-        key: str = commands.Param(description="Which key", choices=["Seb", "VP", "ST"]),
+        item: str = commands.Param(
+            description="Which item",
+            choices=["Seb", "VP", "ST", "Void", "Neck", "Lizard", "Thurg"],
+        ),
         status: str = commands.Param(
-            description="Whether the character has the key",
+            description="Whether the character has the item",
             choices=["Yes", "No", "Unknown"],
         ),
     ):
-        key_map = {"Seb": "seb", "VP": "vp", "ST": "st"}
+        item_map = {
+            "Seb": "seb",
+            "VP": "vp",
+            "ST": "st",
+            "Void": "void",
+            "Neck": "neck",
+            "Lizard": "lizard",
+            "Thurg": "thurg",
+        }
         value = {"Yes": True, "No": False, "Unknown": None}[status]
         try:
             character_name = character_name.lower().capitalize()
-            ok = sso_model.set_character_zone_key(inter.guild_id, character_name, key_map[key], value)
+            ok = sso_model.set_character_item(inter.guild_id, character_name, item_map[item], value)
             if not ok:
                 message = f"⚠️🧍 **Character not found:** `{character_name}`"
                 await inter.send(content=message, ephemeral=True)
                 return
-            message = f"🔑 Set `{character_name}` **{key}** to **{status}**."
+            message = f"🔑 Set `{character_name}` **{item}** to **{status}**."
         except Exception as e:
             message = f"❌🧍 **Error:**\n```\n{e}\n```"
             await inter.send(content=message, ephemeral=True)

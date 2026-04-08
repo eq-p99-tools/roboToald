@@ -336,7 +336,7 @@ def test_ws_update_location_updates_character(client, monkeypatch):
                 "bind_location": "PoK",
                 "park_location": "veeshan",
                 "level": 60,
-                "keys": {"seb": True, "vp": None, "st": False},
+                "items": {"seb": True, "vp": None, "st": False},
             }
         )
         import time
@@ -351,6 +351,53 @@ def test_ws_update_location_updates_character(client, monkeypatch):
     assert uac_calls[0]["key_seb"] is True
     assert uac_calls[0]["key_vp"] is None
     assert uac_calls[0]["key_st"] is False
+
+
+def test_ws_update_location_items_overrides_keys(client, monkeypatch):
+    from types import SimpleNamespace
+
+    _patch_ws_auth_ok(monkeypatch)
+    acc = SimpleNamespace(id=3, real_user="u")
+    monkeypatch.setattr(
+        "roboToald.api.server.sso_model.find_account_by_character", lambda g, n: acc if n == "Zed" else None
+    )
+    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
+    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.sso_model.record_heartbeat_session", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.sso_model.expire_other_sessions", lambda *a, **k: None)
+
+    uac_calls: list[dict] = []
+
+    def fake_uac(**kw):
+        uac_calls.append(kw)
+        return True
+
+    monkeypatch.setattr("roboToald.api.server.sso_model.update_account_character", fake_uac)
+    monkeypatch.setattr("roboToald.api.server.sso_model.mark_key_from_park_zone", lambda *a, **k: False)
+
+    async def notify(gid, immediate=False):
+        pass
+
+    monkeypatch.setattr("roboToald.api.server.ws_manager.notify_guild_async", notify)
+
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        assert ws.receive_json()["type"] == "full_state"
+        ws.send_json(
+            {
+                "type": "update_location",
+                "character_name": "Zed",
+                "keys": {"seb": False, "vp": True},
+                "items": {"seb": True, "void": True},
+            }
+        )
+        import time
+
+        time.sleep(0.05)
+    assert len(uac_calls) == 1
+    assert uac_calls[0]["key_seb"] is True
+    assert uac_calls[0]["key_vp"] is True
+    assert uac_calls[0]["item_void"] is True
 
 
 def test_ws_json_decode_error_in_message_loop_ignored(client, monkeypatch):

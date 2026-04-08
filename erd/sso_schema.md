@@ -78,6 +78,10 @@ erDiagram
         bool key_seb
         bool key_vp
         bool key_st
+        bool item_void
+        bool item_neck
+        bool item_lizard
+        bool item_thurg
         int account_id FK
     }
 
@@ -220,7 +224,7 @@ An alternative name for a single account. Logging in with an alias resolves to t
 
 ### SSOAccountCharacter
 
-Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) are tri-state: null = unknown, true/false = confirmed.
+Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) and tracked inventory flags (`item_void`, `item_neck`, `item_lizard`, `item_thurg`) are tri-state: null = unknown, true/false = confirmed. WebSocket wire names are in `WIRE_KEY_TO_ATTR` in `sso.py`.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -234,6 +238,10 @@ Maps a character name and class to an account. Characters have optional bind/par
 | `key_seb` | Boolean | nullable | Trakanon Idol / Old Sebilis key |
 | `key_vp` | Boolean | nullable | Key of Veeshan |
 | `key_st` | Boolean | nullable | Sleeper's Key |
+| `item_void` | Boolean | nullable | Box of the Void (inventory) |
+| `item_neck` | Boolean | nullable | Necklace of Resolution |
+| `item_lizard` | Boolean | nullable | Lizard Blood Potion |
+| `item_thurg` | Boolean | nullable | Vial of Velium Vapors |
 | `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
 
 **Unique constraint:** `(name, guild_id)`

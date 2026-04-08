@@ -27,6 +27,15 @@ The primary data structure returned by the API is the `account_tree` -- a dictio
         "bind": "zone_key_or_null",
         "park": "zone_key_or_null",
         "level": 60,
+        "items": {
+          "seb": true,
+          "vp": null,
+          "st": false,
+          "void": true,
+          "neck": null,
+          "lizard": false,
+          "thurg": null
+        },
         "keys": {
           "seb": true,
           "vp": null,
@@ -52,7 +61,8 @@ Field details:
 | `characters.*.bind` | `string?` | Zone key where the character is bound (null if unknown) |
 | `characters.*.park` | `string?` | Zone key where the character is parked (null if unknown) |
 | `characters.*.level` | `int?` | Character level (null if unknown) |
-| `characters.*.keys` | `object` | `seb`, `vp`, `st`: each `true` (has key), `false` (confirmed no), or `null` (unknown) |
+| `characters.*.items` | `object` | Canonical map: `seb`, `vp`, `st` (zone keys) plus `void`, `neck`, `lizard`, `thurg` (tracked inventory). Each value is `true`, `false`, or `null` (unknown). |
+| `characters.*.keys` | `object` | **Legacy (optional):** duplicate of `seb` / `vp` / `st` only, for older login-proxy builds. New clients should read `items` only. May be omitted when legacy support is disabled server-side (`INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE` in `api/websocket.py`). |
 | `last_login` | `string?` | ISO 8601 UTC timestamp of last login. Null if never logged in. Accounts with `last_login` before epoch year 2 are treated as never-logged-in. |
 | `last_login_by` | `string?` | Discord display name of the user who last logged in |
 | `active_character` | `string?` | Character name from the most recent active heartbeat session, or null if no active session |
@@ -349,7 +359,7 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
   "bind_location": "zone_key",
   "park_location": "zone_key",
   "level": 60,
-  "keys": { "seb": true, "vp": false, "st": false }
+  "items": { "seb": true, "vp": false, "void": true }
 }
 ```
 
@@ -359,13 +369,14 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
 | `bind_location` | `string?` | no | New bind zone key (only updated if present) |
 | `park_location` | `string?` | no | New park zone key (only updated if present) |
 | `level` | `int?` | no | New level (only updated if present and non-null) |
-| `keys` | `object?` | no | Zone key flags from inventory parsing (only sent when present). Each field is optional; if omitted for a key, that column is not updated. |
+| `items` | `object?` | no | **Preferred:** zone keys and tracked inventory flags from the login proxy (only sent when present). Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). |
+| `keys` | `object?` | no | **Legacy:** same wire names as `items` for zone keys (`seb`, `vp`, `st`). If both `keys` and `items` are sent, **`items` wins** on duplicate fields. |
 
-When `keys` is present, each boolean field maps to `SSOAccountCharacter.key_seb`, `key_vp`, or `key_st` (Sebilis, Veeshan's Peak, Sleeper's Tomb). `true`/`false` updates the column; `null` or missing sub-field leaves that column unchanged.
+When `items` and/or `keys` are present, merged wire fields map to `SSOAccountCharacter` booleans. `true`/`false` updates the column; `null` or a missing sub-field leaves that column unchanged.
 
 Side effects (same as heartbeat, plus):
 - `SSOAccountCharacter.bind_location`, `park_location`, and/or `level` updated
-- If `keys` is present, `key_seb` / `key_vp` / `key_st` updated per the rules above
+- If `items` and/or `keys` are present, matching `key_*` / `item_*` columns updated per the rules above
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 

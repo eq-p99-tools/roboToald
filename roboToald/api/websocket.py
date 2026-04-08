@@ -16,6 +16,42 @@ logger = logging.getLogger(__name__)
 # Coalesce rapid notify_guild calls (heartbeats, location updates) into one delta push per guild.
 WS_NOTIFY_DEBOUNCE_SEC = 3.0
 
+# Temporary: also emit legacy ``keys`` (seb/vp/st only) on each character for old login-proxy builds.
+# Set False and remove ``_legacy_keys_subset`` usage to drop outbound ``keys``.
+INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE = True
+
+
+def _legacy_keys_subset(items: dict) -> dict:
+    """Zone keys only, for clients that still read ``character['keys']``."""
+    return {"seb": items.get("seb"), "vp": items.get("vp"), "st": items.get("st")}
+
+
+def _character_items_payload(char) -> dict:
+    """Canonical ``items`` map for WebSocket (wire short names)."""
+    return {
+        "seb": char.key_seb,
+        "vp": char.key_vp,
+        "st": char.key_st,
+        "void": char.item_void,
+        "neck": char.item_neck,
+        "lizard": char.item_lizard,
+        "thurg": char.item_thurg,
+    }
+
+
+def _build_character_tree_entry(char) -> dict:
+    items = _character_items_payload(char)
+    entry = {
+        "class": char.klass.value if char.klass else None,
+        "bind": char.bind_location,
+        "park": char.park_location,
+        "level": char.level,
+        "items": items,
+    }
+    if INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE:
+        entry["keys"] = _legacy_keys_subset(items)
+    return entry
+
 
 def _brief_exc_info() -> str:
     """Return a one-line summary of the current exception (type + message)."""
@@ -39,20 +75,7 @@ def build_account_tree(accessible_accounts, active_characters: dict[int, str] | 
         tree[account.real_user] = {
             "aliases": [alias.alias for alias in account.aliases],
             "tags": [tag.tag for tag in account.tags],
-            "characters": {
-                char.name: {
-                    "class": char.klass.value if char.klass else None,
-                    "bind": char.bind_location,
-                    "park": char.park_location,
-                    "level": char.level,
-                    "keys": {
-                        "seb": char.key_seb,
-                        "vp": char.key_vp,
-                        "st": char.key_st,
-                    },
-                }
-                for char in account.characters
-            },
+            "characters": {char.name: _build_character_tree_entry(char) for char in account.characters},
             "last_login": (
                 account.last_login.astimezone(datetime.timezone.utc).isoformat()
                 if account.last_login and account.last_login.year > 1

@@ -500,6 +500,35 @@ KEY_ZONE_TO_COLUMN: dict[str, str] = {
     "sleeper": "key_st",
 }
 
+# WebSocket ``items`` / legacy ``keys`` short wire name -> SSOAccountCharacter boolean column.
+WIRE_KEY_TO_ATTR: dict[str, str] = {
+    "seb": "key_seb",
+    "vp": "key_vp",
+    "st": "key_st",
+    "void": "item_void",
+    "neck": "item_neck",
+    "lizard": "item_lizard",
+    "thurg": "item_thurg",
+}
+
+
+def merge_keys_and_items_message(msg: dict) -> dict:
+    """Merge ``keys`` and ``items`` from an ``update_location`` payload; ``items`` wins on conflicts."""
+    raw_keys = msg.get("keys")
+    raw_items = msg.get("items")
+    keys = raw_keys if isinstance(raw_keys, dict) else {}
+    items = raw_items if isinstance(raw_items, dict) else {}
+    return {**keys, **items}
+
+
+def merged_wires_to_character_kwargs(merged: dict) -> dict:
+    """Map merged wire dict to keyword names accepted by :func:`update_account_character`."""
+    kw = {}
+    for wire, attr in WIRE_KEY_TO_ATTR.items():
+        if wire in merged:
+            kw[attr] = merged[wire]
+    return kw
+
 
 def get_dynamic_tag_list():
     return _dynamic_tag_list
@@ -1454,6 +1483,11 @@ class SSOAccountCharacter(base.Base):
     key_vp = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
     key_st = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
 
+    item_void = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_neck = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_lizard = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+    item_thurg = sqlalchemy.Column(sqlalchemy.Boolean, nullable=True)
+
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
 
@@ -1550,6 +1584,10 @@ def update_account_character(
     key_seb: bool | None = None,
     key_vp: bool | None = None,
     key_st: bool | None = None,
+    item_void: bool | None = None,
+    item_neck: bool | None = None,
+    item_lizard: bool | None = None,
+    item_thurg: bool | None = None,
 ) -> bool:
     """Update character fields. Returns True if the character existed and any field changed."""
     with base.get_session() as session:
@@ -1585,6 +1623,22 @@ def update_account_character(
             if character.key_st != key_st:
                 character.key_st = key_st
                 changed = True
+        if item_void is not None:
+            if character.item_void != item_void:
+                character.item_void = item_void
+                changed = True
+        if item_neck is not None:
+            if character.item_neck != item_neck:
+                character.item_neck = item_neck
+                changed = True
+        if item_lizard is not None:
+            if character.item_lizard != item_lizard:
+                character.item_lizard = item_lizard
+                changed = True
+        if item_thurg is not None:
+            if character.item_thurg != item_thurg:
+                character.item_thurg = item_thurg
+                changed = True
         if changed:
             session.commit()
         return changed
@@ -1611,9 +1665,9 @@ def mark_key_from_park_zone(guild_id: int, name: str, park_zone_key: str | None)
     return True
 
 
-def set_character_zone_key(guild_id: int, name: str, key: str, value: bool | None) -> bool:
-    """Set one zone key column (seb, vp, st) to True, False, or None (unknown). Returns False if not found."""
-    column = {"seb": "key_seb", "vp": "key_vp", "st": "key_st"}.get(key)
+def set_character_item(guild_id: int, name: str, wire_key: str, value: bool | None) -> bool:
+    """Set one tracked wire flag (zone keys + inventory items) to True, False, or None. Returns False if not found."""
+    column = WIRE_KEY_TO_ATTR.get(wire_key)
     if not column:
         return False
     with base.get_session() as session:
@@ -1623,6 +1677,11 @@ def set_character_zone_key(guild_id: int, name: str, key: str, value: bool | Non
         setattr(character, column, value)
         session.commit()
     return True
+
+
+def set_character_zone_key(guild_id: int, name: str, key: str, value: bool | None) -> bool:
+    """Set one zone key column (seb, vp, st) to True, False, or None (unknown). Returns False if not found."""
+    return set_character_item(guild_id, name, key, value)
 
 
 def find_account_by_character(guild_id: int, name: str) -> SSOAccount | None:

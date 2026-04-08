@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 from types import SimpleNamespace
 
+from roboToald.db.models import sso as sso_model
 from roboToald.db.models.sso import CharacterClass
 from roboToald.api.websocket import build_account_tree, compute_diff
 
@@ -19,6 +20,10 @@ def _char(name, klass=None, **kwargs):
         "key_seb": kwargs.get("key_seb"),
         "key_vp": kwargs.get("key_vp"),
         "key_st": kwargs.get("key_st"),
+        "item_void": kwargs.get("item_void"),
+        "item_neck": kwargs.get("item_neck"),
+        "item_lizard": kwargs.get("item_lizard"),
+        "item_thurg": kwargs.get("item_thurg"),
     }
     return SimpleNamespace(**defaults)
 
@@ -33,6 +38,14 @@ def _account(real_user, *, aliases=(), tags=(), characters=(), last_login=None, 
         last_login=last_login,
         last_login_by=last_login_by,
     )
+
+
+def test_merge_keys_and_items_message():
+    assert sso_model.merge_keys_and_items_message({}) == {}
+    assert sso_model.merge_keys_and_items_message({"keys": {"seb": False}, "items": {"seb": True}}) == {
+        "seb": True,
+    }
+    assert sso_model.merge_keys_and_items_message({"keys": {"vp": True}, "items": {}}) == {"vp": True}
 
 
 def test_build_account_tree_shape():
@@ -56,6 +69,15 @@ def test_build_account_tree_shape():
                     "bind": "Norrath",
                     "park": None,
                     "level": 60,
+                    "items": {
+                        "seb": None,
+                        "vp": None,
+                        "st": None,
+                        "void": None,
+                        "neck": None,
+                        "lizard": None,
+                        "thurg": None,
+                    },
                     "keys": {"seb": None, "vp": None, "st": None},
                 }
             },
@@ -121,6 +143,15 @@ def test_compute_diff_character_add_remove_update():
         "bind": None,
         "park": None,
         "level": 1,
+        "items": {
+            "seb": None,
+            "vp": None,
+            "st": None,
+            "void": None,
+            "neck": None,
+            "lizard": None,
+            "thurg": None,
+        },
         "keys": {"seb": None, "vp": None, "st": None},
     }
     old_t = {
