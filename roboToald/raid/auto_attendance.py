@@ -27,6 +27,11 @@ from roboToald.discord_client import base as discord_base
 from roboToald.eqdkp.client import EqdkpClient
 from roboToald.raid import permissions as perms
 from roboToald.raid.event_helpers import resolve_target
+from roboToald.raid.event_kill_mark import (
+    apply_kill_state_to_event,
+    event_channel_name_with_kill_prefix,
+    rename_event_channel_for_kill_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -506,20 +511,21 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
                     out.append(f"- {on_character.name} removed (replaced by boxed entry)")
 
         if kill_flag is not None:
-            evt.killed = kill_flag
-            if evt.tod_at is None:
-                evt.tod_at = datetime.now()
-            dkp_for_rename = evt.dkp_value
-            rename_channel = dkp_for_rename is not None
-            if dkp_for_rename is None:
-                out.append(
-                    "- Must specify a target or dkp value using `/event target` or $dkp before kill/no-kill DKP applies."
-                )
-            else:
-                out.append(
-                    f"+ Event marked as {'killed' if kill_flag else 'not killed'}; DKP reward will be {dkp_for_rename}."
-                )
-            resolved_suffix = f"{resolved_suffix} ({'kill' if kill_flag else 'no kill'})"
+            kill_result = apply_kill_state_to_event(evt, kill_flag, set_tod_if_missing=True)
+            if kill_result.status_changed:
+                dkp_for_rename = kill_result.dkp_value
+                rename_channel = dkp_for_rename is not None
+                if dkp_for_rename is None:
+                    out.append(
+                        "- Auto-attendance: must specify a target or dkp value using `/event target` or $dkp "
+                        "before kill/no-kill DKP applies."
+                    )
+                else:
+                    out.append(
+                        f"+ Auto-attendance: event marked as {'killed' if kill_flag else 'not killed'}; "
+                        f"DKP reward will be {dkp_for_rename}."
+                    )
+                resolved_suffix = f"{resolved_suffix} ({'kill' if kill_flag else 'no kill'})"
 
         session.commit()
 
@@ -531,14 +537,10 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
     if kill_flag is not None and rename_channel and dkp_for_rename is not None:
         ch = inter.channel
         if ch is not None and hasattr(ch, "edit"):
-            new_name: str | None = None
+            rename_name: str | None = None
             with get_raid_session(guild_id) as session:
                 evt_rename = session.query(Event).filter_by(channel_id=str(inter.channel_id)).first()
                 if evt_rename:
-                    emoji = "\U0001f480" if kill_flag else "\u26d4"
-                    new_name = f"{emoji}{evt_rename.channel_name}"
-            if new_name:
-                try:
-                    await ch.edit(name=new_name)
-                except disnake.HTTPException:
-                    logger.debug("Could not rename channel after auto-attendance kill mark", exc_info=True)
+                    rename_name = event_channel_name_with_kill_prefix(evt_rename, kill_flag)
+            if rename_name is not None:
+                await rename_event_channel_for_kill_name(ch, rename_name)

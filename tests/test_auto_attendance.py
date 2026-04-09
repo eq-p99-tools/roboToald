@@ -310,6 +310,7 @@ async def test_apply_button_creates_attendees(
     assert "Amy" in followup_text
     assert "Betty" in followup_text
     assert "was added" in followup_text
+    assert "Auto-attendance: event marked as killed" in followup_text
 
     evt = raid_session.query(Event).filter_by(channel_id=str(EVENT_CHANNEL_ID)).one()
     names = {c.name for c in raid_session.query(Character).all()}

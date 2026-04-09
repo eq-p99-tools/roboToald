@@ -38,6 +38,11 @@ from roboToald.raid.event_helpers import (
     build_target_loot_table_lines,
     build_raid_status_embed,
 )
+from roboToald.raid.event_kill_mark import (
+    apply_kill_state_to_event,
+    event_channel_name_with_kill_prefix,
+    rename_event_channel_for_kill_name,
+)
 from roboToald.raid.player_parser import parse_players_from_content
 from roboToald.raid.pushsafer import send_batphone
 
@@ -867,25 +872,29 @@ async def _cmd_kill(message: disnake.Message, _args: str):
     if not perms.can(message.author, "kill", guild_id):
         await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
+    dkp_val: int | None = None
+    rename_name: str | None = None
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
         if not evt:
             await message.channel.send("```diff\n- No event here.```")
             return
-        evt.killed = True
+        result = apply_kill_state_to_event(evt, True, set_tod_if_missing=False)
+        if not result.status_changed:
+            await message.channel.send("```diff\n+ No change: the target is already marked as killed.```")
+            return
         session.commit()
-        dkp_val = evt.dkp_value
-        new_name = f"\U0001f480{evt.channel_name}"
+        dkp_val = result.dkp_value
+        if dkp_val is not None:
+            rename_name = event_channel_name_with_kill_prefix(evt, True)
     if dkp_val is None:
         await message.channel.send(
             "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as killed.```"
         )
         return
     await message.channel.send(f"```diff\n+ Target was marked as a kill. DKP reward will be {dkp_val}.```")
-    try:
-        await message.channel.edit(name=new_name)
-    except disnake.HTTPException:
-        pass
+    if rename_name is not None:
+        await rename_event_channel_for_kill_name(message.channel, rename_name)
 
 
 @_dollar("nokill")
@@ -894,25 +903,29 @@ async def _cmd_nokill(message: disnake.Message, _args: str):
     if not perms.can(message.author, "nokill", guild_id):
         await message.channel.send("```diff\n- You do not have permission to access that command.```")
         return
+    dkp_val: int | None = None
+    rename_name: str | None = None
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
         if not evt:
             await message.channel.send("```diff\n- No event here.```")
             return
-        evt.killed = False
+        result = apply_kill_state_to_event(evt, False, set_tod_if_missing=False)
+        if not result.status_changed:
+            await message.channel.send("```diff\n+ No change: the target is already marked as not killed.```")
+            return
         session.commit()
-        dkp_val = evt.dkp_value
-        new_name = f"\u26d4{evt.channel_name}"
+        dkp_val = result.dkp_value
+        if dkp_val is not None:
+            rename_name = event_channel_name_with_kill_prefix(evt, False)
     if dkp_val is None:
         await message.channel.send(
             "```diff\n- Must specify a target or dkp value using the `/event target` or $dkp command before you can mark as not killed.```"
         )
         return
     await message.channel.send(f"```diff\n+ Target was marked as not killed. DKP reward will be {dkp_val}.```")
-    try:
-        await message.channel.edit(name=new_name)
-    except disnake.HTTPException:
-        pass
+    if rename_name is not None:
+        await rename_event_channel_for_kill_name(message.channel, rename_name)
 
 
 @_dollar("dkp")
