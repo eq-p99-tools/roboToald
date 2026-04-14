@@ -122,6 +122,36 @@
             display: block;
             margin-bottom: 0.25rem;
         }
+        .version-breakdown {
+            margin-top: 1.25rem;
+        }
+        .version-breakdown h4 {
+            margin: 0 0 0.6rem 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--pico-muted-color);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .version-breakdown table {
+            max-width: 22rem;
+            margin: 0;
+        }
+        .version-breakdown thead th {
+            cursor: default;
+            text-transform: none;
+            letter-spacing: normal;
+            font-size: 0.85rem;
+        }
+        .version-breakdown .muted-version {
+            color: var(--pico-muted-color);
+            font-style: italic;
+        }
+        .version-breakdown-empty {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--pico-muted-color);
+        }
         .empty-state {
             text-align: center;
             padding: 2rem;
@@ -184,21 +214,92 @@
         }
         .sub-tab-panel { display: none; }
         .sub-tab-panel.active { display: block; }
-        #refresh-select {
-            display: inline-block;
-            width: auto;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.85rem;
-            margin: 0;
-            height: auto;
-            vertical-align: middle;
-        }
         .nav-control {
             display: flex;
             align-items: center;
             gap: 0.4rem;
             font-size: 0.85rem;
             color: var(--pico-muted-color);
+        }
+        /* Touch-friendly controls; avoid flex-shrink crushing selects on narrow viewports */
+        #guild-select,
+        #refresh-select {
+            min-height: 2.5rem;
+            padding: 0.35rem 0.65rem;
+            font-size: 1rem;
+            flex: 1 1 auto;
+        }
+        #guild-select {
+            min-width: 11rem;
+        }
+        #refresh-select {
+            min-width: 5.75rem;
+        }
+        .dashboard-table-filter {
+            display: block;
+            width: 100%;
+            min-width: min(100%, 16rem);
+            max-width: 22rem;
+            min-height: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+        @media (max-width: 768px) {
+            body > nav {
+                flex-wrap: wrap;
+                row-gap: 0.75rem;
+                align-items: flex-start;
+            }
+            body > nav > ul:last-child {
+                width: 100%;
+                flex-wrap: wrap;
+                gap: 0.65rem 1rem;
+                justify-content: flex-start;
+            }
+            body > nav > ul:last-child > li {
+                flex: 1 1 100%;
+                min-width: 0;
+            }
+            .nav-control {
+                width: 100%;
+                max-width: 100%;
+                gap: 0.5rem;
+            }
+            /* Grow to fill row after label; keep global min-width floors so controls stay tappable */
+            .nav-control select {
+                flex: 1 1 auto;
+                max-width: 100%;
+            }
+            body > nav > ul:last-child > li:last-child {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .tab-bar {
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                gap: 0.25rem;
+                padding-bottom: 2px;
+            }
+            .tab-btn {
+                flex: 0 0 auto;
+                white-space: nowrap;
+                padding: 0.55rem 0.9rem;
+            }
+            .sub-tab-bar {
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                gap: 0.25rem;
+            }
+            .sub-tab-btn {
+                flex: 0 0 auto;
+                white-space: nowrap;
+            }
         }
         .visually-hidden {
             position: absolute;
@@ -398,6 +499,13 @@
     }
 
     function sortKeyFromCell(cell) {
+        var dataSort = cell.getAttribute('data-sort');
+        if (dataSort != null && dataSort !== '') {
+            var explicit = Number(dataSort);
+            if (!isNaN(explicit) && isFinite(explicit)) {
+                return { type: 'num', val: explicit };
+            }
+        }
         var time = cell.querySelector('time[datetime]');
         if (time) return { type: 'num', val: new Date(time.getAttribute('datetime')).getTime() || 0 };
         var badges = cell.querySelectorAll('.badge');

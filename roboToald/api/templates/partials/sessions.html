@@ -23,7 +23,7 @@
             <td>{{ s.park }}</td>
             <td><time class="local-time" datetime="{{ s.first_seen_iso }}">{{ s.first_seen }}</time></td>
             <td><time class="local-time" datetime="{{ s.last_seen_iso }}">{{ s.last_seen }}</time></td>
-            <td>{{ s.duration }}</td>
+            <td data-sort="{{ s.duration_seconds }}">{{ s.duration }}</td>
         </tr>
         {% endfor %}
     </tbody>

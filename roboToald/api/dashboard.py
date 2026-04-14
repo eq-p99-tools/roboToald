@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+from collections import Counter
 import secrets
 import time
 import urllib.parse
@@ -28,7 +29,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 COOKIE_NAME = "admin_session"
-COOKIE_MAX_AGE = 604800  # 7 days
+COOKIE_MAX_AGE = 2592000  # 30 days
 STATE_COOKIE_NAME = "oauth_state"
 STATE_COOKIE_MAX_AGE = 300
 _USE_SECURE_COOKIE = bool(config.DASHBOARD_BASE_URL and config.DASHBOARD_BASE_URL.startswith("https://"))
@@ -115,6 +116,21 @@ def _parse_guild_filter(request: Request) -> int | None:
         except ValueError:
             pass
     return None
+
+
+def _histogram_client_versions(connections: list[dict]) -> list[dict[str, int | str]]:
+    """Group live WS connections by normalized client_version for the dashboard."""
+    labels: list[str] = []
+    for c in connections:
+        v = (c.get("client_version") or "").strip()
+        if not v or v.lower() == "unknown":
+            labels.append("unknown")
+        else:
+            labels.append(v)
+    counts = Counter(labels)
+    rows = [{"version": ver, "count": n} for ver, n in counts.items()]
+    rows.sort(key=lambda r: (-int(r["count"]), str(r["version"]).lower()))
+    return rows
 
 
 # -- Auth routes --------------------------------------------------------------
@@ -340,6 +356,7 @@ async def partial_overview(request: Request):
 
     allowed = set(guild_ids)
     all_connections = [c for c in ws_manager.get_connections_summary() if c["guild_id"] in allowed]
+    client_version_counts = _histogram_client_versions(all_connections)
 
     active_session_count = 0
     for gid in guild_ids:
@@ -355,6 +372,7 @@ async def partial_overview(request: Request):
             "total_groups": total_groups,
             "ws_client_count": len(all_connections),
             "active_session_count": active_session_count,
+            "client_version_counts": client_version_counts,
         },
     )
 
@@ -373,7 +391,9 @@ async def partial_connections(request: Request):
     for conn in connections:
         conn["connected_at_iso"] = conn["connected_at"].astimezone().isoformat()
         delta = now - conn["connected_at"]
-        minutes = int(delta.total_seconds() // 60)
+        uptime_seconds = int(delta.total_seconds())
+        conn["uptime_seconds"] = uptime_seconds
+        minutes = uptime_seconds // 60
         if minutes < 60:
             conn["uptime"] = f"{minutes}m"
         else:
@@ -407,7 +427,8 @@ async def partial_sessions(request: Request):
         sessions = sso_model.get_sessions_in_range(gid, threshold, now)
         for s in sessions:
             duration = s.last_seen - s.first_seen
-            minutes = int(duration.total_seconds() // 60)
+            duration_seconds = int(duration.total_seconds())
+            minutes = duration_seconds // 60
             character = None
             for c in s.account.characters if s.account else []:
                 if c.name == s.character_name:
@@ -427,6 +448,7 @@ async def partial_sessions(request: Request):
                     "last_seen": s.last_seen.strftime("%H:%M:%S"),
                     "last_seen_iso": s.last_seen.isoformat() + "Z",
                     "duration": f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m",
+                    "duration_seconds": duration_seconds,
                 }
             )
 

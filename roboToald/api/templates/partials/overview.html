@@ -20,6 +20,31 @@
         <div class="label">Groups</div>
     </div>
 </div>
+<div class="version-breakdown">
+    <h4>Connections by client version</h4>
+    {% if client_version_counts %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Connections</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in client_version_counts %}
+                <tr>
+                    <td>{% if row.version == 'unknown' %}<span class="muted-version">unknown</span>{% else %}{{ row.version }}{% endif %}</td>
+                    <td>{{ row.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="version-breakdown-empty">No WebSocket connections</p>
+    {% endif %}
+</div>
 {% if guild_stats|length > 1 %}
 <div class="guild-stats">
     {% for g in guild_stats %}
