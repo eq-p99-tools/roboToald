@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 
 import pytest
 
 from roboToald.db.raid_models.character import Character
 from roboToald.db.raid_models.target import Target, TargetAlias
+from roboToald.db.raid_models.tracking import Tracking
 from roboToald.discord_client.commands import cmd_rte
 
 
@@ -55,6 +57,60 @@ def test_rte_target_choices_includes_alias_match(patch_cmd_rte_raid_session, rai
     raid_session.commit()
 
     choices = cmd_rte._rte_target_choices("nag", 1)
+    assert "Lord Nagafen" in choices.values()
+
+
+def test_pending_target_choices_only_targets_with_pending_trackings(patch_cmd_rte_raid_session, raid_session):
+    char = Character(name="Tank", klass="Warlord")
+    alpha = Target(name="Alpha Dragon", can_rte=True, parent="")
+    beta = Target(name="Beta Wurm", can_rte=True, parent="")
+    raid_session.add_all([char, alpha, beta])
+    raid_session.flush()
+    start = datetime.datetime(2024, 1, 1, 12, 0, 0)
+    end = datetime.datetime(2024, 1, 1, 13, 0, 0)
+    raid_session.add(
+        Tracking(
+            target_id=alpha.id,
+            character_id=char.id,
+            start_time=start,
+            end_time=end,
+            role_id=1,
+            adjustment_id=None,
+        )
+    )
+    raid_session.commit()
+
+    choices = cmd_rte._pending_target_choices("", 1)
+    assert choices == {"Alpha Dragon": "Alpha Dragon"}
+
+    choices_alp = cmd_rte._pending_target_choices("alp", 1)
+    assert choices_alp == {"Alpha Dragon": "Alpha Dragon"}
+
+    choices_bet = cmd_rte._pending_target_choices("bet", 1)
+    assert choices_bet == {}
+
+
+def test_pending_target_choices_alias_match(patch_cmd_rte_raid_session, raid_session):
+    char = Character(name="Healer", klass="Cleric")
+    t = Target(name="Lord Nagafen", can_rte=True, parent="")
+    raid_session.add_all([char, t])
+    raid_session.flush()
+    raid_session.add(TargetAlias(target_id=t.id, name="naggy"))
+    start = datetime.datetime(2024, 1, 1, 12, 0, 0)
+    end = datetime.datetime(2024, 1, 1, 13, 0, 0)
+    raid_session.add(
+        Tracking(
+            target_id=t.id,
+            character_id=char.id,
+            start_time=start,
+            end_time=end,
+            role_id=1,
+            adjustment_id=None,
+        )
+    )
+    raid_session.commit()
+
+    choices = cmd_rte._pending_target_choices("nag", 1)
     assert "Lord Nagafen" in choices.values()
 
 

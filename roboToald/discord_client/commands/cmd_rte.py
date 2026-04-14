@@ -165,6 +165,37 @@ def _rte_target_choices(query: str, guild_id: int) -> dict[str, str]:
         return {t.name: t.name for t in q.limit(25).all()}
 
 
+def _pending_target_choices(query: str, guild_id: int) -> dict[str, str]:
+    """Autocomplete targets that have at least one closed, unsubmitted tracking."""
+    query = query.strip().lower()
+    with get_raid_session(guild_id) as session:
+        pending_ids_q = (
+            session.query(Tracking.target_id)
+            .filter(Tracking.adjustment_id.is_(None), Tracking.end_time.isnot(None))
+            .distinct()
+        )
+        q = (
+            session.query(Target)
+            .filter(Target.id.in_(pending_ids_q))
+            .filter(Target.can_rte.is_(True))
+            .filter(sa.func.length(Target.name) > 0)
+            .filter(sa.or_(Target.parent == "", Target.parent.is_(None)))
+            .order_by(Target.name)
+        )
+        if query:
+            alias_ids = (
+                session.query(TargetAlias.target_id).filter(sa.func.lower(TargetAlias.name).startswith(query)).all()
+            )
+            alias_target_ids = [a[0] for a in alias_ids]
+            q = q.filter(
+                sa.or_(
+                    sa.func.lower(Target.name).startswith(query),
+                    Target.id.in_(alias_target_ids),
+                )
+            )
+        return {t.name: t.name for t in q.limit(25).all()}
+
+
 def _character_choices(query: str, guild_id: int) -> dict[str, str]:
     query = query.strip().lower()
     with get_raid_session(guild_id) as session:
@@ -654,9 +685,13 @@ def _fmt_duration(seconds: float | None) -> str:
 
 
 @stop.autocomplete("target")
-@submit.autocomplete("target")
-async def _ac_unrte_submit_target(inter: disnake.ApplicationCommandInteraction, query: str):
+async def _ac_stop_target(inter: disnake.ApplicationCommandInteraction, query: str):
     return _rte_target_choices(query, inter.guild.id)
+
+
+@submit.autocomplete("target")
+async def _ac_submit_target(inter: disnake.ApplicationCommandInteraction, query: str):
+    return _pending_target_choices(query, inter.guild.id)
 
 
 @stop.autocomplete("character")
