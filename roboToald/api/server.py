@@ -1041,26 +1041,39 @@ def user_has_access_to_accounts(
     """
     import sqlalchemy.orm
 
-    role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
-    if not role_ids or not account_ids:
+    if not account_ids:
         return []
+    role_ids = _get_user_role_ids(discord_client, guild_id, discord_user_id)
 
     with base.get_session() as session:
         try:
-            accessible_ids = {
-                row[0]
-                for row in session.query(sso_model.account_group_mapping.c.account_id)
-                .join(
-                    sso_model.SSOAccountGroup,
-                    sso_model.account_group_mapping.c.group_id == sso_model.SSOAccountGroup.id,
+            accessible_ids: set[int] = set()
+            if role_ids:
+                accessible_ids.update(
+                    row[0]
+                    for row in session.query(sso_model.account_group_mapping.c.account_id)
+                    .join(
+                        sso_model.SSOAccountGroup,
+                        sso_model.account_group_mapping.c.group_id == sso_model.SSOAccountGroup.id,
+                    )
+                    .filter(
+                        sso_model.account_group_mapping.c.account_id.in_(account_ids),
+                        sso_model.SSOAccountGroup.guild_id == guild_id,
+                        sso_model.SSOAccountGroup.role_id.in_(role_ids),
+                    )
+                    .all()
                 )
-                .filter(
-                    sso_model.account_group_mapping.c.account_id.in_(account_ids),
-                    sso_model.SSOAccountGroup.guild_id == guild_id,
-                    sso_model.SSOAccountGroup.role_id.in_(role_ids),
+            if discord_user_id:
+                accessible_ids.update(
+                    row[0]
+                    for row in session.query(sso_model.SSOAccount.id)
+                    .filter(
+                        sso_model.SSOAccount.id.in_(account_ids),
+                        sso_model.SSOAccount.guild_id == guild_id,
+                        sso_model.SSOAccount.owner_discord_user_id == discord_user_id,
+                    )
+                    .all()
                 )
-                .all()
-            }
             if not accessible_ids:
                 return []
             accounts = (

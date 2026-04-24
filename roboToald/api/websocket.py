@@ -68,17 +68,24 @@ def _brief_exc_info() -> str:
     return f"{type(exc).__name__}: {exc}" if exc else "unknown"
 
 
-def build_account_tree(accessible_accounts, active_characters: dict[int, str] | None = None) -> dict:
+def build_account_tree(
+    accessible_accounts,
+    active_characters: dict[int, str] | None = None,
+    viewer_discord_user_id: int | None = None,
+) -> dict:
     """Build an account_tree dict from a list of SSOAccount objects.
 
     Matches the v3 ``account_tree`` shape sent in WebSocket ``full_state`` messages.
     *active_characters* is an optional ``{account_id: character_name}`` map
-    from :func:`sso_model.get_active_characters`.
+    from :func:`sso_model.get_active_characters`. *viewer_discord_user_id* is
+    the Discord user id of the WS client receiving the tree; when provided, each
+    account entry gets an ``owned`` flag indicating whether the viewer owns it.
     """
     if active_characters is None:
         active_characters = {}
     tree = {}
     for account in accessible_accounts:
+        owner_id = getattr(account, "owner_discord_user_id", None)
         tree[account.real_user] = {
             "aliases": [alias.alias for alias in account.aliases],
             "tags": [tag.tag for tag in account.tags],
@@ -90,6 +97,9 @@ def build_account_tree(accessible_accounts, active_characters: dict[int, str] | 
             ),
             "last_login_by": account.last_login_by,
             "active_character": active_characters.get(account.id),
+            "owned": (
+                viewer_discord_user_id is not None and owner_id is not None and owner_id == viewer_discord_user_id
+            ),
         }
     return tree
 
@@ -343,7 +353,12 @@ class ConnectionManager:
         if member is None:
             return []
         role_ids = {role.id for role in member.roles}
-        return [a for a in accounts if any(g.role_id in role_ids for g in a.groups)]
+        return [
+            a
+            for a in accounts
+            if getattr(a, "owner_discord_user_id", None) == discord_user_id
+            or any(g.role_id in role_ids for g in a.groups)
+        ]
 
     async def _notify_guild_async(self, guild_id: int):
         connections = self._get_connections_for_guild(guild_id)
@@ -380,7 +395,7 @@ class ConnectionManager:
             return
 
         accessible = self._filter_accessible(conn.discord_user_id, guild_id, all_accounts)
-        new_tree = build_account_tree(accessible, active_characters)
+        new_tree = build_account_tree(accessible, active_characters, viewer_discord_user_id=conn.discord_user_id)
         changes = compute_diff(conn.last_sent_state, new_tree)
 
         if changes:
@@ -394,7 +409,7 @@ class ConnectionManager:
             asyncio.to_thread(sso_model.get_active_characters, guild_id),
         )
         accessible = self._filter_accessible(discord_user_id, guild_id, all_accounts)
-        return build_account_tree(accessible, active_characters)
+        return build_account_tree(accessible, active_characters, viewer_discord_user_id=discord_user_id)
 
 
 manager = ConnectionManager()

@@ -454,6 +454,62 @@ def only_allow_admin():
     return commands.check(predicate)
 
 
+def _inter_is_admin(inter: disnake.ApplicationCommandInteraction) -> bool:
+    return is_admin([role.id for role in inter.author.roles], inter.guild_id)
+
+
+def require_manage(inter: disnake.ApplicationCommandInteraction, account: sso_model.SSOAccount) -> bool:
+    """True if the invoking user may mutate ``account`` (admin override OR ownership)."""
+    return sso_model.can_manage_account(account, inter.user.id, _inter_is_admin(inter))
+
+
+async def _resolve_manageable_account(
+    inter: disnake.ApplicationCommandInteraction, username: str
+) -> sso_model.SSOAccount | None:
+    """Resolve *username* to an account the caller may mutate.
+
+    Sends an ephemeral error and returns ``None`` if the account is missing or the
+    caller lacks owner/admin rights.
+    """
+    try:
+        account = sso_model.get_account(inter.guild_id, username)
+    except sso_model.SSOAccountNotFoundError:
+        await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+        return None
+    if not require_manage(inter, account):
+        await inter.send(
+            content=f"⚠️🔒 **You do not own account** `{username}`. Ask an admin or the owner.",
+            ephemeral=True,
+        )
+        return None
+    return account
+
+
+async def owned_account_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete restricted to accounts the invoking user owns.
+
+    Admins do **not** see everyone else's accounts here; use ``/sso_admin ...`` for that.
+    """
+    try:
+        accounts = sso_model.get_accounts_owned_by(inter.guild_id, inter.user.id)
+        needle = (string or "").lower()
+        names = [a.real_user for a in accounts if not needle or needle in a.real_user.lower()]
+        return names[:25]
+    except Exception:
+        return []
+
+
+async def owned_character_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
+    """Autocomplete restricted to characters on accounts the invoking user owns."""
+    try:
+        accounts = sso_model.get_accounts_owned_by(inter.guild_id, inter.user.id)
+        needle = (string or "").lower()
+        names = [c.name for a in accounts for c in a.characters if not needle or needle in c.name.lower()]
+        return names[:25]
+    except Exception:
+        return []
+
+
 async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: list = None):
     """Send a message, splitting it into chunks if it's too long.
 
@@ -684,6 +740,29 @@ class SSOCommands(commands.Cog):
             ws_manager.notify_guild(inter.guild_id, immediate=True)
         except sqlalchemy.exc.NoResultFound:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+
+    @admin_account.sub_command(description="Reassign (or clear) ownership of an account", name="reassign")
+    async def account_reassign(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username to reassign", autocomplete=account_autocomplete),
+        new_owner: disnake.Member = commands.Param(
+            default=None,
+            description="New owner (omit to clear ownership and make the account admin-only again)",
+        ),
+    ):
+        try:
+            new_owner_id = new_owner.id if new_owner else None
+            account = sso_model.set_account_owner(inter.guild_id, username, new_owner_id)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        if new_owner:
+            message = f"👑🤖 **Account** `{account.real_user}` **is now owned by** <@{new_owner.id}>."
+        else:
+            message = f"🧹🤖 **Cleared ownership** of `{account.real_user}` (admin-only)."
+        await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
 
     @sso.sub_command_group(description="Tag related commands")
     async def tag(self, inter: disnake.ApplicationCommandInteraction):
@@ -1900,6 +1979,392 @@ class SSOCommands(commands.Cog):
             await inter.send(content=message, ephemeral=True)
             return
         await send_and_split(inter.send, message, True)
+
+    # ------------------------------------------------------------------
+    # /sso_owner — per-user management of accounts the caller owns.
+    # Admins may also use these commands (admins have override rights everywhere).
+    # ------------------------------------------------------------------
+    @commands.slash_command(description="Manage bots you own", guild_ids=SSO_GUILDS)
+    async def sso_owner(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @sso_owner.sub_command_group(description="Account related commands", name="account")
+    async def owner_account(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_account.sub_command(description="Create a new account you own", name="create")
+    async def owner_account_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Username for the new account"),
+        password: str = commands.Param(description="Password for the new account"),
+        group: str = commands.Param(
+            description="Group to add the account to", autocomplete=group_autocomplete, default=None
+        ),
+    ):
+        try:
+            account = sso_model.create_account(
+                inter.guild_id, username, password, group, owner_discord_user_id=inter.user.id
+            )
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
+            return
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group}`", ephemeral=True)
+            return
+        group_str = f" **in group** `{group}`" if group else ""
+        message = f"✨🤖👑 **Created owned account** `{account.real_user}`{group_str}"
+        await inter.send(content=message, ephemeral=True)
+        await inter.channel.send(
+            f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_account.sub_command(description="List accounts you own", name="list")
+    async def owner_account_list(self, inter: disnake.ApplicationCommandInteraction):
+        accounts = sso_model.get_accounts_owned_by(inter.guild_id, inter.user.id)
+        if not accounts:
+            await inter.send(content="ℹ️👑 **You do not own any accounts.**", ephemeral=True)
+            return
+        formatted = ""
+        for account in accounts:
+            formatted += f"🤖 **{account.real_user}**:\n"
+            if account.groups:
+                formatted += f"  →  🗂️ Groups: {', '.join(g.group_name for g in account.groups)}\n"
+            if account.tags:
+                formatted += f"  →  🏷️ Tags: {', '.join(t.tag for t in account.tags)}\n"
+            if account.aliases:
+                formatted += f"  →  🔗 Aliases: {', '.join(a.alias for a in account.aliases)}\n"
+            if not account.groups and not account.tags and not account.aliases:
+                formatted += "  →  No groups, tags, or aliases\n"
+        await send_and_split(inter.send, f"**👑 Accounts you own:**\n{formatted}", ephemeral=True)
+
+    @owner_account.sub_command(description="Update the password of an account you own", name="update")
+    async def owner_account_update(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        new_password: str = commands.Param(description="New password"),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.update_account(inter.guild_id, account.real_user, new_password)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        message = f"🔑🤖 **Updated password** for account `{account.real_user}`"
+        await inter.send(content=message, ephemeral=True)
+        await inter.channel.send(
+            f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_account.sub_command(description="Delete an account you own", name="delete")
+    async def owner_account_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.delete_account(inter.guild_id, account.real_user)
+        except sqlalchemy.exc.NoResultFound:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        await inter.send(content=f"🗑️🤖 **Deleted account** `{account.real_user}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_owner.sub_command_group(description="Group membership for your accounts", name="group")
+    async def owner_group(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_group.sub_command(description="Add one of your accounts to a group", name="add")
+    async def owner_group_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group_name: str = commands.Param(description="Group name", autocomplete=group_autocomplete),
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.add_account_to_group(inter.guild_id, group_name, account.real_user)
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+            return
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Already in group:** `{account.real_user}` : `{group_name}`",
+                ephemeral=True,
+            )
+            return
+        await inter.send(content=f"✨🤖🗂️ **Added account** `{account.real_user}` to group `{group_name}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_group.sub_command(description="Remove one of your accounts from a group", name="remove")
+    async def owner_group_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group_name: str = commands.Param(description="Group name", autocomplete=group_autocomplete),
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.remove_account_from_group(inter.guild_id, group_name, account.real_user)
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+            return
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{account.real_user}` : `{group_name}`",
+                ephemeral=True,
+            )
+            return
+        await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{account.real_user}` from group `{group_name}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_owner.sub_command_group(description="Tag commands for your accounts", name="tag")
+    async def owner_tag(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_tag.sub_command(description="Tag one of your accounts", name="add")
+    async def owner_tag_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        tag: str = commands.Param(description="Tag to add", autocomplete=tag_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            added = sso_model.tag_account(inter.guild_id, account.real_user, tag)
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(content=f"⚠️🏷️ **Tag already exists** for account `{account.real_user}`", ephemeral=True)
+            return
+        await inter.send(content=f"✨🏷️ **Tagged account** `{added.account.real_user}` with tag `{added.tag}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_tag.sub_command(description="Remove a tag from one of your accounts", name="remove")
+    async def owner_tag_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        tag: str = commands.Param(description="Tag to remove", autocomplete=tag_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.untag_account(inter.guild_id, account.real_user, tag)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        except sso_model.SSOAccountTagNotFoundError:
+            await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{account.real_user}`", ephemeral=True)
+            return
+        await inter.send(content=f"🗑️🏷️ **Untagged account** `{account.real_user}` from tag `{tag}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_owner.sub_command_group(description="Alias commands for your accounts", name="alias")
+    async def owner_alias(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_alias.sub_command(description="Create an alias for one of your accounts", name="create")
+    async def owner_alias_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        alias: str = commands.Param(description="Alias to create"),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.create_account_alias(inter.guild_id, account.real_user, alias)
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(content=f"⚠️🔗 **Alias already exists:** `{alias}`", ephemeral=True)
+            return
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        await inter.send(content=f"✨🔗 **Created alias** `{alias}` for account `{account.real_user}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_alias.sub_command(description="Delete an alias on one of your accounts", name="delete")
+    async def owner_alias_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        alias: str = commands.Param(description="Alias to delete", autocomplete=alias_autocomplete),
+    ):
+        try:
+            aliases = sso_model.list_account_aliases(inter.guild_id)
+        except Exception as e:
+            await inter.send(content=f"❌🔗 **Error:**\n```\n{e}\n```", ephemeral=True)
+            return
+        match = next((a for a in aliases if a.alias == alias.lower()), None)
+        if match is None:
+            await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
+            return
+        if not require_manage(inter, match.account):
+            await inter.send(content=f"⚠️🔒 **You do not own account** `{match.account.real_user}`.", ephemeral=True)
+            return
+        try:
+            account_name = sso_model.delete_account_alias(inter.guild_id, alias)
+        except sso_model.SSOAccountAliasNotFoundError:
+            await inter.send(content=f"⚠️🔗 **Alias not found:** `{alias}`", ephemeral=True)
+            return
+        await inter.send(content=f"🗑️🔗 **Deleted alias** `{alias}` from account `{account_name}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_owner.sub_command_group(description="Character commands for your accounts", name="character")
+    async def owner_character(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_character.sub_command(description="Add a character to one of your accounts", name="add")
+    async def owner_character_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        character_name: str = commands.Param(description="Character name"),
+        character_class: sso_model.CharacterClass = commands.Param(description="Class of the character"),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            character_name = character_name.lower().capitalize()
+            char = sso_model.add_account_character(
+                guild_id=inter.guild_id, real_user=account.real_user, name=character_name, klass=character_class
+            )
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        except sso_model.SSOCharacterAlreadyExistsError:
+            await inter.send(content=f"⚠️🧍 **Character already exists:** `{character_name}`", ephemeral=True)
+            return
+        except Exception as e:
+            await inter.send(content=f"❌🧍 **Error:**\n```\n{e}\n```", ephemeral=True)
+            return
+        await inter.send(
+            content=f"✨🧍 **Added character** `{char.name}` *({char.klass.value})* on account 🤖 `{account.real_user}`."
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    async def _resolve_manageable_character(
+        self, inter: disnake.ApplicationCommandInteraction, character_name: str
+    ) -> sso_model.SSOAccountCharacter | None:
+        """Look up a character, verifying the caller can manage its parent account."""
+        try:
+            characters = sso_model.list_account_characters(inter.guild_id)
+        except Exception as e:
+            await inter.send(content=f"❌🧍 **Error:**\n```\n{e}\n```", ephemeral=True)
+            return None
+        needle = character_name.lower()
+        match = next((c for c in characters if c.name.lower() == needle), None)
+        if match is None:
+            await inter.send(content=f"⚠️🧍 **Character not found:** `{character_name}`", ephemeral=True)
+            return None
+        if not require_manage(inter, match.account):
+            await inter.send(content=f"⚠️🔒 **You do not own account** `{match.account.real_user}`.", ephemeral=True)
+            return None
+        return match
+
+    @owner_character.sub_command(description="Remove a character from one of your accounts", name="remove")
+    async def owner_character_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=owned_character_autocomplete),
+    ):
+        char = await self._resolve_manageable_character(inter, character_name)
+        if char is None:
+            return
+        try:
+            removed = sso_model.remove_account_character(guild_id=inter.guild_id, name=char.name)
+        except Exception as e:
+            await inter.send(content=f"❌🧍 **Error:**\n```\n{e}\n```", ephemeral=True)
+            return
+        if not removed:
+            await inter.send(content=f"⚠️🧍 **Character not found:** `{character_name}`", ephemeral=True)
+            return
+        await inter.send(content=f"🗑️🧍 **Deleted character:** `{char.name}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_character.sub_command(
+        description="Set zone key, boolean item, or stack-count item for one of your characters",
+        name="items",
+    )
+    async def owner_character_items(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=owned_character_autocomplete),
+        item: str = commands.Param(
+            description="Tracked key or inventory item (search by name)",
+            autocomplete=tracked_inventory_item_autocomplete,
+        ),
+        status: str | None = commands.Param(
+            default=None,
+            description="Yes/No/Unknown for zone keys and boolean items (not used for stack-count items)",
+            choices=["Yes", "No", "Unknown"],
+        ),
+        stack_count: int | None = commands.Param(
+            default=None,
+            description="Count for stack items (0+). Omit for Unknown. Not for keys / Vial / Idol / Necklace / Void.",
+            ge=0,
+            le=999_999,
+        ),
+    ):
+        char = await self._resolve_manageable_character(inter, character_name)
+        if char is None:
+            return
+        try:
+            item_label = TRACKED_ITEM_WIRE_TO_LABEL.get(item, item)
+            if item in BOOL_ITEM_WIRES:
+                if stack_count is not None:
+                    await inter.send(
+                        content="⚠️🧍 **stack_count** is only for stack items (e.g. **Lizard Blood Potion**, **Pearl**, **Peridot**, **Mana Battery - Class Three/Four/Five**).",
+                        ephemeral=True,
+                    )
+                    return
+                if status is None:
+                    await inter.send(
+                        content="⚠️🧍 Choose **Yes**, **No**, or **Unknown** for this item.",
+                        ephemeral=True,
+                    )
+                    return
+                value = {"Yes": True, "No": False, "Unknown": None}[status]
+                ok = sso_model.set_character_item(inter.guild_id, char.name, item, value)
+                if not ok:
+                    await inter.send(content=f"⚠️🧍 **Character not found:** `{character_name}`", ephemeral=True)
+                    return
+                message = f"🔑 Set `{char.name}` **{item_label}** to **{status}**."
+            elif item in STACK_ITEM_WIRES:
+                ok = sso_model.set_character_stack_item(inter.guild_id, char.name, item, stack_count)
+                if not ok:
+                    await inter.send(content=f"⚠️🧍 **Character not found:** `{character_name}`", ephemeral=True)
+                    return
+                if stack_count is None:
+                    message = f"🔑 Set `{char.name}` **{item_label}** count to **Unknown**."
+                else:
+                    message = f"🔑 Set `{char.name}` **{item_label}** count to **{stack_count}**."
+            else:
+                await inter.send(
+                    content="⚠️🧍 **Unknown item.** Pick from the list (or re-open the command after a bot update).",
+                    ephemeral=True,
+                )
+                return
+        except Exception as e:
+            await inter.send(content=f"❌🧍 **Error:**\n```\n{e}\n```", ephemeral=True)
+            return
+        await inter.send(content=message)
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
 
     # @commands.Cog.listener()
     # async def on_guild_channel_create(self, channel):

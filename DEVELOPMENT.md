@@ -63,7 +63,7 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `enable_batphone` | bool | `false` | Enable `/batphone` |
 | `enable_raidtarget` | bool | `false` | Enable `/raidtarget` |
 | `enable_raid` | bool | `false` | Enable raid/event commands and handlers; requires `[raid.<id>]` and `[eqdkp.<id>]` with `url` and `api_key` |
-| `enable_sso` | bool | `false` | Enable `/sso` and `/sso_admin` |
+| `enable_sso` | bool | `false` | Enable `/sso`, `/sso_admin`, and `/sso_owner` |
 | `enable_ds` | bool | `false` | Enable `/ds` |
 | `sso_admin_roles` | comma-separated ints | `""` | Discord role IDs that can use `/sso_admin` |
 | `ds_tod_channel` | int | `0` | Channel for DS time-of-death and timer messages |
@@ -130,7 +130,7 @@ batphone.py (entry point)
         ├── on_ready                     # Restore timers, DS state, subscriptions
         ├── on_message                   # Alert matching, wakeup triggers
         ├── on_button_click              # BUTTON_LISTENERS (prefix match on custom_id)
-        └── slash commands               # /sso, /sso_admin, /ds, /batphone, /timer, /raidtarget, /random
+        └── slash commands               # /sso, /sso_admin, /sso_owner, /ds, /batphone, /timer, /raidtarget, /random
 ```
 
 The API server and Discord client share the same process. The API server runs on uvicorn in a daemon thread; the Discord client runs on the main thread. They communicate through the database and the `ws_manager.notify_guild()` call which pushes real-time updates to WebSocket clients.
@@ -179,7 +179,7 @@ roboToald/
     │   ├── base.py                     # Bot setup, on_message handler
     │   └── commands/
     │       ├── __init__.py             # BUTTON_LISTENERS registry
-    │       ├── cmd_sso.py              # /sso and /sso_admin
+    │       ├── cmd_sso.py              # /sso, /sso_admin, /sso_owner
     │       ├── cmd_ds.py               # /ds
     │       ├── cmd_ds_data.py          # /ds data subcommands
     │       ├── cmd_batphone.py         # /batphone

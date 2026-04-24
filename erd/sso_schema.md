@@ -23,6 +23,7 @@ erDiagram
         encrypted real_pass
         datetime last_login
         string last_login_by
+        int owner_discord_user_id
     }
 
     SSOAccountGroup {
@@ -133,6 +134,7 @@ Represents a real EverQuest account with encrypted credentials.
 | `real_pass` | EncryptedType(String) | NOT NULL | EQ account password (encrypted at rest) |
 | `last_login` | DateTime | default `datetime.min` | Last time this account was used for login |
 | `last_login_by` | String(255) | nullable | Display name of the Discord user who last logged in |
+| `owner_discord_user_id` | Integer | nullable, indexed | Discord user id of the bot's owner. `NULL` = legacy / admin-only. A non-NULL value grants the owning user full manage rights (`/sso_owner ...`) and login access without needing a matching group role. Admins always retain override. Set via `/sso_admin account reassign` or implicitly when a non-admin uses `/sso_owner account create`. |
 
 **Unique constraint:** `(guild_id, real_user)`
 
@@ -310,16 +312,28 @@ Rate limiting counts failed attempts where `rate_limit != False` and `account_id
 ## RBAC Access Model
 
 ```
-Discord User's Roles
-        |
-        v
-SSOAccountGroup (role_id matches any user role)
-        |
-        v  (via account_group_mapping)
-SSOAccount (accessible)
+Discord User's Roles                               Discord User ID
+        |                                                  |
+        v                                                  v
+SSOAccountGroup (role_id matches any user role)   SSOAccount.owner_discord_user_id
+        |                                                  |
+        v  (via account_group_mapping)                     |
+            +--------------------------+-------------------+
+                                       v
+                             SSOAccount (accessible)
 ```
 
-A user can access an account if they hold any Discord role whose ID matches the `role_id` of any group the account belongs to. This check is performed as a single bulk query joining `account_group_mapping` with `SSOAccountGroup` filtered by role IDs.
+A user can access an account if any of the following is true:
+
+1. They hold a Discord role whose ID matches the `role_id` of any group the account belongs to.
+2. They are the account's owner (`SSOAccount.owner_discord_user_id` equals the user's Discord id).
+3. They have an `sso_admin_roles` role (admin override via Discord config, not database-backed).
+
+The HTTP/WS login path combines these in a single bulk query (`user_has_access_to_accounts` in `api/server.py`). The WebSocket subscription filter (`ConnectionManager._filter_accessible` in `api/websocket.py`) runs the same check in Python against the eagerly-loaded `groups` and `owner_discord_user_id` fields, so account_tree updates include owned bots even when the user holds no matching role.
+
+### Management permissions
+
+`can_manage_account(account, discord_user_id, is_admin)` in `db/models/sso.py` is the single source of truth for "can this user mutate this account?". Used by `/sso_owner` commands to gate updates; admins always pass.
 
 ## Dynamic Tags
 

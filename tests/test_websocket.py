@@ -35,7 +35,17 @@ def _char(name, klass=None, **kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _account(real_user, *, aliases=(), tags=(), characters=(), last_login=None, last_login_by=None, id=1):
+def _account(
+    real_user,
+    *,
+    aliases=(),
+    tags=(),
+    characters=(),
+    last_login=None,
+    last_login_by=None,
+    id=1,
+    owner_discord_user_id=None,
+):
     return SimpleNamespace(
         id=id,
         real_user=real_user,
@@ -44,6 +54,7 @@ def _account(real_user, *, aliases=(), tags=(), characters=(), last_login=None, 
         characters=list(characters),
         last_login=last_login,
         last_login_by=last_login_by,
+        owner_discord_user_id=owner_discord_user_id,
     )
 
 
@@ -104,6 +115,7 @@ def test_build_account_tree_shape():
             "last_login": ts.astimezone(datetime.timezone.utc).isoformat(),
             "last_login_by": None,
             "active_character": "Raid",
+            "owned": False,
         }
     }
 
@@ -124,6 +136,7 @@ def test_compute_diff_add_remove_account():
             "last_login": None,
             "last_login_by": None,
             "active_character": None,
+            "owned": False,
         }
     }
     ch = compute_diff(old, new)

@@ -17,6 +17,7 @@ The SSO system lets guild members log in to shared EverQuest accounts through th
 - **Character** -- a character name, class, bind/park location, and level tied to an account. You can log in by character name.
 - **Dynamic Tag** -- a computed zone+class tag (e.g. `vpclr`, `stenc`). Logging in with a dynamic tag finds an inactive character of the matching class parked in the matching zone.
 - **Access Key** -- a per-user secret generated via `/sso access get`. Used as the password in the login proxy.
+- **Owner** -- the Discord user who created (or has been assigned) an account. Owners manage their own bots via `/sso_owner` without needing an admin role; admins retain override on everything. Legacy accounts (created before ownership existed) have no owner and are admin-only until an admin runs `/sso_admin account reassign`.
 
 ### User Workflow
 
@@ -25,15 +26,28 @@ The SSO system lets guild members log in to shared EverQuest accounts through th
 3. In EverQuest, enter an account name, alias, tag, character name, or dynamic tag as the username.
 4. Type literally any text as the password.
 
+### Owner Workflow
+
+Any user can create and manage their own bot accounts via `/sso_owner` without needing admin roles:
+
+1. **Create an account** you own: `/sso_owner account create <username> <password> [group]`. You are recorded as the owner and can log in to the account even without matching group roles.
+2. **List your bots**: `/sso_owner account list`.
+3. **Update / delete** your accounts: `/sso_owner account update|delete`.
+4. **Manage access**: add/remove your bots to any guild group with `/sso_owner group add|remove`.
+5. **Aliases, tags, characters, items**: `/sso_owner alias`, `/sso_owner tag`, `/sso_owner character`.
+
+Admins always retain override rights (anything an owner can do, an admin can do on any account via `/sso_admin`).
+
 ### Admin Workflow
 
 Admins (users with roles listed in `sso_admin_roles`) manage the SSO system via `/sso_admin`:
 
 1. **Create groups** linked to Discord roles (`/sso_admin group create`).
-2. **Create accounts** with real credentials (`/sso_admin account create`), optionally assigning to a group.
+2. **Create accounts** with real credentials (`/sso_admin account create`), optionally assigning to a group. Accounts created this way have no owner (admin-only); use `/sso_admin account reassign` to transfer them to a player.
 3. **Add characters** to accounts (`/sso_admin character add`).
 4. **Tag accounts** for round-robin login (`/sso_admin tag add`).
 5. **Create aliases** for convenience (`/sso_admin alias create`).
+6. **Reassign ownership** of legacy / admin-created accounts to players with `/sso_admin account reassign`.
 
 ## Drusella Sathir Points
 
@@ -109,6 +123,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 |---|---|
 | `help` | Admin setup tutorial |
 | `account create / update / delete` | Manage accounts |
+| `account reassign <username> [new_owner]` | Transfer ownership to a user, or omit `new_owner` to clear (admin-only) |
 | `account list_no_characters` | Accounts missing characters |
 | `group create / delete` | Manage groups |
 | `group add / remove` | Add/remove accounts from groups |
@@ -118,6 +133,17 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `audit account / user / failed / statistics` | Audit logs |
 | `revocation add / list / remove` | Revoke/restore user access |
 | `reset_rate_limit` | Clear rate limit for an IP |
+
+### `/sso_owner` (any user; scoped to bots you own)
+
+| Subcommand | Description |
+|---|---|
+| `account create / update / delete` | Manage accounts you own (you are recorded as owner on `create`) |
+| `account list` | List bots you own |
+| `group add / remove` | Add/remove your accounts to any guild group |
+| `tag add / remove` | Tag/untag your accounts |
+| `alias create / delete` | Manage aliases on your accounts |
+| `character add / remove / items` | Manage characters and tracked items on your accounts |
 
 ### `/ds`
 

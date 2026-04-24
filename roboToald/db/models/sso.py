@@ -163,6 +163,11 @@ class SSOAccount(base.Base):
     last_login = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.datetime.min)
     last_login_by = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
 
+    # NULL = legacy / unowned (admin-only). A non-NULL value grants the owning Discord user full
+    # manage rights (aliases, characters, items, groups, shares) and login access without needing
+    # a matching group role. Admins always retain override regardless of ownership.
+    owner_discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True, index=True)
+
     groups = sqlalchemy.orm.relationship("SSOAccountGroup", secondary=account_group_mapping, back_populates="accounts")
     audit_logs = sqlalchemy.orm.relationship("SSOAuditLog", back_populates="account")
     tags = sqlalchemy.orm.relationship("SSOTag", back_populates="account", cascade="all, delete-orphan")
@@ -173,17 +178,29 @@ class SSOAccount(base.Base):
 
     __table_args__ = (sqlalchemy.UniqueConstraint("guild_id", "real_user", name="uq_guild_id_real_user"),)
 
-    def __init__(self, guild_id, real_user, real_pass, last_login=None):
+    def __init__(self, guild_id, real_user, real_pass, last_login=None, owner_discord_user_id=None):
         self.guild_id = guild_id
         self.real_user = real_user.lower()
         self.real_pass = real_pass
         self.last_login = last_login or datetime.datetime.min
+        self.owner_discord_user_id = owner_discord_user_id
 
 
-def create_account(guild_id: int, real_user: str, real_pass: str, group: str = None) -> SSOAccount:
+def create_account(
+    guild_id: int,
+    real_user: str,
+    real_pass: str,
+    group: str = None,
+    owner_discord_user_id: int = None,
+) -> SSOAccount:
     real_user = real_user.lower()
     with base.get_session() as session:
-        account = SSOAccount(guild_id=guild_id, real_user=real_user, real_pass=real_pass)
+        account = SSOAccount(
+            guild_id=guild_id,
+            real_user=real_user,
+            real_pass=real_pass,
+            owner_discord_user_id=owner_discord_user_id,
+        )
         if group:
             account.groups.append(get_account_group(guild_id, group))
         session.add(account)
@@ -648,6 +665,58 @@ def delete_account(guild_id: int, real_user: str) -> None:
             session.commit()
         except sqlalchemy.exc.NoResultFound:
             raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+
+
+def set_account_owner(guild_id: int, real_user: str, owner_discord_user_id: int | None) -> SSOAccount:
+    """Reassign ownership of an account. Pass ``None`` to clear ownership (back to admin-only)."""
+    real_user = real_user.lower()
+    with base.get_session() as session:
+        try:
+            account = (
+                session.query(SSOAccount)
+                .filter(SSOAccount.guild_id == guild_id, SSOAccount.real_user == real_user)
+                .one()
+            )
+            account.owner_discord_user_id = owner_discord_user_id
+            session.commit()
+            session.refresh(account)
+            session.expunge(account)
+            return account
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+
+
+def can_manage_account(account: SSOAccount, discord_user_id: int, is_admin: bool) -> bool:
+    """Return True if ``discord_user_id`` is allowed to mutate ``account``.
+
+    Admins always have override rights. Owners can manage their own bots.
+    """
+    if is_admin:
+        return True
+    owner = getattr(account, "owner_discord_user_id", None)
+    return owner is not None and owner == discord_user_id
+
+
+def get_accounts_owned_by(guild_id: int, discord_user_id: int) -> list[SSOAccount]:
+    """Return accounts in ``guild_id`` owned by ``discord_user_id`` (eager-loaded)."""
+    with base.get_session() as session:
+        accounts = (
+            session.query(SSOAccount)
+            .options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
+            )
+            .filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.owner_discord_user_id == discord_user_id,
+            )
+            .order_by(SSOAccount.real_user)
+            .all()
+        )
+        session.expunge_all()
+        return accounts
 
 
 class SSOAccountGroup(base.Base):
