@@ -45,6 +45,7 @@ def _account(
     last_login_by=None,
     id=1,
     owner_discord_user_id=None,
+    shares=(),
 ):
     return SimpleNamespace(
         id=id,
@@ -55,6 +56,7 @@ def _account(
         last_login=last_login,
         last_login_by=last_login_by,
         owner_discord_user_id=owner_discord_user_id,
+        shares=[SimpleNamespace(shared_with_discord_user_id=uid) for uid in shares],
     )
 
 
@@ -116,6 +118,7 @@ def test_build_account_tree_shape():
             "last_login_by": None,
             "active_character": "Raid",
             "owned": False,
+            "shared": False,
         }
     }
 
@@ -137,6 +140,7 @@ def test_compute_diff_add_remove_account():
             "last_login_by": None,
             "active_character": None,
             "owned": False,
+            "shared": False,
         }
     }
     ch = compute_diff(old, new)

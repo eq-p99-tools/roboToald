@@ -185,13 +185,186 @@ def test_filter_accessible_role_access_still_works(monkeypatch):
             real_user="group_visible",
             groups=[SimpleNamespace(role_id=999)],
             owner_discord_user_id=None,
+            shares=[],
         ),
         SimpleNamespace(
             id=2,
             real_user="hidden",
             groups=[SimpleNamespace(role_id=888)],
             owner_discord_user_id=None,
+            shares=[],
         ),
     ]
     filtered = mgr._filter_accessible(OWNER_ID, GUILD_ID, accounts)
     assert [a.id for a in filtered] == [1]
+
+
+# --- Phase 2: Direct user shares -------------------------------------------
+
+
+SHARED_WITH_ID = 12345
+
+
+def test_add_account_user_share_and_list(sso_session):
+    sso_model.create_account(GUILD_ID, "sharebot", "pw", owner_discord_user_id=OWNER_ID)
+    share = sso_model.add_account_user_share(GUILD_ID, "sharebot", SHARED_WITH_ID, created_by_discord_user_id=OWNER_ID)
+    assert share.shared_with_discord_user_id == SHARED_WITH_ID
+    shares = sso_model.list_account_user_shares(GUILD_ID, "sharebot")
+    assert [s.shared_with_discord_user_id for s in shares] == [SHARED_WITH_ID]
+
+
+def test_add_account_user_share_duplicate_raises(sso_session):
+    import pytest
+
+    sso_model.create_account(GUILD_ID, "sharebot2", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.add_account_user_share(GUILD_ID, "sharebot2", SHARED_WITH_ID)
+    with pytest.raises(sso_model.SSOAccountUserShareAlreadyExistsError):
+        sso_model.add_account_user_share(GUILD_ID, "sharebot2", SHARED_WITH_ID)
+
+
+def test_add_account_user_share_unknown_account_raises(sso_session):
+    import pytest
+
+    with pytest.raises(sso_model.SSOAccountNotFoundError):
+        sso_model.add_account_user_share(GUILD_ID, "nope", SHARED_WITH_ID)
+
+
+def test_remove_account_user_share(sso_session):
+    sso_model.create_account(GUILD_ID, "sharebot3", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.add_account_user_share(GUILD_ID, "sharebot3", SHARED_WITH_ID)
+    sso_model.remove_account_user_share(GUILD_ID, "sharebot3", SHARED_WITH_ID)
+    assert sso_model.list_account_user_shares(GUILD_ID, "sharebot3") == []
+
+
+def test_remove_account_user_share_missing_raises(sso_session):
+    import pytest
+
+    sso_model.create_account(GUILD_ID, "sharebot4", "pw", owner_discord_user_id=OWNER_ID)
+    with pytest.raises(sso_model.SSOAccountUserShareNotFoundError):
+        sso_model.remove_account_user_share(GUILD_ID, "sharebot4", SHARED_WITH_ID)
+
+
+def test_get_accounts_shared_with(sso_session):
+    sso_model.create_account(GUILD_ID, "a1", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.create_account(GUILD_ID, "a2", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.create_account(GUILD_ID, "a3", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.add_account_user_share(GUILD_ID, "a1", SHARED_WITH_ID)
+    sso_model.add_account_user_share(GUILD_ID, "a3", SHARED_WITH_ID)
+
+    results = sso_model.get_accounts_shared_with(GUILD_ID, SHARED_WITH_ID)
+    assert sorted(a.real_user for a in results) == ["a1", "a3"]
+    assert sso_model.get_accounts_shared_with(GUILD_ID, 99999) == []
+
+
+def test_deleting_account_cascades_shares(sso_session):
+    sso_model.create_account(GUILD_ID, "cascade", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.add_account_user_share(GUILD_ID, "cascade", SHARED_WITH_ID)
+    sso_model.delete_account(GUILD_ID, "cascade")
+    assert sso_model.get_accounts_shared_with(GUILD_ID, SHARED_WITH_ID) == []
+
+
+def test_user_has_direct_share_helper():
+    acc_with = SimpleNamespace(shares=[SimpleNamespace(shared_with_discord_user_id=SHARED_WITH_ID)])
+    acc_without = SimpleNamespace(shares=[])
+    assert sso_model.user_has_direct_share(acc_with, SHARED_WITH_ID) is True
+    assert sso_model.user_has_direct_share(acc_with, 999) is False
+    assert sso_model.user_has_direct_share(acc_without, SHARED_WITH_ID) is False
+
+
+def test_user_has_access_via_direct_share_without_role(sso_session):
+    """Recipient of a direct share logs in even without matching role and no ownership."""
+    sso_model.create_account(GUILD_ID, "shared_bot", "pw", owner_discord_user_id=OWNER_ID)
+    sso_model.add_account_user_share(GUILD_ID, "shared_bot", SHARED_WITH_ID)
+    acc = sso_model.get_account(GUILD_ID, "shared_bot")
+
+    bot = MagicMock()
+    member = MagicMock()
+    member.roles = []
+    guild = MagicMock()
+    guild.get_member.return_value = member
+    bot.get_guild.return_value = guild
+
+    result = api_server.user_has_access_to_accounts(bot, SHARED_WITH_ID, GUILD_ID, [acc.id])
+    assert [a.id for a in result] == [acc.id]
+
+
+def test_build_account_tree_shared_flag():
+    acc = SimpleNamespace(
+        id=1,
+        real_user="sharedbot",
+        aliases=[],
+        tags=[],
+        characters=[],
+        last_login=None,
+        last_login_by=None,
+        owner_discord_user_id=OWNER_ID,
+        shares=[SimpleNamespace(shared_with_discord_user_id=SHARED_WITH_ID)],
+    )
+    tree_recipient = build_account_tree([acc], viewer_discord_user_id=SHARED_WITH_ID)
+    assert tree_recipient["sharedbot"]["owned"] is False
+    assert tree_recipient["sharedbot"]["shared"] is True
+
+    # Owner sees owned=True and shared=False (owner takes precedence).
+    tree_owner = build_account_tree([acc], viewer_discord_user_id=OWNER_ID)
+    assert tree_owner["sharedbot"]["owned"] is True
+    assert tree_owner["sharedbot"]["shared"] is False
+
+    # Uninvolved viewer sees neither.
+    tree_other = build_account_tree([acc], viewer_discord_user_id=99999)
+    assert tree_other["sharedbot"]["owned"] is False
+    assert tree_other["sharedbot"]["shared"] is False
+
+
+def test_filter_accessible_includes_direct_share_without_role():
+    mgr = ConnectionManager()
+    mgr.set_discord_client(_bot_with_member_roles([]))
+
+    accounts = [
+        SimpleNamespace(
+            id=1,
+            real_user="shared_in",
+            groups=[],
+            owner_discord_user_id=OWNER_ID,
+            shares=[SimpleNamespace(shared_with_discord_user_id=SHARED_WITH_ID)],
+        ),
+        SimpleNamespace(
+            id=2,
+            real_user="not_shared",
+            groups=[],
+            owner_discord_user_id=OWNER_ID,
+            shares=[],
+        ),
+    ]
+    filtered = mgr._filter_accessible(SHARED_WITH_ID, GUILD_ID, accounts)
+    assert [a.id for a in filtered] == [1]
+
+
+# --- Phase 2: Share safety disclaimer acceptance ---------------------------
+
+
+def test_has_accepted_share_disclaimer_default_false(sso_session):
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID) is False
+
+
+def test_record_and_has_accepted_share_disclaimer(sso_session):
+    sso_model.record_share_disclaimer_acceptance(GUILD_ID, OWNER_ID)
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID) is True
+    # Different user in same guild, and same user in a different guild, are not accepted.
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OTHER_ID) is False
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID + 1, OWNER_ID) is False
+
+
+def test_record_share_disclaimer_acceptance_idempotent(sso_session):
+    sso_model.record_share_disclaimer_acceptance(GUILD_ID, OWNER_ID)
+    # Calling again should not raise, and should not create a duplicate row.
+    sso_model.record_share_disclaimer_acceptance(GUILD_ID, OWNER_ID)
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID) is True
+
+
+def test_share_disclaimer_version_bump_forces_reacceptance(sso_session):
+    sso_model.record_share_disclaimer_acceptance(GUILD_ID, OWNER_ID, version=1)
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID, version=1) is True
+    # A newer version is not accepted until explicitly recorded.
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID, version=2) is False
+    sso_model.record_share_disclaimer_acceptance(GUILD_ID, OWNER_ID, version=2)
+    assert sso_model.has_accepted_share_disclaimer(GUILD_ID, OWNER_ID, version=2) is True

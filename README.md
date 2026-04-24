@@ -18,6 +18,7 @@ The SSO system lets guild members log in to shared EverQuest accounts through th
 - **Dynamic Tag** -- a computed zone+class tag (e.g. `vpclr`, `stenc`). Logging in with a dynamic tag finds an inactive character of the matching class parked in the matching zone.
 - **Access Key** -- a per-user secret generated via `/sso access get`. Used as the password in the login proxy.
 - **Owner** -- the Discord user who created (or has been assigned) an account. Owners manage their own bots via `/sso_owner` without needing an admin role; admins retain override on everything. Legacy accounts (created before ownership existed) have no owner and are admin-only until an admin runs `/sso_admin account reassign`.
+- **Direct user share** -- an owner (or admin) can share a specific bot directly with another Discord user via `/sso_owner share add` (or `/sso_admin share add`), independent of group roles. The recipient gets login + read access but not management rights. The first time an owner uses `/sso_owner share add`, they must click through an ephemeral safety disclaimer (**I Accept** / **Cancel**); acceptance is remembered per-user-per-guild.
 
 ### User Workflow
 
@@ -33,7 +34,7 @@ Any user can create and manage their own bot accounts via `/sso_owner` without n
 1. **Create an account** you own: `/sso_owner account create <username> <password> [group]`. You are recorded as the owner and can log in to the account even without matching group roles.
 2. **List your bots**: `/sso_owner account list`.
 3. **Update / delete** your accounts: `/sso_owner account update|delete`.
-4. **Manage access**: add/remove your bots to any guild group with `/sso_owner group add|remove`.
+4. **Manage access**: add/remove your bots to any guild group with `/sso_owner group add|remove`, or share directly with a specific user via `/sso_owner share add`.
 5. **Aliases, tags, characters, items**: `/sso_owner alias`, `/sso_owner tag`, `/sso_owner character`.
 
 Admins always retain override rights (anything an owner can do, an admin can do on any account via `/sso_admin`).
@@ -130,6 +131,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `tag add / remove / update` | Manage tags (incl. UI macros) |
 | `alias create / delete` | Manage aliases |
 | `character add / remove / keys` | Manage characters; `keys` sets Seb/VP/ST key status |
+| `share add / remove / list` | Manage direct user-to-user shares on any account |
 | `audit account / user / failed / statistics` | Audit logs |
 | `revocation add / list / remove` | Revoke/restore user access |
 | `reset_rate_limit` | Clear rate limit for an IP |
@@ -144,6 +146,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `tag add / remove` | Tag/untag your accounts |
 | `alias create / delete` | Manage aliases on your accounts |
 | `character add / remove / items` | Manage characters and tracked items on your accounts |
+| `share add / remove / list` | Share your accounts directly with another Discord user (login access only, not management) |
 
 ### `/ds`
 

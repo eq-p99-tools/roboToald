@@ -1074,6 +1074,20 @@ def user_has_access_to_accounts(
                     )
                     .all()
                 )
+                accessible_ids.update(
+                    row[0]
+                    for row in session.query(sso_model.SSOAccountUserShare.account_id)
+                    .join(
+                        sso_model.SSOAccount,
+                        sso_model.SSOAccountUserShare.account_id == sso_model.SSOAccount.id,
+                    )
+                    .filter(
+                        sso_model.SSOAccountUserShare.account_id.in_(account_ids),
+                        sso_model.SSOAccount.guild_id == guild_id,
+                        sso_model.SSOAccountUserShare.shared_with_discord_user_id == discord_user_id,
+                    )
+                    .all()
+                )
             if not accessible_ids:
                 return []
             accounts = (
@@ -1083,6 +1097,7 @@ def user_has_access_to_accounts(
                     sqlalchemy.orm.joinedload(sso_model.SSOAccount.characters),
                     sqlalchemy.orm.joinedload(sso_model.SSOAccount.tags),
                     sqlalchemy.orm.joinedload(sso_model.SSOAccount.aliases),
+                    sqlalchemy.orm.joinedload(sso_model.SSOAccount.shares),
                 )
                 .filter(sso_model.SSOAccount.id.in_(accessible_ids))
                 .all()

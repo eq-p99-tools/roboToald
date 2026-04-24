@@ -79,13 +79,21 @@ def build_account_tree(
     *active_characters* is an optional ``{account_id: character_name}`` map
     from :func:`sso_model.get_active_characters`. *viewer_discord_user_id* is
     the Discord user id of the WS client receiving the tree; when provided, each
-    account entry gets an ``owned`` flag indicating whether the viewer owns it.
+    account entry gets an ``owned`` flag (viewer owns the account) and a
+    ``shared`` flag (viewer has a direct user share for it, but is not the owner).
     """
     if active_characters is None:
         active_characters = {}
     tree = {}
     for account in accessible_accounts:
         owner_id = getattr(account, "owner_discord_user_id", None)
+        shares = getattr(account, "shares", None) or []
+        is_owner = viewer_discord_user_id is not None and owner_id is not None and owner_id == viewer_discord_user_id
+        is_shared = (
+            not is_owner
+            and viewer_discord_user_id is not None
+            and any(s.shared_with_discord_user_id == viewer_discord_user_id for s in shares)
+        )
         tree[account.real_user] = {
             "aliases": [alias.alias for alias in account.aliases],
             "tags": [tag.tag for tag in account.tags],
@@ -97,9 +105,8 @@ def build_account_tree(
             ),
             "last_login_by": account.last_login_by,
             "active_character": active_characters.get(account.id),
-            "owned": (
-                viewer_discord_user_id is not None and owner_id is not None and owner_id == viewer_discord_user_id
-            ),
+            "owned": is_owner,
+            "shared": is_shared,
         }
     return tree
 
@@ -341,22 +348,28 @@ class ConnectionManager:
     # -- Internal -------------------------------------------------------------
 
     def _filter_accessible(self, discord_user_id: int, guild_id: int, accounts: list) -> list:
-        """Filter accounts to those accessible by the user's Discord roles.
+        """Filter accounts to those accessible by the user.
 
-        Relies on the ``groups`` relationship already being loaded on each
-        account (e.g. via ``joinedload``), so this does **no** DB queries.
+        Access is granted if any of the following is true:
+
+        * The user has a Discord role matching one of the account's groups.
+        * The user owns the account (``owner_discord_user_id``).
+        * The user has a direct user share (``shares``) for the account.
+
+        Relies on ``groups`` and ``shares`` already being loaded on each account
+        (via ``joinedload``), so this does **no** DB queries.
         """
         if not self._discord_client:
             return []
         guild = self._discord_client.get_guild(guild_id)
         member = guild.get_member(discord_user_id) if guild else None
-        if member is None:
-            return []
-        role_ids = {role.id for role in member.roles}
+        # Even without a guild/member, owners and direct-share recipients should still see their bots.
+        role_ids = {role.id for role in member.roles} if member is not None else set()
         return [
             a
             for a in accounts
             if getattr(a, "owner_discord_user_id", None) == discord_user_id
+            or any(s.shared_with_discord_user_id == discord_user_id for s in (getattr(a, "shares", None) or []))
             or any(g.role_id in role_ids for g in a.groups)
         ]
 

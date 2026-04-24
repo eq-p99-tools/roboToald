@@ -12,6 +12,7 @@ erDiagram
     SSOAccount ||--o{ SSOAccountAlias : "has"
     SSOAccount ||--o{ SSOAccountCharacter : "has"
     SSOAccount ||--o{ SSOAuditLog : "has"
+    SSOAccount ||--o{ SSOAccountUserShare : "has"
     SSOAccount }o--o{ SSOAccountGroup : "account_group_mapping"
     SSOTag }o--o| SSOTagUIMacro : "references"
     SSOAccount ||--o{ SSOCharacterSession : "has"
@@ -66,6 +67,22 @@ erDiagram
         int guild_id
         string alias
         int account_id FK
+    }
+
+    SSOAccountUserShare {
+        int id PK
+        int account_id FK
+        int shared_with_discord_user_id
+        datetime created_at
+        int created_by_discord_user_id
+    }
+
+    SSOShareDisclaimerAcceptance {
+        int id PK
+        int guild_id
+        int discord_user_id
+        int disclaimer_version
+        datetime accepted_at
     }
 
     SSOAccountCharacter {
@@ -224,6 +241,38 @@ An alternative name for a single account. Logging in with an alias resolves to t
 
 **Unique constraint:** `(alias, guild_id)`
 
+### SSOAccountUserShare
+
+Direct user-to-user share of an account, independent of Discord role groups. A user who appears in this table for an account gets **login and read access** to that account (not management rights). Owners manage their own shares via `/sso_owner share`; admins can manage any account's shares via `/sso_admin share`.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `account_id` | Integer | FK -> `sso_account.id` (ON DELETE CASCADE), NOT NULL, indexed | |
+| `shared_with_discord_user_id` | Integer | NOT NULL, indexed | Recipient of the share |
+| `created_at` | DateTime | NOT NULL | When the share was added (UTC) |
+| `created_by_discord_user_id` | Integer | nullable | Who added the share (owner or admin) |
+
+**Unique constraint:** `(account_id, shared_with_discord_user_id)` — at most one share row per (account, recipient) pair.
+
+The `SSOAccount.shares` relationship uses `cascade="all, delete-orphan"`, so deleting an account removes its shares automatically (both via ORM cascade and the DB-level `ON DELETE CASCADE`).
+
+### SSOShareDisclaimerAcceptance
+
+Records that a user has acknowledged the account-sharing safety disclaimer before being allowed to add their first direct share via `/sso_owner share add`. Bumping `sso_model.CURRENT_SHARE_DISCLAIMER_VERSION` forces every user to re-accept on their next share.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `guild_id` | Integer | NOT NULL, indexed | |
+| `discord_user_id` | Integer | NOT NULL, indexed | User who accepted |
+| `disclaimer_version` | Integer | NOT NULL | Version of the disclaimer that was shown |
+| `accepted_at` | DateTime | NOT NULL | UTC timestamp of acceptance |
+
+**Unique constraint:** `(guild_id, discord_user_id, disclaimer_version)` — at most one row per (guild, user, version).
+
+Checked only on `/sso_owner share add` (admin `/sso_admin share add` is exempt).
+
 ### SSOAccountCharacter
 
 Maps a character name and class to an account. Characters have optional bind/park locations and level used for dynamic tag resolution. Zone keys (`key_seb`, `key_vp`, `key_st`) and tracked inventory fields use WebSocket wire names from `WIRE_KEY_TO_ATTR` in `sso.py`. Booleans are tri-state (`null` = unknown). Stack-count columns are nullable integers (`null` = unknown).
@@ -312,24 +361,30 @@ Rate limiting counts failed attempts where `rate_limit != False` and `account_id
 ## RBAC Access Model
 
 ```
-Discord User's Roles                               Discord User ID
-        |                                                  |
-        v                                                  v
-SSOAccountGroup (role_id matches any user role)   SSOAccount.owner_discord_user_id
-        |                                                  |
-        v  (via account_group_mapping)                     |
-            +--------------------------+-------------------+
-                                       v
-                             SSOAccount (accessible)
+Discord User's Roles    Discord User ID    Discord User ID
+        |                      |                  |
+        v                      v                  v
+  SSOAccountGroup     SSOAccount.owner   SSOAccountUserShare
+  (role_id match)     _discord_user_id   .shared_with_discord_user_id
+        |                      |                  |
+        v                      |                  |
+  (account_group_              |                  |
+     mapping)                  |                  |
+        +----------------------+------------------+
+                               v
+                     SSOAccount (accessible)
 ```
 
 A user can access an account if any of the following is true:
 
 1. They hold a Discord role whose ID matches the `role_id` of any group the account belongs to.
 2. They are the account's owner (`SSOAccount.owner_discord_user_id` equals the user's Discord id).
-3. They have an `sso_admin_roles` role (admin override via Discord config, not database-backed).
+3. They have a direct user share (`SSOAccountUserShare`) for the account.
+4. They have an `sso_admin_roles` role (admin override via Discord config, not database-backed).
 
-The HTTP/WS login path combines these in a single bulk query (`user_has_access_to_accounts` in `api/server.py`). The WebSocket subscription filter (`ConnectionManager._filter_accessible` in `api/websocket.py`) runs the same check in Python against the eagerly-loaded `groups` and `owner_discord_user_id` fields, so account_tree updates include owned bots even when the user holds no matching role.
+The HTTP/WS login path combines (1)-(3) in a single bulk query (`user_has_access_to_accounts` in `api/server.py`). The WebSocket subscription filter (`ConnectionManager._filter_accessible` in `api/websocket.py`) runs the same check in Python against the eagerly-loaded `groups`, `owner_discord_user_id`, and `shares` fields, so account_tree updates include owned / directly-shared bots even when the user holds no matching role.
+
+Access from a direct user share is read/login only — `SSOAccountUserShare` does **not** grant management rights. Only owners (and admins) can mutate an account.
 
 ### Management permissions
 

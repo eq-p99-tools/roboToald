@@ -95,6 +95,18 @@ class SSOAccountAliasNotFoundError(SSOEntityNotFoundError):
     pass
 
 
+class SSOAccountUserShareNotFoundError(SSOEntityNotFoundError):
+    """Raised when an SSOAccountUserShare is not found"""
+
+    pass
+
+
+class SSOAccountUserShareAlreadyExistsError(Exception):
+    """Raised when attempting to add a direct user share that already exists"""
+
+    pass
+
+
 class SSOAccessKeyNotFoundError(SSOEntityNotFoundError):  # unused?
     """Raised when an SSOAccessKey is not found"""
 
@@ -175,6 +187,7 @@ class SSOAccount(base.Base):
     characters = sqlalchemy.orm.relationship(
         "SSOAccountCharacter", back_populates="account", cascade="all, delete-orphan"
     )
+    shares = sqlalchemy.orm.relationship("SSOAccountUserShare", back_populates="account", cascade="all, delete-orphan")
 
     __table_args__ = (sqlalchemy.UniqueConstraint("guild_id", "real_user", name="uq_guild_id_real_user"),)
 
@@ -211,6 +224,7 @@ def create_account(
                 sqlalchemy.orm.joinedload(SSOAccount.groups),
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases),
+                sqlalchemy.orm.joinedload(SSOAccount.shares),
             )
             .filter(SSOAccount.id == account.id)
             .one()
@@ -231,6 +245,7 @@ def get_account(guild_id: int, real_user: str) -> SSOAccount:
                     sqlalchemy.orm.joinedload(SSOAccount.characters),
                     sqlalchemy.orm.joinedload(SSOAccount.tags),
                     sqlalchemy.orm.joinedload(SSOAccount.aliases),
+                    sqlalchemy.orm.joinedload(SSOAccount.shares),
                 )
                 .filter(SSOAccount.guild_id == guild_id, SSOAccount.real_user == real_user)
                 .one()
@@ -251,6 +266,7 @@ def get_account_by_id(account_id: int) -> SSOAccount:
                     sqlalchemy.orm.joinedload(SSOAccount.characters),
                     sqlalchemy.orm.joinedload(SSOAccount.tags),
                     sqlalchemy.orm.joinedload(SSOAccount.aliases),
+                    sqlalchemy.orm.joinedload(SSOAccount.shares),
                 )
                 .filter(SSOAccount.id == account_id)
                 .one()
@@ -288,6 +304,7 @@ def _account_eager_opts():
         sqlalchemy.orm.joinedload(SSOAccount.tags),
         sqlalchemy.orm.joinedload(SSOAccount.characters),
         sqlalchemy.orm.joinedload(SSOAccount.aliases),
+        sqlalchemy.orm.joinedload(SSOAccount.shares),
     )
 
 
@@ -413,6 +430,7 @@ def list_accounts(guild_id: int, group: str = None, tag: str = None) -> list[SSO
             sqlalchemy.orm.joinedload(SSOAccount.characters),
             sqlalchemy.orm.joinedload(SSOAccount.tags),
             sqlalchemy.orm.joinedload(SSOAccount.aliases),
+            sqlalchemy.orm.joinedload(SSOAccount.shares),
         )
         accounts = query.all()
         session.expunge_all()
@@ -707,6 +725,7 @@ def get_accounts_owned_by(guild_id: int, discord_user_id: int) -> list[SSOAccoun
                 sqlalchemy.orm.joinedload(SSOAccount.tags),
                 sqlalchemy.orm.joinedload(SSOAccount.aliases),
                 sqlalchemy.orm.joinedload(SSOAccount.characters),
+                sqlalchemy.orm.joinedload(SSOAccount.shares),
             )
             .filter(
                 SSOAccount.guild_id == guild_id,
@@ -717,6 +736,249 @@ def get_accounts_owned_by(guild_id: int, discord_user_id: int) -> list[SSOAccoun
         )
         session.expunge_all()
         return accounts
+
+
+class SSOAccountUserShare(base.Base):
+    """Direct user-to-user share of an SSOAccount.
+
+    Grants login + read access (not management rights) to ``shared_with_discord_user_id``
+    for a specific account, independent of Discord role groups.
+    """
+
+    __tablename__ = "sso_account_user_share"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    account_id = sqlalchemy.Column(
+        sqlalchemy.Integer,
+        sqlalchemy.ForeignKey("sso_account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    shared_with_discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False, index=True)
+    created_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False, default=datetime.datetime.utcnow)
+    created_by_discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+
+    account = sqlalchemy.orm.relationship("SSOAccount", back_populates="shares")
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint("account_id", "shared_with_discord_user_id", name="uq_account_id_shared_with"),
+    )
+
+    def __init__(
+        self,
+        account_id: int,
+        shared_with_discord_user_id: int,
+        created_by_discord_user_id: int | None = None,
+    ):
+        self.account_id = account_id
+        self.shared_with_discord_user_id = shared_with_discord_user_id
+        self.created_by_discord_user_id = created_by_discord_user_id
+
+
+def add_account_user_share(
+    guild_id: int,
+    real_user: str,
+    shared_with_discord_user_id: int,
+    created_by_discord_user_id: int | None = None,
+) -> SSOAccountUserShare:
+    """Share ``real_user`` directly with ``shared_with_discord_user_id``.
+
+    Raises ``SSOAccountNotFoundError`` if the account does not exist and
+    ``SSOAccountUserShareAlreadyExistsError`` if the share already exists.
+    """
+    real_user = real_user.lower()
+    with base.get_session() as session:
+        try:
+            account = (
+                session.query(SSOAccount)
+                .filter(SSOAccount.guild_id == guild_id, SSOAccount.real_user == real_user)
+                .one()
+            )
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+
+        existing = (
+            session.query(SSOAccountUserShare)
+            .filter(
+                SSOAccountUserShare.account_id == account.id,
+                SSOAccountUserShare.shared_with_discord_user_id == shared_with_discord_user_id,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            raise SSOAccountUserShareAlreadyExistsError(
+                f"Account '{real_user}' is already shared with user {shared_with_discord_user_id}"
+            )
+
+        share = SSOAccountUserShare(
+            account_id=account.id,
+            shared_with_discord_user_id=shared_with_discord_user_id,
+            created_by_discord_user_id=created_by_discord_user_id,
+        )
+        session.add(share)
+        session.commit()
+        session.refresh(share)
+        session.expunge(share)
+        return share
+
+
+def remove_account_user_share(guild_id: int, real_user: str, shared_with_discord_user_id: int) -> None:
+    """Remove a direct user share. Raises ``SSOAccountUserShareNotFoundError`` if missing."""
+    real_user = real_user.lower()
+    with base.get_session() as session:
+        share = (
+            session.query(SSOAccountUserShare)
+            .join(SSOAccount, SSOAccountUserShare.account_id == SSOAccount.id)
+            .filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccount.real_user == real_user,
+                SSOAccountUserShare.shared_with_discord_user_id == shared_with_discord_user_id,
+            )
+            .one_or_none()
+        )
+        if share is None:
+            raise SSOAccountUserShareNotFoundError(
+                f"No direct share of '{real_user}' with user {shared_with_discord_user_id}"
+            )
+        session.delete(share)
+        session.commit()
+
+
+def list_account_user_shares(guild_id: int, real_user: str) -> list[SSOAccountUserShare]:
+    """Return all direct shares for an account, ordered by ``created_at`` ascending."""
+    real_user = real_user.lower()
+    with base.get_session() as session:
+        try:
+            account = (
+                session.query(SSOAccount)
+                .filter(SSOAccount.guild_id == guild_id, SSOAccount.real_user == real_user)
+                .one()
+            )
+        except sqlalchemy.exc.NoResultFound:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+        shares = (
+            session.query(SSOAccountUserShare)
+            .filter(SSOAccountUserShare.account_id == account.id)
+            .order_by(SSOAccountUserShare.created_at.asc())
+            .all()
+        )
+        session.expunge_all()
+        return shares
+
+
+def get_accounts_shared_with(guild_id: int, discord_user_id: int) -> list[SSOAccount]:
+    """Return accounts in ``guild_id`` directly shared with ``discord_user_id`` (eager-loaded)."""
+    with base.get_session() as session:
+        accounts = (
+            session.query(SSOAccount)
+            .join(SSOAccountUserShare, SSOAccountUserShare.account_id == SSOAccount.id)
+            .options(
+                sqlalchemy.orm.joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccount.tags),
+                sqlalchemy.orm.joinedload(SSOAccount.aliases),
+                sqlalchemy.orm.joinedload(SSOAccount.characters),
+                sqlalchemy.orm.joinedload(SSOAccount.shares),
+            )
+            .filter(
+                SSOAccount.guild_id == guild_id,
+                SSOAccountUserShare.shared_with_discord_user_id == discord_user_id,
+            )
+            .order_by(SSOAccount.real_user)
+            .all()
+        )
+        session.expunge_all()
+        return accounts
+
+
+def user_has_direct_share(account: SSOAccount, discord_user_id: int) -> bool:
+    """Return True if ``discord_user_id`` has a direct user share for ``account``."""
+    for share in getattr(account, "shares", []) or []:
+        if share.shared_with_discord_user_id == discord_user_id:
+            return True
+    return False
+
+
+# Current version of the share-safety disclaimer text shown on first share.
+# Bump this integer when the disclaimer wording changes to force all users to re-accept.
+CURRENT_SHARE_DISCLAIMER_VERSION = 1
+
+
+class SSOShareDisclaimerAcceptance(base.Base):
+    """Records a user's acknowledgement of the account-sharing safety disclaimer.
+
+    One row per ``(guild_id, discord_user_id, disclaimer_version)``. Bump
+    :data:`CURRENT_SHARE_DISCLAIMER_VERSION` to force re-acceptance when the
+    disclaimer wording materially changes.
+    """
+
+    __tablename__ = "sso_share_disclaimer_acceptance"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False, index=True)
+    discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False, index=True)
+    disclaimer_version = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    accepted_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint(
+            "guild_id",
+            "discord_user_id",
+            "disclaimer_version",
+            name="uq_share_disclaimer_guild_user_ver",
+        ),
+    )
+
+    def __init__(self, guild_id: int, discord_user_id: int, disclaimer_version: int):
+        self.guild_id = guild_id
+        self.discord_user_id = discord_user_id
+        self.disclaimer_version = disclaimer_version
+
+
+def has_accepted_share_disclaimer(
+    guild_id: int, discord_user_id: int, version: int = CURRENT_SHARE_DISCLAIMER_VERSION
+) -> bool:
+    """Return True if ``discord_user_id`` has accepted the share disclaimer at ``version`` in ``guild_id``."""
+    with base.get_session() as session:
+        return (
+            session.query(SSOShareDisclaimerAcceptance.id)
+            .filter(
+                SSOShareDisclaimerAcceptance.guild_id == guild_id,
+                SSOShareDisclaimerAcceptance.discord_user_id == discord_user_id,
+                SSOShareDisclaimerAcceptance.disclaimer_version == version,
+            )
+            .first()
+            is not None
+        )
+
+
+def record_share_disclaimer_acceptance(
+    guild_id: int, discord_user_id: int, version: int = CURRENT_SHARE_DISCLAIMER_VERSION
+) -> None:
+    """Idempotently record that ``discord_user_id`` has accepted the disclaimer at ``version``."""
+    with base.get_session() as session:
+        existing = (
+            session.query(SSOShareDisclaimerAcceptance)
+            .filter(
+                SSOShareDisclaimerAcceptance.guild_id == guild_id,
+                SSOShareDisclaimerAcceptance.discord_user_id == discord_user_id,
+                SSOShareDisclaimerAcceptance.disclaimer_version == version,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            return
+        session.add(
+            SSOShareDisclaimerAcceptance(
+                guild_id=guild_id,
+                discord_user_id=discord_user_id,
+                disclaimer_version=version,
+            )
+        )
+        try:
+            session.commit()
+        except sqlalchemy.exc.IntegrityError:
+            # Race: another session inserted between our SELECT and INSERT. Safe to ignore.
+            session.rollback()
 
 
 class SSOAccountGroup(base.Base):

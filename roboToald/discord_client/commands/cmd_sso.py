@@ -547,6 +547,140 @@ async def send_and_split(send_fn, message: str, ephemeral: bool = False, files: 
             await send_fn(content=chunks[-1], ephemeral=ephemeral, allowed_mentions=disnake.AllowedMentions.none())
 
 
+SHARE_DISCLAIMER_TEXT = (
+    "## ⚠️ Before you share an account\n"
+    "\n"
+    "Sharing an account with another Discord user gives them **login access** to that account. "
+    "They'll use the same credentials you do and can play any character on the account.\n"
+    "It is also not a guarantee that they can't see the actual password -- do not share "
+    "an account that uses a password you would be uncomfortable sharing directly."
+    "\n"
+    "• **This is trust-based.** Only share with people you'd personally hand the password to.\n"
+    "• **You are responsible** for who you share with. If they misbehave (ban risk, griefing, "
+    "ninja-looting, deleting characters, etc.), it reflects on the account owner (you).\n"
+    "• **Access is not logged in real time.** The server records login events, but not every "
+    "action in-game.\n"
+    "• **You can revoke any time** with `/sso_owner share remove`, but anything already done "
+    "cannot be undone.\n"
+    "• **Guild SSO Administrators can see and modify all shares** on your accounts.\n"
+    "\n"
+    "Click **I Accept** to acknowledge these risks and enable sharing on this account. "
+    "Click **Cancel** to abort."
+)
+
+
+async def _perform_owner_share_add(
+    inter_like, guild_id: int, caller_user_id: int, account_real_user: str, target_user_id: int
+) -> tuple[bool, str]:
+    """Shared implementation of owner share-add used by both the slash command and the disclaimer view.
+
+    Returns ``(success, message)`` where ``message`` is the user-facing content to send/edit.
+    On success, schedules a guild-wide WS delta push.
+    """
+    try:
+        sso_model.add_account_user_share(
+            guild_id=guild_id,
+            real_user=account_real_user,
+            shared_with_discord_user_id=target_user_id,
+            created_by_discord_user_id=caller_user_id,
+        )
+    except sso_model.SSOAccountUserShareAlreadyExistsError:
+        return (
+            False,
+            f"ℹ️🤝 Account `{account_real_user}` is already shared with <@{target_user_id}>.",
+        )
+    except sso_model.SSOAccountNotFoundError:
+        return False, f"⚠️🤖 **Account not found:** `{account_real_user}`"
+    ws_manager.notify_guild(guild_id, immediate=True)
+    return (
+        True,
+        f"🤝🤖 **Shared** `{account_real_user}` **with** <@{target_user_id}>.",
+    )
+
+
+class ShareDisclaimerView(disnake.ui.View):
+    """Ephemeral Accept/Cancel prompt shown before a user's first ``/sso_owner share add``.
+
+    On **Accept**, records acceptance at :data:`sso_model.CURRENT_SHARE_DISCLAIMER_VERSION`
+    and performs the pending share. On **Cancel** or timeout, the share is not created.
+
+    Only the original invoker can interact with the buttons.
+    """
+
+    def __init__(
+        self,
+        *,
+        invoker_id: int,
+        guild_id: int,
+        account_real_user: str,
+        target_user_id: int,
+        timeout_seconds: float = 300.0,
+    ):
+        super().__init__(timeout=timeout_seconds)
+        self.invoker_id = invoker_id
+        self.guild_id = guild_id
+        self.account_real_user = account_real_user
+        self.target_user_id = target_user_id
+        self._resolved = False
+
+    async def interaction_check(self, inter: disnake.MessageInteraction) -> bool:
+        if inter.user.id != self.invoker_id:
+            await inter.response.send_message(
+                "This confirmation is for someone else. Run `/sso_owner share add` to share one of your own accounts.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def on_timeout(self) -> None:
+        if self._resolved:
+            return
+        for child in self.children:
+            if isinstance(child, disnake.ui.Button):
+                child.disabled = True
+        # Best-effort; the original ephemeral message may be gone if Discord expired it.
+        try:
+            await self.message.edit(
+                content="⌛🤝 **Share cancelled** (confirmation timed out). Re-run `/sso_owner share add` to try again.",
+                view=self,
+            )
+        except Exception:
+            pass
+
+    def _disable_all(self) -> None:
+        for child in self.children:
+            if isinstance(child, disnake.ui.Button):
+                child.disabled = True
+
+    @disnake.ui.button(label="I Accept", style=disnake.ButtonStyle.danger, emoji="⚠️")
+    async def accept(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
+        self._resolved = True
+        self._disable_all()
+        try:
+            sso_model.record_share_disclaimer_acceptance(self.guild_id, self.invoker_id)
+        except Exception:
+            # Don't block the share if acceptance persistence fails; log via re-raise pattern unavailable here.
+            pass
+        ok, message = await _perform_owner_share_add(
+            inter, self.guild_id, self.invoker_id, self.account_real_user, self.target_user_id
+        )
+        prefix = "✅ **Disclaimer accepted.**\n" if ok else ""
+        await inter.response.edit_message(
+            content=f"{prefix}{message}",
+            view=self,
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+
+    @disnake.ui.button(label="Cancel", style=disnake.ButtonStyle.secondary)
+    async def cancel(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
+        self._resolved = True
+        self._disable_all()
+        await inter.response.edit_message(
+            content="🚫🤝 **Share cancelled.** No account was shared.",
+            view=self,
+        )
+
+
 class SSOCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -763,6 +897,89 @@ class SSOCommands(commands.Cog):
             message = f"🧹🤖 **Cleared ownership** of `{account.real_user}` (admin-only)."
         await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
         ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_admin.sub_command_group(description="Direct user-to-user shares (admin override)", name="share")
+    async def admin_share(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @admin_share.sub_command(description="Share an account directly with a user", name="add")
+    async def admin_share_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=account_autocomplete),
+        user: disnake.Member = commands.Param(description="User to share with"),
+    ):
+        try:
+            sso_model.add_account_user_share(
+                guild_id=inter.guild_id,
+                real_user=username,
+                shared_with_discord_user_id=user.id,
+                created_by_discord_user_id=inter.user.id,
+            )
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        except sso_model.SSOAccountUserShareAlreadyExistsError:
+            await inter.send(
+                content=f"ℹ️🤝 Account `{username}` is already shared with <@{user.id}>.",
+                ephemeral=True,
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            return
+        await inter.send(
+            content=f"🤝🤖 **Shared** `{username.lower()}` **with** <@{user.id}>.",
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @admin_share.sub_command(description="Remove a direct user share", name="remove")
+    async def admin_share_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=account_autocomplete),
+        user: disnake.Member = commands.Param(description="User to stop sharing with"),
+    ):
+        try:
+            sso_model.remove_account_user_share(
+                guild_id=inter.guild_id,
+                real_user=username,
+                shared_with_discord_user_id=user.id,
+            )
+        except sso_model.SSOAccountUserShareNotFoundError:
+            await inter.send(
+                content=f"ℹ️🤝 Account `{username}` is not shared with <@{user.id}>.",
+                ephemeral=True,
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            return
+        await inter.send(
+            content=f"🗑️🤝 **Unshared** `{username.lower()}` **from** <@{user.id}>.",
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @admin_share.sub_command(description="List direct user shares for an account", name="list")
+    async def admin_share_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=account_autocomplete),
+    ):
+        try:
+            shares = sso_model.list_account_user_shares(inter.guild_id, username)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        if not shares:
+            await inter.send(content=f"🤝 No direct shares for `{username.lower()}`.", ephemeral=True)
+            return
+        lines = [f"🤝 **Direct shares for** `{username.lower()}`:"]
+        for s in shares:
+            lines.append(f"  • <@{s.shared_with_discord_user_id}>")
+        await inter.send(
+            content="\n".join(lines),
+            ephemeral=True,
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
 
     @sso.sub_command_group(description="Tag related commands")
     async def tag(self, inter: disnake.ApplicationCommandInteraction):
@@ -2365,6 +2582,104 @@ class SSOCommands(commands.Cog):
             return
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @sso_owner.sub_command_group(description="Direct user-to-user shares for your accounts", name="share")
+    async def owner_share(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @owner_share.sub_command(description="Share one of your accounts directly with a user", name="add")
+    async def owner_share_add(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        user: disnake.Member = commands.Param(description="User to share with"),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        if user.id == inter.user.id:
+            await inter.send(content="ℹ️🤝 You already own this account.", ephemeral=True)
+            return
+
+        # First-time safety disclaimer. Non-admin owners must explicitly acknowledge the risks
+        # of sharing before the first share (per guild, per disclaimer version). Admins share
+        # via /sso_admin share add and are assumed to understand the consequences.
+        if not sso_model.has_accepted_share_disclaimer(inter.guild_id, inter.user.id):
+            view = ShareDisclaimerView(
+                invoker_id=inter.user.id,
+                guild_id=inter.guild_id,
+                account_real_user=account.real_user,
+                target_user_id=user.id,
+            )
+            await inter.send(
+                content=(f"{SHARE_DISCLAIMER_TEXT}\n\nYou're about to share `{account.real_user}` with <@{user.id}>."),
+                view=view,
+                ephemeral=True,
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            try:
+                view.message = await inter.original_message()
+            except Exception:
+                view.message = None
+            return
+
+        ok, message = await _perform_owner_share_add(inter, inter.guild_id, inter.user.id, account.real_user, user.id)
+        await inter.send(
+            content=message,
+            ephemeral=not ok,
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+
+    @owner_share.sub_command(description="Remove a direct share from one of your accounts", name="remove")
+    async def owner_share_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        user: disnake.Member = commands.Param(description="User to stop sharing with"),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            sso_model.remove_account_user_share(
+                guild_id=inter.guild_id,
+                real_user=account.real_user,
+                shared_with_discord_user_id=user.id,
+            )
+        except sso_model.SSOAccountUserShareNotFoundError:
+            await inter.send(
+                content=f"ℹ️🤝 Account `{account.real_user}` is not shared with <@{user.id}>.",
+                ephemeral=True,
+                allowed_mentions=disnake.AllowedMentions.none(),
+            )
+            return
+        await inter.send(
+            content=f"🗑️🤝 **Unshared** `{account.real_user}` **from** <@{user.id}>.",
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_share.sub_command(description="List direct shares for one of your accounts", name="list")
+    async def owner_share_list(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+    ):
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        shares = sso_model.list_account_user_shares(inter.guild_id, account.real_user)
+        if not shares:
+            await inter.send(content=f"🤝 No direct shares for `{account.real_user}`.", ephemeral=True)
+            return
+        lines = [f"🤝 **Direct shares for** `{account.real_user}`:"]
+        for s in shares:
+            lines.append(f"  • <@{s.shared_with_discord_user_id}>")
+        await inter.send(
+            content="\n".join(lines),
+            ephemeral=True,
+            allowed_mentions=disnake.AllowedMentions.none(),
+        )
 
     # @commands.Cog.listener()
     # async def on_guild_channel_create(self, channel):
