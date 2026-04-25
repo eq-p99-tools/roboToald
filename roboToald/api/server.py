@@ -793,7 +793,13 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
 
 
 async def _ws_handle_fte(conn: ClientConnection, msg: dict):
-    """Relay first-to-engage log lines to the guild TOD channel."""
+    """Relay first-to-engage log lines to the guild TOD channel.
+
+    Reporter ACL: the user must have access to at least one SSO character in
+    the guild (anti-troll gate). The reported ``character_name`` is logged for
+    audit but no longer required to match a known account, so local-only
+    characters can spot FTEs.
+    """
     character_name = msg.get("character_name", "").strip()
     mob = msg.get("mob", "").strip()
     player = msg.get("player", "").strip()
@@ -803,19 +809,37 @@ async def _ws_handle_fte(conn: ClientConnection, msg: dict):
     parsed_log = _verify_eq_log_time_skew(eq_log_time, "fte", conn.guild_id)
     if parsed_log is None:
         return
-    account = sso_model.find_account_by_character(conn.guild_id, character_name)
-    if not account:
-        return
-    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
+    if not user_has_any_character_access(conn):
+        logger.info(
+            "FTE rejected (no character access): guild_id=%s user_id=%s reporter=%s mob=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
+            mob,
+        )
         return
     if _tod_dedup(conn.guild_id, "fte", mob):
         return
+    logger.info(
+        "FTE accepted: guild_id=%s user_id=%s reporter=%s mob=%s player=%s",
+        conn.guild_id,
+        conn.discord_user_id,
+        character_name,
+        mob,
+        player,
+    )
     ts = int(_est_now_with_log_minute_second(parsed_log).timestamp())
     _send_to_tod_channel(conn.guild_id, f"**FTE**: {mob} engages {player}! <t:{ts}:T>")
 
 
 async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
-    """Relay raid-target death lines to the guild TOD channel as !tod commands."""
+    """Relay raid-target death lines to the guild TOD channel as !tod commands.
+
+    Reporter ACL: the user must have access to at least one SSO character in
+    the guild (anti-troll gate). The reported ``character_name`` is logged for
+    audit but no longer required to match a known account, so local-only
+    characters can record raid-target kills.
+    """
     character_name = msg.get("character_name", "").strip()
     mob = msg.get("mob", "").strip()
     eq_log_time = msg.get("eq_log_time", "").strip()
@@ -824,13 +848,24 @@ async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
     parsed_log = _verify_eq_log_time_skew(eq_log_time, "mob_death", conn.guild_id)
     if parsed_log is None:
         return
-    account = sso_model.find_account_by_character(conn.guild_id, character_name)
-    if not account:
-        return
-    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
+    if not user_has_any_character_access(conn):
+        logger.info(
+            "mob_death rejected (no character access): guild_id=%s user_id=%s reporter=%s mob=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
+            mob,
+        )
         return
     if _tod_dedup(conn.guild_id, "death", mob):
         return
+    logger.info(
+        "mob_death accepted: guild_id=%s user_id=%s reporter=%s mob=%s",
+        conn.guild_id,
+        conn.discord_user_id,
+        character_name,
+        mob,
+    )
     tod_timestamp = _format_tod_for_discord(parsed_log)
     _send_to_tod_channel(conn.guild_id, f"!tod {mob}, {tod_timestamp}")
     _schedule_auto_attendance(conn.guild_id, mob)
@@ -1030,6 +1065,18 @@ def raise_tag_temporarily_empty():
     raise HTTPException(
         status_code=status.HTTP_410_GONE, detail="Tag is empty (possibly temporarily, due to inactivity requirements)"
     )
+
+
+def user_has_any_character_access(conn: ClientConnection) -> bool:
+    """True if the user has access to at least one SSO character in this guild.
+
+    Anti-troll gate for FTE / mob_death: keeps Discord-only members (who hold a
+    valid access key but aren't actual raiders) from posting fake events. Reads
+    ``conn.last_sent_state`` (set on auth before the message loop starts and
+    kept fresh by the delta loop in ``api.websocket._push_delta``), so this is
+    a pure in-memory check with no DB hit.
+    """
+    return any(entry.get("characters") for entry in conn.last_sent_state.values())
 
 
 def user_has_access_to_accounts(
