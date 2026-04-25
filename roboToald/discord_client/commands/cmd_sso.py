@@ -47,14 +47,14 @@ Accounts represent real bot accounts (eg: `guildcleric7`). They should be added 
 - `/sso_admin account create <username> <password>` - Create a new account
 - `/sso_admin account update <username> <new_password>` - Update an account's password
 - `/sso_admin account delete <username>` - Delete an account
+- `/sso_admin account add_to_group <account> <group_name>` - Add an account to an access group
+- `/sso_admin account remove_from_group <account> <group_name>` - Remove an account from an access group
 
 ## Group Management
 Groups allow you to organize accounts and control access based on Discord roles.
 
 - `/sso_admin group create <name> <role>` - Create a new group with role-based access
 - `/sso_admin group delete <name>` - Delete a group
-- `/sso_admin group add <group_name> <username>` - Add an account to a group
-- `/sso_admin group remove <group_name> <username>` - Remove an account from a group
 
 ## Tag Management
 Tags help you categorize accounts and log in by "last accessed time".
@@ -898,6 +898,50 @@ class SSOCommands(commands.Cog):
         await inter.send(content=message, allowed_mentions=disnake.AllowedMentions.none())
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
+    @admin_account.sub_command(description="Add an account to an access group", name="add_to_group")
+    async def account_add_to_group(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        account: str = commands.Param(description="Account to add", autocomplete=account_autocomplete),
+        group_name: str = commands.Param(description="Group to add the account to", autocomplete=group_autocomplete),
+    ):
+        try:
+            sso_model.add_account_to_group(inter.guild_id, group_name, account)
+            await inter.send(content=f"✨🤖🗂️ **Added account** `{account}` to group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id, immediate=True)
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{account}`", ephemeral=True)
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Account/group mapping already exists:** `{account}` : `{group_name}`",
+                ephemeral=True,
+            )
+
+    @admin_account.sub_command(description="Remove an account from an access group", name="remove_from_group")
+    async def account_remove_from_group(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        account: str = commands.Param(description="Account to remove", autocomplete=account_autocomplete),
+        group_name: str = commands.Param(
+            description="Group to remove the account from", autocomplete=group_autocomplete
+        ),
+    ):
+        try:
+            sso_model.remove_account_from_group(inter.guild_id, group_name, account)
+            await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{account}` from group `{group_name}`")
+            ws_manager.notify_guild(inter.guild_id, immediate=True)
+        except sso_model.SSOAccountGroupNotFoundError:
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{account}`", ephemeral=True)
+        except sqlalchemy.exc.IntegrityError:
+            await inter.send(
+                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{account}` : `{group_name}`",
+                ephemeral=True,
+            )
+
     @sso_admin.sub_command_group(description="Direct user-to-user shares (admin override)", name="share")
     async def admin_share(self, inter: disnake.ApplicationCommandInteraction):
         pass
@@ -1160,52 +1204,6 @@ class SSOCommands(commands.Cog):
             ws_manager.notify_guild(inter.guild_id, immediate=True)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🗂️ **Group already exists:** `{name}`", ephemeral=True)
-
-    @admin_group.sub_command(description="Add a user to a group", name="add")
-    async def group_add(
-        self,
-        inter: disnake.ApplicationCommandInteraction,
-        group_name: str = commands.Param(description="Group name to add user to", autocomplete=group_autocomplete),
-        username: str = commands.Param(
-            description="Account username to add to the group", autocomplete=account_autocomplete
-        ),
-    ):
-        # Implement group add logic
-        try:
-            sso_model.add_account_to_group(inter.guild_id, group_name, username)
-            await inter.send(content=f"✨🤖🗂️ **Added account** `{username}` to group `{group_name}`")
-            ws_manager.notify_guild(inter.guild_id, immediate=True)
-        except sso_model.SSOAccountGroupNotFoundError:
-            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
-        except sso_model.SSOAccountNotFoundError:
-            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
-        except sqlalchemy.exc.IntegrityError:
-            await inter.send(
-                content=f"⚠️🤖🗂️ **Account/group mapping already exists:** `{username}` : `{group_name}`", ephemeral=True
-            )
-
-    @admin_group.sub_command(description="Remove a user from a group", name="remove")
-    async def group_remove(
-        self,
-        inter: disnake.ApplicationCommandInteraction,
-        group_name: str = commands.Param(description="Group name to remove user from", autocomplete=group_autocomplete),
-        username: str = commands.Param(
-            description="Account username to remove from the group", autocomplete=account_autocomplete
-        ),
-    ):
-        # Implement group remove logic
-        try:
-            sso_model.remove_account_from_group(inter.guild_id, group_name, username)
-            await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{username}` from group `{group_name}`")
-            ws_manager.notify_guild(inter.guild_id, immediate=True)
-        except sso_model.SSOAccountGroupNotFoundError:
-            await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
-        except sso_model.SSOAccountNotFoundError:
-            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
-        except sqlalchemy.exc.IntegrityError:
-            await inter.send(
-                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{username}` : `{group_name}`", ephemeral=True
-            )
 
     @admin_group.sub_command(description="Delete a group", name="delete")
     async def group_delete(
@@ -2295,56 +2293,54 @@ class SSOCommands(commands.Cog):
         await inter.send(content=f"🗑️🤖 **Deleted account** `{account.real_user}`")
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
-    @sso_owner.sub_command_group(description="Group membership for your accounts", name="group")
-    async def owner_group(self, inter: disnake.ApplicationCommandInteraction):
-        pass
-
-    @owner_group.sub_command(description="Add one of your accounts to a group", name="add")
-    async def owner_group_add(
+    @owner_account.sub_command(description="Add one of your accounts to an access group", name="add_to_group")
+    async def owner_account_add_to_group(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        group_name: str = commands.Param(description="Group name", autocomplete=group_autocomplete),
-        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        account: str = commands.Param(description="Account to add", autocomplete=owned_account_autocomplete),
+        group_name: str = commands.Param(description="Group to add the account to", autocomplete=group_autocomplete),
     ):
-        account = await _resolve_manageable_account(inter, username)
-        if account is None:
+        resolved = await _resolve_manageable_account(inter, account)
+        if resolved is None:
             return
         try:
-            sso_model.add_account_to_group(inter.guild_id, group_name, account.real_user)
+            sso_model.add_account_to_group(inter.guild_id, group_name, resolved.real_user)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
             return
         except sqlalchemy.exc.IntegrityError:
             await inter.send(
-                content=f"⚠️🤖🗂️ **Already in group:** `{account.real_user}` : `{group_name}`",
+                content=f"⚠️🤖🗂️ **Already in group:** `{resolved.real_user}` : `{group_name}`",
                 ephemeral=True,
             )
             return
-        await inter.send(content=f"✨🤖🗂️ **Added account** `{account.real_user}` to group `{group_name}`")
+        await inter.send(content=f"✨🤖🗂️ **Added account** `{resolved.real_user}` to group `{group_name}`")
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
-    @owner_group.sub_command(description="Remove one of your accounts from a group", name="remove")
-    async def owner_group_remove(
+    @owner_account.sub_command(description="Remove one of your accounts from an access group", name="remove_from_group")
+    async def owner_account_remove_from_group(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        group_name: str = commands.Param(description="Group name", autocomplete=group_autocomplete),
-        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        account: str = commands.Param(description="Account to remove", autocomplete=owned_account_autocomplete),
+        group_name: str = commands.Param(
+            description="Group to remove the account from", autocomplete=group_autocomplete
+        ),
     ):
-        account = await _resolve_manageable_account(inter, username)
-        if account is None:
+        resolved = await _resolve_manageable_account(inter, account)
+        if resolved is None:
             return
         try:
-            sso_model.remove_account_from_group(inter.guild_id, group_name, account.real_user)
+            sso_model.remove_account_from_group(inter.guild_id, group_name, resolved.real_user)
         except sso_model.SSOAccountGroupNotFoundError:
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{group_name}`", ephemeral=True)
             return
         except sqlalchemy.exc.IntegrityError:
             await inter.send(
-                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{account.real_user}` : `{group_name}`",
+                content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{resolved.real_user}` : `{group_name}`",
                 ephemeral=True,
             )
             return
-        await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{account.real_user}` from group `{group_name}`")
+        await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{resolved.real_user}` from group `{group_name}`")
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
     @sso_owner.sub_command_group(description="Tag commands for your accounts", name="tag")

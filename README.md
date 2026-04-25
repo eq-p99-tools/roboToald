@@ -34,7 +34,7 @@ Any user can create and manage their own bot accounts via `/sso_owner` without n
 1. **Create an account** you own: `/sso_owner account create <username> <password> [group]`. You are recorded as the owner and can log in to the account even without matching group roles.
 2. **List your bots**: `/sso_owner account list`.
 3. **Update / delete** your accounts: `/sso_owner account update|delete`.
-4. **Manage access**: add/remove your bots to any guild group with `/sso_owner group add|remove`, or share directly with a specific user via `/sso_owner share add`.
+4. **Manage access**: add/remove your bots to any guild group with `/sso_owner account add_to_group|remove_from_group`, or share directly with a specific user via `/sso_owner share add`.
 5. **Aliases, tags, characters, items**: `/sso_owner alias`, `/sso_owner tag`, `/sso_owner character`.
 
 Admins always retain override rights (anything an owner can do, an admin can do on any account via `/sso_admin`).
@@ -126,8 +126,8 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `account create / update / delete` | Manage accounts |
 | `account reassign <username> [new_owner]` | Transfer ownership to a user, or omit `new_owner` to clear (admin-only) |
 | `account list_no_characters` | Accounts missing characters |
+| `account add_to_group / remove_from_group` | Add/remove an account to/from an access group |
 | `group create / delete` | Manage groups |
-| `group add / remove` | Add/remove accounts from groups |
 | `tag add / remove / update` | Manage tags (incl. UI macros) |
 | `alias create / delete` | Manage aliases |
 | `character add / remove / keys` | Manage characters; `keys` sets Seb/VP/ST key status |
@@ -142,7 +142,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 |---|---|
 | `account create / update / delete` | Manage accounts you own (you are recorded as owner on `create`) |
 | `account list` | List bots you own |
-| `group add / remove` | Add/remove your accounts to any guild group |
+| `account add_to_group / remove_from_group` | Add/remove your accounts to/from any guild access group |
 | `tag add / remove` | Tag/untag your accounts |
 | `alias create / delete` | Manage aliases on your accounts |
 | `character add / remove / items` | Manage characters and tracked items on your accounts |
