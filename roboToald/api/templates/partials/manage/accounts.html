@@ -23,7 +23,12 @@
                     {% for group in g.groups %}<option value="{{ group.group_name }}">{{ group.group_name }}</option>{% endfor %}
                 </select>
             </label>
-            <label>Owner Discord ID<input name="owner_discord_user_id" inputmode="numeric" autocomplete="off"></label>
+            <label>Owner
+                <select name="owner_discord_user_id">
+                    <option value="">Admin-only</option>
+                    {% for user in g.users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}
+                </select>
+            </label>
             <button type="submit">Create Account</button>
         </form>
     </details>
@@ -52,7 +57,11 @@
                             <input type="hidden" name="csrf" value="{{ csrf }}">
                             <input type="hidden" name="guild_id" value="{{ g.id }}">
                             <input name="real_pass" type="password" placeholder="New password" autocomplete="new-password" style="width: 10rem;">
-                            <input name="owner_discord_user_id" placeholder="Owner ID blank clears" inputmode="numeric" style="width: 11rem;">
+                            <select name="owner_discord_user_id" title="Change owner">
+                                <option value="__unchanged__">Owner unchanged</option>
+                                <option value="">Admin-only</option>
+                                {% for user in g.users %}<option value="{{ user.id }}" {% if a.owner_id == user.id %}selected{% endif %}>{{ user.name }}</option>{% endfor %}
+                            </select>
                             <button type="submit" class="secondary">Update</button>
                         </form>
                         <form hx-post="/admin/manage/accounts/{{ quote(a.real_user) }}/groups" hx-target="#panel-manage" hx-swap="innerHTML show:none">

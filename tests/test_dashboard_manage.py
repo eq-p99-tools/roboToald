@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import contextlib
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy
@@ -188,6 +189,26 @@ def test_manage_mutation_response_preserves_selected_guild(monkeypatch, dashboar
     assert "raid-team" in response.text
     assert "outsiders" not in response.text
     assert str(OTHER_GUILD_ID) not in response.text
+
+
+def test_manage_accounts_owner_dropdown_uses_guild_members(monkeypatch, dashboard_sso_session):
+    sso.create_account(GUILD_ID, "botone", "pw", owner_discord_user_id=2002)
+    member = SimpleNamespace(id=2002, display_name="Cleric Main")
+    guild = SimpleNamespace(members=[member], roles=[], name="Test Guild", get_member=lambda user_id: member)
+    discord_client = SimpleNamespace(get_guild=lambda guild_id: guild if guild_id == GUILD_ID else None)
+
+    with _client(monkeypatch) as client:
+        client.app.state.discord_client = discord_client
+        try:
+            client.cookies.set(COOKIE_NAME, _session_cookie())
+            response = client.get("/admin/manage/partials/accounts")
+        finally:
+            del client.app.state.discord_client
+
+    assert response.status_code == 200
+    assert '<option value="">Admin-only</option>' in response.text
+    assert '<option value="__unchanged__">Owner unchanged</option>' in response.text
+    assert '<option value="2002" selected>Cleric Main</option>' in response.text
 
 
 def test_zone_form_values_normalize_to_internal_keys():

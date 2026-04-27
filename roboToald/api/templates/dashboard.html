@@ -290,7 +290,7 @@ document.getElementById('audit-modal').addEventListener('close', function() {
         var seconds = parseInt(refreshSel.value, 10);
         if (seconds > 0) {
             timer = setInterval(function() {
-                document.body.dispatchEvent(new CustomEvent('refreshAll'));
+                document.body.dispatchEvent(new CustomEvent('refreshAll', {detail: {source: 'auto'}}));
             }, seconds * 1000);
         }
     }
@@ -333,7 +333,41 @@ document.getElementById('audit-modal').addEventListener('close', function() {
         return managePanel ? managePanel.getAttribute('hx-get') : '';
     }
 
-    function refreshManagePanel() {
+    function captureManageFieldBaselines(root) {
+        var scope = root || document;
+        var managePanel = scope.id === 'panel-manage' ? scope : scope.querySelector('#panel-manage');
+        if (!managePanel) return;
+        managePanel.querySelectorAll('form input, form select, form textarea').forEach(function(el) {
+            if (el.type === 'hidden' || el.type === 'button' || el.type === 'submit' || el.type === 'reset' || el.disabled) return;
+            el.dataset.initialValue = el.value || '';
+        });
+    }
+
+    function managePanelHasActiveEdit() {
+        var managePanel = document.getElementById('panel-manage');
+        if (!managePanel) return false;
+
+        var characterDialog = document.getElementById('character-form-modal');
+        if (characterDialog && characterDialog.open) return true;
+
+        if (document.activeElement && document.activeElement.closest('#panel-manage form')) return true;
+
+        var fields = managePanel.querySelectorAll('form input, form select, form textarea');
+        for (var i = 0; i < fields.length; i++) {
+            var el = fields[i];
+            if (el.type === 'hidden' || el.type === 'button' || el.type === 'submit' || el.type === 'reset' || el.disabled) continue;
+            var initial = el.dataset.initialValue;
+            if (initial === undefined) {
+                initial = el.value || '';
+                el.dataset.initialValue = initial;
+            }
+            if ((el.value || '') !== initial) return true;
+        }
+        return false;
+    }
+
+    function refreshManagePanel(evt) {
+        if (evt && evt.detail && evt.detail.source === 'auto' && managePanelHasActiveEdit()) return;
         var url = currentManagePartialUrl();
         if (!url || typeof htmx === 'undefined') return;
         htmx.ajax('GET', url, {
@@ -355,11 +389,13 @@ document.getElementById('audit-modal').addEventListener('close', function() {
             managePanel.setAttribute('hx-get', savedManagePartial);
         }
     } catch (e4) { /* ignore */ }
+    captureManageFieldBaselines(document);
 
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var panelEl = evt.detail.target;
         if (panelEl && panelEl.id === 'panel-manage') {
             rememberManageSubtabFromButton(panelEl.querySelector('.sub-tab-btn.active'));
+            captureManageFieldBaselines(panelEl);
         }
         var parent = panelEl.closest('.tab-panel') || panelEl.closest('.dashboard-section');
         if (!parent || !parent.dataset.activeSubtab) return;

@@ -463,6 +463,23 @@ def _roles_for_guild(discord_client, guild_id: int) -> list[dict[str, str | int]
     )
 
 
+def _users_for_guild(discord_client, guild_id: int) -> list[dict[str, str | int]]:
+    guild = discord_client.get_guild(guild_id) if discord_client else None
+    if not guild:
+        return []
+    members = getattr(guild, "members", []) or []
+    return sorted(
+        [
+            {
+                "id": member.id,
+                "name": getattr(member, "display_name", None) or getattr(member, "name", None) or str(member.id),
+            }
+            for member in members
+        ],
+        key=lambda r: str(r["name"]).lower(),
+    )
+
+
 def _guild_context(
     request: Request,
     session: dict,
@@ -485,6 +502,7 @@ def _guild_context(
                 "accounts": accounts,
                 "groups": _groups_for_guild(discord_client, gid),
                 "roles": _roles_for_guild(discord_client, gid),
+                "users": _users_for_guild(discord_client, gid),
                 "tags": _tags_for_guild(gid),
                 "aliases": _aliases_for_guild(gid),
                 "characters": _characters_for_guild(gid),
@@ -602,9 +620,9 @@ async def update_account(request: Request, real_user: str):
         owner_id_raw = form.get("owner_discord_user_id")
         if password:
             sso_model.update_account(guild_id, real_user, password)
-        if owner_id_raw is not None:
+        if owner_id_raw is not None and owner_id_raw != "__unchanged__":
             sso_model.set_account_owner(guild_id, real_user, _parse_int(owner_id_raw, "owner_discord_user_id"))
-        if not password and owner_id_raw is None:
+        if not password and owner_id_raw in (None, "__unchanged__"):
             raise DashboardManageError("No account update was submitted")
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:update account {real_user.lower()}")
         return _template(
