@@ -17,7 +17,7 @@ from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
 from disnake.ext import commands
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, status, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
@@ -213,10 +213,13 @@ FAVICON_PATH = Path(__file__).with_name("static") / "favicon.svg"
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
+    headers = {"Cache-Control": "public, max-age=86400"}
+    if not FAVICON_PATH.is_file():
+        return Response(status_code=204, headers=headers)
     return FileResponse(
         FAVICON_PATH,
         media_type="image/svg+xml",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers=headers,
     )
 
 

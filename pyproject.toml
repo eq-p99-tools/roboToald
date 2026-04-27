@@ -58,7 +58,7 @@ include = ["roboToald*"]
     "raid_migrations/**/*",
 ]
 "roboToald.words" = ["*.list"]
-"roboToald.api" = ["templates/**/*.html"]
+"roboToald.api" = ["templates/**/*.html", "static/*.svg"]
 
 [tool.ruff]
 line-length = 120
