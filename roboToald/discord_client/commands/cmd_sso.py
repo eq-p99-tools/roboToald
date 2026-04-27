@@ -146,6 +146,29 @@ def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
     return f" [{':'.join(parts)}]"
 
 
+def _account_list_entry(account: sso_model.SSOAccount) -> str:
+    """Format one account for `/sso account list` output."""
+    lines = [f"🤖 **{account.real_user}**:"]
+    owner = getattr(account, "owner_discord_user_id", None)
+    lines.append(f"  →  👑 Owner: {f'<@{owner}>' if owner else 'none'}")
+    if account.groups:
+        lines.append(f"  →  🗂️ Groups: {', '.join(sorted(g.group_name for g in account.groups))}")
+    if account.tags:
+        lines.append(f"  →  🏷️ Tags: {', '.join(sorted(t.tag for t in account.tags))}")
+    if account.aliases:
+        lines.append(f"  →  🔗 Aliases: {', '.join(sorted(a.alias for a in account.aliases))}")
+    if account.characters:
+        characters = sorted(f"{c.name} ({c.klass.value}){_character_key_list_suffix(c)}" for c in account.characters)
+        lines.append(f"  →  🧍 Characters: {', '.join(characters)}")
+    if account.shares:
+        shares = ", ".join(
+            f"<@{s.shared_with_discord_user_id}>"
+            for s in sorted(account.shares, key=lambda s: s.shared_with_discord_user_id)
+        )
+        lines.append(f"  →  🤝 Direct shares: {shares}")
+    return "\n".join(lines)
+
+
 def _autocomplete_visibility(inter: disnake.ApplicationCommandInteraction) -> tuple[int, set[int], bool]:
     """Like ``_visibility_context`` but safe to call from autocomplete handlers.
 
@@ -694,19 +717,9 @@ class SSOCommands(commands.Cog):
             if not _is_visible(account, user_id=user_id, role_ids=role_ids, is_admin=admin):
                 # Mask existence: same response as a missing account.
                 raise sso_model.SSOAccountNotFoundError
-            group_names = "\n".join([f" * `{group.group_name}`" for group in account.groups])
-            group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
-            tag_names = "\n".join([f" * `{tag.tag}`" for tag in account.tags])
-            tag_string = f"\n🏷️ Tags:\n{tag_names}" if tag_names else ""
-            alias_names = "\n".join([f" * `{alias.alias}`" for alias in account.aliases])
-            alias_string = f"\n🔗 Aliases:\n{alias_names}" if alias_names else ""
-            character_names = "\n".join(
-                [f" * `{character.name}` ({character.klass.value})" for character in account.characters]
-            )
-            character_string = f"\n🧍 Characters:\n{character_names}" if character_names else ""
             await send_and_split(
                 inter.send,
-                f"🤖 **Account:** `{account.real_user}`{group_string}{tag_string}{alias_string}{character_string}",
+                f"**Account details:**\n{_account_list_entry(account)}",
                 ephemeral=True,
             )
         except sso_model.SSOAccountNotFoundError:
@@ -726,23 +739,8 @@ class SSOCommands(commands.Cog):
         if not account_list:
             await inter.send(content="ℹ️ **No accounts found with the given filters.**", ephemeral=True)
             return
-        formatted_accounts = ""
-        for account in account_list:
-            formatted_accounts += f"🤖 **{account.real_user}**:\n"
-            if account.groups:
-                group_names = ", ".join([f"{group.group_name}" for group in account.groups])
-                group_string = f"🗂️ Groups: {group_names}"
-                formatted_accounts += f"  →  {group_string}\n"
-            if account.tags:
-                tag_names = ", ".join([f"{tag.tag}" for tag in account.tags])
-                tag_string = f"🏷️ Tags: {tag_names}"
-                formatted_accounts += f"  →  {tag_string}\n"
-            if account.aliases:
-                alias_names = ", ".join([f"{alias.alias}" for alias in account.aliases])
-                alias_string = f"🔗 Aliases: {alias_names}"
-                formatted_accounts += f"  →  {alias_string}\n"
-            if not account.groups and not account.tags and not account.aliases:
-                formatted_accounts += "  →  No groups, tags, or aliases\n"
+        account_list = sorted(account_list, key=lambda a: a.real_user)
+        formatted_accounts = "\n".join(_account_list_entry(account) for account in account_list)
         await send_and_split(inter.send, f"**Accounts:**\n{formatted_accounts}", ephemeral=True)
 
     @sso_admin.sub_command_group(description="Account related commands", name="account")
@@ -761,12 +759,8 @@ class SSOCommands(commands.Cog):
         if not accounts_no_characters:
             await inter.send(content="✅ **All accounts have at least one character.**", ephemeral=True)
             return
-        formatted = "\n".join(
-            [
-                f" * `{account.real_user}`{': ' + ', '.join(a.alias for a in account.aliases) if account.aliases else ''}"
-                for account in accounts_no_characters
-            ]
-        )
+        accounts_no_characters = sorted(accounts_no_characters, key=lambda a: a.real_user)
+        formatted = "\n".join(_account_list_entry(account) for account in accounts_no_characters)
         await send_and_split(inter.send, f"**🤖 Accounts with NO characters:**\n{formatted}", ephemeral=True)
 
     @admin_account.sub_command(description="Create a new account", name="create")
@@ -987,23 +981,18 @@ class SSOCommands(commands.Cog):
     @tag.sub_command(description="List tags", name="list")
     async def tag_list(self, inter: disnake.ApplicationCommandInteraction):
         user_id, role_ids, admin = _visibility_context(inter)
-        if admin:
-            tags = sso_model.list_tags(inter.guild_id)
-            visible_tag_names = list(tags)
-        else:
-            accounts = sso_model.list_accounts(inter.guild_id)
-            visible_tag_names = sorted(
-                {
-                    t.tag
-                    for a in accounts
-                    if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)
-                    for t in a.tags
-                }
-            )
-        if not visible_tag_names:
+        accounts = sso_model.list_accounts(inter.guild_id)
+        visible_accounts = accounts if admin else _filter_visible_accounts(inter, accounts)
+        tag_counts: dict[str, int] = {}
+        for account in visible_accounts:
+            for tag_obj in account.tags:
+                tag_counts[tag_obj.tag] = tag_counts.get(tag_obj.tag, 0) + 1
+        if not tag_counts:
             await inter.send(content="ℹ️ **No tags found in this server.**", ephemeral=True)
             return
-        formatted = "\n".join([f"🏷️ **{tag}**" for tag in visible_tag_names])
+        formatted = "\n".join(
+            f"🏷️ **{tag}** ({count} account{'s' if count != 1 else ''})" for tag, count in sorted(tag_counts.items())
+        )
         await send_and_split(inter.send, f"**Tags:**\n{formatted}", ephemeral=True)
 
     @tag.sub_command(description="Show a tag", name="show")
@@ -1043,9 +1032,7 @@ class SSOCommands(commands.Cog):
     async def tag_add(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        username: str = commands.Param(
-            description="Account username to create alias for", autocomplete=account_autocomplete
-        ),
+        username: str = commands.Param(description="Account username to tag", autocomplete=account_autocomplete),
         tag: str = commands.Param(description="Tag to add to the account", autocomplete=tag_autocomplete),
     ):
         # Implement tag add logic
@@ -1090,15 +1077,13 @@ class SSOCommands(commands.Cog):
             await inter.send(content=message)
             ws_manager.notify_guild(inter.guild_id, immediate=True)
         except sso_model.SSOAccountTagNotFoundError:
-            await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{tag}`", ephemeral=True)
+            await inter.send(content=f"⚠️🏷️ **Tag not found:** `{tag}`", ephemeral=True)
 
     @admin_tag.sub_command(description="Remove a tag from an account", name="remove")
     async def tag_remove(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        username: str = commands.Param(
-            description="Account username to create alias for", autocomplete=account_autocomplete
-        ),
+        username: str = commands.Param(description="Account username to untag", autocomplete=account_autocomplete),
         tag: str = commands.Param(description="Tag to remove from the account", autocomplete=tag_autocomplete),
     ):
         # Implement tag remove logic
@@ -1109,7 +1094,7 @@ class SSOCommands(commands.Cog):
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🏷️🤖 **Account not found:** `{username}`", ephemeral=True)
         except sso_model.SSOAccountTagNotFoundError:
-            await inter.send(content=f"⚠️🏷️ **Tag not found** for account `{username}`", ephemeral=True)
+            await inter.send(content=f"⚠️🏷️ **Tag not found on account:** `{username}`", ephemeral=True)
 
     @sso.sub_command_group(description="Group related commands")
     async def group(self, inter: disnake.ApplicationCommandInteraction):
@@ -1137,10 +1122,12 @@ class SSOCommands(commands.Cog):
             visible_accounts = [
                 a for a in account_group.accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)
             ]
-        account_names = "\n".join([f" * `{account.real_user}`" for account in visible_accounts])
+        account_names = "\n".join(
+            [f" * `{account.real_user}`" for account in sorted(visible_accounts, key=lambda a: a.real_user)]
+        )
         await send_and_split(
             inter.send,
-            f"🗂️ **Group:** `{account_group.group_name}`\n → 🤖 Accounts:\n{account_names}",
+            f"🗂️ **Group:** `{account_group.group_name}`\n → Role: <@&{account_group.role_id}>\n → 🤖 Accounts:\n{account_names}",
             ephemeral=True,
         )
 
@@ -1517,7 +1504,7 @@ class SSOCommands(commands.Cog):
     async def revocation_add(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        user: disnake.Member = commands.Param(description="Member to audit."),
+        user: disnake.Member = commands.Param(description="Member to revoke SSO access from."),
         expiry_days: int = commands.Param(default=0, description="Number of days to revoke access for. 0 = permanent"),
         details: str = commands.Param(default=None, description="Reason for revoking access."),
     ):
@@ -1552,6 +1539,9 @@ class SSOCommands(commands.Cog):
                 if revocation.expiry_days > 0
                 else "Permanent"
             )
+            if revocation.expiry_days > 0:
+                expires_at = revocation.timestamp + datetime.timedelta(days=revocation.expiry_days)
+                expiry_str += f", until <t:{int(expires_at.timestamp())}:f>"
             reason_str = f": `{revocation.details}`" if revocation.details else ""
             formatted += f"* <@{revocation.discord_user_id}> ({expiry_str}){reason_str}\n"
         await send_and_split(inter.send, f"🔑 **Access revocations:**\n{formatted}", ephemeral=True)
@@ -2156,10 +2146,12 @@ class SSOCommands(commands.Cog):
                 desc = "\n".join(
                     f" * `{c.name}` ({c.klass.value}){_character_key_list_suffix(c)}"
                     f"{'' if username else f' on `{c.account.real_user}`'}"
-                    for c in characters
+                    for c in sorted(characters, key=lambda c: (c.account.real_user, c.name))
                 )
             else:
-                desc = "\nNo characters found in this server."
+                desc = (
+                    "\nNo visible characters found for this account." if username else "\nNo visible characters found."
+                )
             if username:
                 message = f"**🧍Characters for `{username}`:**\n{desc}"
             else:
@@ -2220,17 +2212,8 @@ class SSOCommands(commands.Cog):
         if not accounts:
             await inter.send(content="ℹ️👑 **You do not own any accounts.**", ephemeral=True)
             return
-        formatted = ""
-        for account in accounts:
-            formatted += f"🤖 **{account.real_user}**:\n"
-            if account.groups:
-                formatted += f"  →  🗂️ Groups: {', '.join(g.group_name for g in account.groups)}\n"
-            if account.tags:
-                formatted += f"  →  🏷️ Tags: {', '.join(t.tag for t in account.tags)}\n"
-            if account.aliases:
-                formatted += f"  →  🔗 Aliases: {', '.join(a.alias for a in account.aliases)}\n"
-            if not account.groups and not account.tags and not account.aliases:
-                formatted += "  →  No groups, tags, or aliases\n"
+        accounts = sorted(accounts, key=lambda a: a.real_user)
+        formatted = "\n".join(_account_list_entry(account) for account in accounts)
         await send_and_split(inter.send, f"**👑 Accounts you own:**\n{formatted}", ephemeral=True)
 
     @owner_account.sub_command(description="Update the password of an account you own", name="update")

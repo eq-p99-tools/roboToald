@@ -1020,7 +1020,10 @@ def get_account_group(guild_id: int, group_name: str) -> SSOAccountGroup:
         try:
             group = (
                 session.query(SSOAccountGroup)
-                .options(sqlalchemy.orm.joinedload(SSOAccountGroup.accounts))
+                .options(
+                    sqlalchemy.orm.joinedload(SSOAccountGroup.accounts).joinedload(SSOAccount.groups),
+                    sqlalchemy.orm.joinedload(SSOAccountGroup.accounts).joinedload(SSOAccount.shares),
+                )
                 .filter(SSOAccountGroup.guild_id == guild_id, SSOAccountGroup.group_name == group_name)
                 .one()
             )
