@@ -83,7 +83,7 @@
     <small class="htmx-indicator" id="manage-indicator">Updating...</small>
     <div id="panel-manage"
          hx-get="/admin/manage/partials/accounts"
-         hx-trigger="load, refreshAll from:body"
+         hx-trigger="load"
          hx-swap="innerHTML show:none"
          hx-indicator="#manage-indicator">
         <p class="empty-state" aria-busy="true">Loading manage UI...</p>
@@ -310,8 +310,57 @@ document.getElementById('audit-modal').addEventListener('close', function() {
        phase cannot revert their classes.  The click handler in the partial
        saves state to the persistent parent's dataset on every click.
        This afterSwap handler restores it after each content replacement. */
+    function rememberManageSubtabFromButton(btn) {
+        if (!btn || btn.getAttribute('hx-target') !== '#panel-manage') return;
+        var url = btn.getAttribute('hx-get');
+        if (!url) return;
+        var managePanel = document.getElementById('panel-manage');
+        if (managePanel) {
+            managePanel.setAttribute('hx-get', url);
+        }
+        try { sessionStorage.setItem('dash_manage_partial', url); } catch (e) { /* ignore */ }
+    }
+
+    function currentManagePartialUrl() {
+        var managePanel = document.getElementById('panel-manage');
+        var activeBtn = managePanel ? managePanel.querySelector('.sub-tab-btn.active') : null;
+        var activeUrl = activeBtn ? activeBtn.getAttribute('hx-get') : '';
+        if (activeUrl) return activeUrl;
+        try {
+            var savedUrl = sessionStorage.getItem('dash_manage_partial');
+            if (savedUrl) return savedUrl;
+        } catch (e) { /* ignore */ }
+        return managePanel ? managePanel.getAttribute('hx-get') : '';
+    }
+
+    function refreshManagePanel() {
+        var url = currentManagePartialUrl();
+        if (!url || typeof htmx === 'undefined') return;
+        htmx.ajax('GET', url, {
+            target: '#panel-manage',
+            swap: 'innerHTML show:none'
+        });
+    }
+
+    document.body.addEventListener('click', function(evt) {
+        rememberManageSubtabFromButton(evt.target.closest('.sub-tab-btn'));
+    });
+
+    document.body.addEventListener('refreshAll', refreshManagePanel);
+
+    try {
+        var savedManagePartial = sessionStorage.getItem('dash_manage_partial');
+        var managePanel = document.getElementById('panel-manage');
+        if (savedManagePartial && managePanel) {
+            managePanel.setAttribute('hx-get', savedManagePartial);
+        }
+    } catch (e4) { /* ignore */ }
+
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var panelEl = evt.detail.target;
+        if (panelEl && panelEl.id === 'panel-manage') {
+            rememberManageSubtabFromButton(panelEl.querySelector('.sub-tab-btn.active'));
+        }
         var parent = panelEl.closest('.tab-panel') || panelEl.closest('.dashboard-section');
         if (!parent || !parent.dataset.activeSubtab) return;
         var savedId = parent.dataset.activeSubtab;

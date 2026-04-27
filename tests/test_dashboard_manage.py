@@ -170,6 +170,26 @@ def test_manage_alias_delete_accepts_htmx_query_params(monkeypatch, dashboard_ss
     assert [audit["details"] for audit in audits] == ["dashboard:delete alias healbot"]
 
 
+def test_manage_mutation_response_preserves_selected_guild(monkeypatch, dashboard_sso_session):
+    sso.create_account_group(GUILD_ID, "raiders", 12345)
+    sso.create_account_group(OTHER_GUILD_ID, "outsiders", 67890)
+    monkeypatch.setattr("roboToald.api.dashboard_manage.ws_manager.notify_guild", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.dashboard_manage.sso_model.create_audit_log", lambda **kw: None)
+
+    with _client(monkeypatch) as client:
+        client.cookies.set(COOKIE_NAME, _session_cookie([GUILD_ID, OTHER_GUILD_ID]))
+        response = client.request(
+            "PUT",
+            "/admin/manage/groups/raiders",
+            data={"guild_id": GUILD_ID, "csrf": CSRF, "new_name": "raid-team"},
+        )
+
+    assert response.status_code == 200
+    assert "raid-team" in response.text
+    assert "outsiders" not in response.text
+    assert str(OTHER_GUILD_ID) not in response.text
+
+
 def test_zone_form_values_normalize_to_internal_keys():
     assert dashboard_manage._normalize_zone_key("East Commonlands") == "ecommons"
     assert dashboard_manage._normalize_zone_key("ecommons") == "ecommons"

@@ -137,19 +137,32 @@
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
-        .version-breakdown table {
-            max-width: 22rem;
-            margin: 0;
-        }
-        .version-breakdown thead th {
-            cursor: default;
-            text-transform: none;
-            letter-spacing: normal;
-            font-size: 0.85rem;
-        }
         .version-breakdown .muted-version {
             color: var(--pico-muted-color);
             font-style: italic;
+        }
+        .version-breakdown-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin: 0;
+        }
+        .version-chip {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            padding: 0.35rem 0.6rem;
+            border: 1px solid var(--pico-muted-border-color);
+            border-radius: 999px;
+            background: var(--pico-background-color);
+        }
+        .version-chip strong {
+            font-size: 1rem;
+            line-height: 1;
+        }
+        .version-chip span {
+            color: var(--pico-muted-color);
+            font-size: 0.82rem;
         }
         .version-breakdown-empty {
             margin: 0;

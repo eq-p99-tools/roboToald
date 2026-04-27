@@ -463,9 +463,18 @@ def _roles_for_guild(discord_client, guild_id: int) -> list[dict[str, str | int]
     )
 
 
-def _guild_context(request: Request, session: dict, active: str, message: str = "", error: str = "") -> dict[str, Any]:
+def _guild_context(
+    request: Request,
+    session: dict,
+    active: str,
+    message: str = "",
+    error: str = "",
+    selected_guild_id: int | None = None,
+) -> dict[str, Any]:
     discord_client = getattr(request.app.state, "discord_client", None)
-    guild_ids = _select_guild_ids(request, session)
+    guild_ids = (
+        _allowed_guild_ids(session, selected_guild_id) if selected_guild_id else _select_guild_ids(request, session)
+    )
     guilds = []
     for gid in guild_ids:
         accounts = _account_rows(discord_client, gid)
@@ -570,7 +579,11 @@ async def create_account(request: Request):
         owner_id = _parse_int(form.get("owner_discord_user_id"), "owner_discord_user_id")
         sso_model.create_account(guild_id, real_user, real_pass, form.get("group_name") or None, owner_id)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:create account {real_user.lower()}")
-        return _template(request, "accounts.html", _guild_context(request, session, "accounts", "Account created"))
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Account created", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sqlalchemy.exc.IntegrityError, sso_model.SSOAccountGroupNotFoundError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("Account already exists or violates a database constraint")
@@ -594,7 +607,11 @@ async def update_account(request: Request, real_user: str):
         if not password and owner_id_raw is None:
             raise DashboardManageError("No account update was submitted")
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:update account {real_user.lower()}")
-        return _template(request, "accounts.html", _guild_context(request, session, "accounts", "Account updated"))
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Account updated", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountNotFoundError) as exc:
         return _handle_error(request, session, "accounts", exc)
 
@@ -609,7 +626,11 @@ async def delete_account(request: Request, real_user: str):
         guild_id = _require_guild(session, form.get("guild_id"))
         sso_model.delete_account(guild_id, real_user)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:delete account {real_user.lower()}")
-        return _template(request, "accounts.html", _guild_context(request, session, "accounts", "Account deleted"))
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Account deleted", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sqlalchemy.exc.NoResultFound) as exc:
         if isinstance(exc, sqlalchemy.exc.NoResultFound):
             exc = DashboardManageError(f"Account not found: {real_user}", status_code=404)
@@ -629,7 +650,11 @@ async def add_account_group(request: Request, real_user: str):
             raise DashboardManageError("Group name is required")
         sso_model.add_account_to_group(guild_id, group_name, real_user)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:add group {group_name} to {real_user}")
-        return _template(request, "accounts.html", _guild_context(request, session, "accounts", "Group added"))
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Group added", selected_guild_id=guild_id),
+        )
     except (
         DashboardManageError,
         sso_model.SSOAccountGroupNotFoundError,
@@ -651,7 +676,11 @@ async def remove_account_group(request: Request, real_user: str, group_name: str
         guild_id = _require_guild(session, form.get("guild_id"))
         sso_model.remove_account_from_group(guild_id, group_name, real_user)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:remove group {group_name} from {real_user}")
-        return _template(request, "accounts.html", _guild_context(request, session, "accounts", "Group removed"))
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Group removed", selected_guild_id=guild_id),
+        )
     except (
         DashboardManageError,
         sso_model.SSOAccountGroupNotFoundError,
@@ -677,7 +706,11 @@ async def create_group(request: Request):
             raise DashboardManageError("Group name is required")
         sso_model.create_account_group(guild_id, group_name, role_id)
         _notify_and_audit(session, guild_id, group_name, f"dashboard:create group {group_name}")
-        return _template(request, "groups.html", _guild_context(request, session, "groups", "Group created"))
+        return _template(
+            request,
+            "groups.html",
+            _guild_context(request, session, "groups", "Group created", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sqlalchemy.exc.IntegrityError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("Group already exists or violates a database constraint")
@@ -697,7 +730,11 @@ async def update_group(request: Request, group_name: str):
             raise DashboardManageError("New group name is required")
         sso_model.update_account_group(guild_id, group_name, new_name)
         _notify_and_audit(session, guild_id, group_name, f"dashboard:rename group {group_name} to {new_name}")
-        return _template(request, "groups.html", _guild_context(request, session, "groups", "Group renamed"))
+        return _template(
+            request,
+            "groups.html",
+            _guild_context(request, session, "groups", "Group renamed", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountGroupNotFoundError, sqlalchemy.exc.IntegrityError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("New group name already exists")
@@ -714,7 +751,11 @@ async def delete_group(request: Request, group_name: str):
         guild_id = _require_guild(session, form.get("guild_id"))
         sso_model.delete_account_group(guild_id, group_name)
         _notify_and_audit(session, guild_id, group_name, f"dashboard:delete group {group_name}")
-        return _template(request, "groups.html", _guild_context(request, session, "groups", "Group deleted"))
+        return _template(
+            request,
+            "groups.html",
+            _guild_context(request, session, "groups", "Group deleted", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountGroupNotFoundError) as exc:
         return _handle_error(request, session, "groups", exc)
 
@@ -733,7 +774,11 @@ async def create_tag(request: Request):
             raise DashboardManageError("Account and tag are required")
         sso_model.tag_account(guild_id, real_user, tag)
         _notify_and_audit(session, guild_id, tag.lower(), f"dashboard:add tag {tag.lower()} to {real_user.lower()}")
-        return _template(request, "tags.html", _guild_context(request, session, "tags", "Tag added"))
+        return _template(
+            request,
+            "tags.html",
+            _guild_context(request, session, "tags", "Tag added", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountNotFoundError, sqlalchemy.exc.IntegrityError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("Tag already exists on that account")
@@ -753,7 +798,11 @@ async def update_tag(request: Request, tag: str):
             raise DashboardManageError("New tag name is required")
         sso_model.update_tag(guild_id, tag, new_name=new_name)
         _notify_and_audit(session, guild_id, tag.lower(), f"dashboard:rename tag {tag.lower()} to {new_name.lower()}")
-        return _template(request, "tags.html", _guild_context(request, session, "tags", "Tag renamed"))
+        return _template(
+            request,
+            "tags.html",
+            _guild_context(request, session, "tags", "Tag renamed", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountTagNotFoundError, sqlalchemy.exc.IntegrityError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("New tag name conflicts with an existing account tag")
@@ -772,7 +821,11 @@ async def delete_tag(request: Request, tag: str, real_user: str):
         _notify_and_audit(
             session, guild_id, tag.lower(), f"dashboard:remove tag {tag.lower()} from {real_user.lower()}"
         )
-        return _template(request, "tags.html", _guild_context(request, session, "tags", "Tag removed"))
+        return _template(
+            request,
+            "tags.html",
+            _guild_context(request, session, "tags", "Tag removed", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountNotFoundError, sso_model.SSOAccountTagNotFoundError) as exc:
         return _handle_error(request, session, "tags", exc)
 
@@ -791,7 +844,11 @@ async def create_alias(request: Request):
             raise DashboardManageError("Account and alias are required")
         sso_model.create_account_alias(guild_id, real_user, alias)
         _notify_and_audit(session, guild_id, alias.lower(), f"dashboard:create alias {alias.lower()} for {real_user}")
-        return _template(request, "aliases.html", _guild_context(request, session, "aliases", "Alias created"))
+        return _template(
+            request,
+            "aliases.html",
+            _guild_context(request, session, "aliases", "Alias created", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountNotFoundError, sqlalchemy.exc.IntegrityError) as exc:
         if isinstance(exc, sqlalchemy.exc.IntegrityError):
             exc = DashboardManageError("Alias already exists")
@@ -808,7 +865,11 @@ async def delete_alias(request: Request, alias: str):
         guild_id = _require_guild(session, form.get("guild_id"))
         sso_model.delete_account_alias(guild_id, alias)
         _notify_and_audit(session, guild_id, alias.lower(), f"dashboard:delete alias {alias.lower()}")
-        return _template(request, "aliases.html", _guild_context(request, session, "aliases", "Alias deleted"))
+        return _template(
+            request,
+            "aliases.html",
+            _guild_context(request, session, "aliases", "Alias deleted", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountAliasNotFoundError) as exc:
         return _handle_error(request, session, "aliases", exc)
 
@@ -831,7 +892,11 @@ async def create_character(request: Request):
         if kwargs:
             sso_model.update_account_character(guild_id, name, **kwargs)
         _notify_and_audit(session, guild_id, name, f"dashboard:create character {name}")
-        return _template(request, "characters.html", _guild_context(request, session, "characters", "Character added"))
+        return _template(
+            request,
+            "characters.html",
+            _guild_context(request, session, "characters", "Character added", selected_guild_id=guild_id),
+        )
     except (
         DashboardManageError,
         sso_model.SSOAccountNotFoundError,
@@ -873,7 +938,9 @@ async def update_character(request: Request, name: str):
             raise DashboardManageError(f"Character not found: {name}", status_code=404)
         _notify_and_audit(session, guild_id, name, f"dashboard:update character {name}")
         return _template(
-            request, "characters.html", _guild_context(request, session, "characters", "Character updated")
+            request,
+            "characters.html",
+            _guild_context(request, session, "characters", "Character updated", selected_guild_id=guild_id),
         )
     except DashboardManageError as exc:
         return _handle_error(request, session, "characters", exc)
@@ -891,7 +958,9 @@ async def delete_character(request: Request, name: str):
             raise DashboardManageError(f"Character not found: {name}", status_code=404)
         _notify_and_audit(session, guild_id, name, f"dashboard:delete character {name}")
         return _template(
-            request, "characters.html", _guild_context(request, session, "characters", "Character deleted")
+            request,
+            "characters.html",
+            _guild_context(request, session, "characters", "Character deleted", selected_guild_id=guild_id),
         )
     except DashboardManageError as exc:
         return _handle_error(request, session, "characters", exc)
@@ -911,7 +980,11 @@ async def create_share(request: Request):
             raise DashboardManageError("Account is required")
         sso_model.add_account_user_share(guild_id, real_user, user_id, session.get("uid"))
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:share {real_user.lower()} with {user_id}")
-        return _template(request, "shares.html", _guild_context(request, session, "shares", "Share added"))
+        return _template(
+            request,
+            "shares.html",
+            _guild_context(request, session, "shares", "Share added", selected_guild_id=guild_id),
+        )
     except (
         DashboardManageError,
         sso_model.SSOAccountNotFoundError,
@@ -930,6 +1003,10 @@ async def delete_share(request: Request, real_user: str, user_id: int):
         guild_id = _require_guild(session, form.get("guild_id"))
         sso_model.remove_account_user_share(guild_id, real_user, user_id)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:unshare {real_user.lower()} from {user_id}")
-        return _template(request, "shares.html", _guild_context(request, session, "shares", "Share removed"))
+        return _template(
+            request,
+            "shares.html",
+            _guild_context(request, session, "shares", "Share removed", selected_guild_id=guild_id),
+        )
     except (DashboardManageError, sso_model.SSOAccountUserShareNotFoundError) as exc:
         return _handle_error(request, session, "shares", exc)
