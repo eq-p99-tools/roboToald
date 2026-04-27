@@ -22,7 +22,7 @@ def test_histogram_groups_unknown():
     assert by_ver["unknown"] == 3
 
 
-def test_histogram_sorted_by_count_then_version():
+def test_histogram_sorted_by_version_desc_unknown_last():
     rows = _histogram_client_versions(
         [
             {"client_version": "1.0.0"},
@@ -31,7 +31,9 @@ def test_histogram_sorted_by_count_then_version():
             {"client_version": "2.0.0"},
             {"client_version": "1.1.0"},
             {"client_version": "1.1.0"},
+            {"client_version": "unknown"},
+            {"client_version": "10.0.0"},
         ]
     )
-    assert [r["version"] for r in rows] == ["2.0.0", "1.1.0", "1.0.0"]
-    assert [r["count"] for r in rows] == [3, 2, 1]
+    assert [r["version"] for r in rows] == ["10.0.0", "2.0.0", "1.1.0", "1.0.0", "unknown"]
+    assert [r["count"] for r in rows] == [1, 3, 2, 1, 1]

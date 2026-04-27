@@ -118,6 +118,19 @@ def _parse_guild_filter(request: Request) -> int | None:
     return None
 
 
+def _dashboard_version_sort_key(version: str) -> tuple[int, tuple[int, ...], str]:
+    if version == "unknown":
+        return (1, (), version)
+    parts = version.split("-", 1)[0].split(".")
+    nums = []
+    for part in parts:
+        try:
+            nums.append(int(part))
+        except ValueError:
+            nums.append(0)
+    return (0, tuple(nums), version.lower())
+
+
 def _histogram_client_versions(connections: list[dict]) -> list[dict[str, int | str]]:
     """Group live WS connections by normalized client_version for the dashboard."""
     labels: list[str] = []
@@ -129,7 +142,8 @@ def _histogram_client_versions(connections: list[dict]) -> list[dict[str, int | 
             labels.append(v)
     counts = Counter(labels)
     rows = [{"version": ver, "count": n} for ver, n in counts.items()]
-    rows.sort(key=lambda r: (-int(r["count"]), str(r["version"]).lower()))
+    rows.sort(key=lambda r: _dashboard_version_sort_key(str(r["version"])), reverse=True)
+    rows.sort(key=lambda r: str(r["version"]) == "unknown")
     return rows
 
 
