@@ -44,6 +44,13 @@ def test_root_with_discord_client(client):
         del client.app.state.discord_client
 
 
+def test_favicon_route(client):
+    r = client.get("/favicon.ico")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in r.text
+
+
 def test_auth_invalid_access_key(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: None)

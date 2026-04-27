@@ -8,6 +8,7 @@ import random
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Union
 import threading
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
 from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -205,6 +207,18 @@ from roboToald.api.dashboard_manage import router as dashboard_manage_router  # 
 
 app.include_router(dashboard_router)
 app.include_router(dashboard_manage_router)
+
+FAVICON_PATH = Path(__file__).with_name("static") / "favicon.svg"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(
+        FAVICON_PATH,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 # Expose a function to run the API server in a thread with injected discord_client
 
