@@ -1346,7 +1346,11 @@ def get_tag(guild_id: int, tag: str) -> list[SSOTag]:
     with base.get_session() as session:
         tag_objs = (
             session.query(SSOTag)
-            .options(sqlalchemy.orm.joinedload(SSOTag.account), sqlalchemy.orm.joinedload(SSOTag.ui_macro))
+            .options(
+                sqlalchemy.orm.joinedload(SSOTag.account).joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOTag.account).joinedload(SSOAccount.shares),
+                sqlalchemy.orm.joinedload(SSOTag.ui_macro),
+            )
             .filter(SSOTag.tag == tag, SSOTag.guild_id == guild_id)
             .all()
         )
@@ -1467,7 +1471,10 @@ def list_account_aliases(guild_id: int) -> list[SSOAccountAlias]:
     with base.get_session() as session:
         aliases = (
             session.query(SSOAccountAlias)
-            .options(sqlalchemy.orm.joinedload(SSOAccountAlias.account))
+            .options(
+                sqlalchemy.orm.joinedload(SSOAccountAlias.account).joinedload(SSOAccount.groups),
+                sqlalchemy.orm.joinedload(SSOAccountAlias.account).joinedload(SSOAccount.shares),
+            )
             .filter(SSOAccountAlias.guild_id == guild_id)
             .all()
         )
@@ -1692,10 +1699,18 @@ def create_audit_log(
     return audit_log
 
 
-def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0, include_list=False) -> list[SSOAuditLog]:
-    """Get audit logs for a specific Discord user ID."""
+def get_audit_logs_for_user_id(
+    discord_user_id: int,
+    limit=100,
+    offset=0,
+    include_list=False,
+    guild_id: int | None = None,
+) -> list[SSOAuditLog]:
+    """Get audit logs for a specific Discord user ID, optionally scoped to one guild."""
     with base.get_session() as session:
         logs = session.query(SSOAuditLog).filter(SSOAuditLog.discord_user_id == discord_user_id)
+        if guild_id is not None:
+            logs = logs.filter(SSOAuditLog.guild_id == guild_id)
         if not include_list:
             logs = logs.filter(SSOAuditLog.username != "list_accounts")
         logs = logs.order_by(SSOAuditLog.timestamp.desc()).limit(limit).offset(offset).all()
@@ -1704,22 +1719,33 @@ def get_audit_logs_for_user_id(discord_user_id: int, limit=100, offset=0, includ
 
 
 def get_audit_logs(
-    limit=100, offset=0, guild_id=None, username=None, success=None, since=None, include_list=False, until=None
+    limit=100,
+    offset=0,
+    guild_id=None,
+    username=None,
+    success=None,
+    since=None,
+    include_list=False,
+    until=None,
+    include_unscoped=False,
 ) -> list[SSOAuditLog]:
     """
     Get audit logs with optional filtering.
 
     Note: For failed authentication attempts, the guild_id field might be NULL in the database.
-    When filtering by guild_id, we need to consider this special case.
+    When filtering by guild_id, set ``include_unscoped=True`` to also include rows with
+    ``guild_id IS NULL`` (e.g. invalid-access-key attempts that never resolved a guild).
     """
     with base.get_session() as session:
         query = session.query(SSOAuditLog).options(
             sqlalchemy.orm.joinedload(SSOAuditLog.account).joinedload(SSOAccount.aliases)
         )
 
-        # Apply filters if provided
         if guild_id:
-            query = query.filter(SSOAuditLog.guild_id == guild_id)
+            if include_unscoped:
+                query = query.filter(sqlalchemy.or_(SSOAuditLog.guild_id == guild_id, SSOAuditLog.guild_id.is_(None)))
+            else:
+                query = query.filter(SSOAuditLog.guild_id == guild_id)
         if username:
             query = query.filter(SSOAuditLog.username == username)
         if success is not None:
@@ -1919,7 +1945,10 @@ def list_account_characters(guild_id: int, real_user: str = None) -> [SSOAccount
             if not account:
                 raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
             characters = characters.filter_by(account_id=account.id)
-        characters = characters.options(sqlalchemy.orm.joinedload(SSOAccountCharacter.account))
+        characters = characters.options(
+            sqlalchemy.orm.joinedload(SSOAccountCharacter.account).joinedload(SSOAccount.groups),
+            sqlalchemy.orm.joinedload(SSOAccountCharacter.account).joinedload(SSOAccount.shares),
+        )
         characters = characters.all()
         session.expunge_all()
     return characters

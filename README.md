@@ -108,14 +108,14 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `help` | Usage tutorial |
 | `access get` | Get your access key |
 | `access reset` | Reset your access key |
-| `account show <name>` | Show account details |
+| `account show <name>` | Show account details (only for accounts you can access) |
 | `account list [group] [tag]` | List accounts you can access |
-| `tag list` | List all tags |
-| `tag show <tag>` | Show tag details |
-| `group show <name>` | Show group details |
-| `group list [role]` | List groups |
-| `alias list` | List aliases |
-| `character list [username]` | List characters (shows confirmed zone keys: Seb, VP, ST) |
+| `tag list` | List tags applied to accounts you can access |
+| `tag show <tag>` | Show tag details (only accounts you can access are listed) |
+| `group show <name>` | Show group details (requires the group's role; admins see all) |
+| `group list [role]` | List groups your roles grant access to (admins see all) |
+| `alias list` | List aliases on accounts you can access |
+| `character list [username]` | List characters on accounts you can access (shows tracked keys/items) |
 | `reconcile` | Event-channel audit |
 
 ### `/sso_admin` (admin)
@@ -130,7 +130,7 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 | `group create / delete` | Manage groups |
 | `tag add / remove / update` | Manage tags (incl. UI macros) |
 | `alias create / delete` | Manage aliases |
-| `character add / remove / keys` | Manage characters; `keys` sets Seb/VP/ST key status |
+| `character add / remove / items` | Manage characters; `items` sets zone keys (Seb/VP/ST), boolean items, or stack counts |
 | `share add / remove / list` | Manage direct user-to-user shares on any account |
 | `audit account / user / failed / statistics` | Audit logs |
 | `revocation add / list / remove` | Revoke/restore user access |

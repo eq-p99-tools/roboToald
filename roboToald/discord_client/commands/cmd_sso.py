@@ -146,92 +146,47 @@ def _character_key_list_suffix(c: sso_model.SSOAccountCharacter) -> str:
     return f" [{':'.join(parts)}]"
 
 
-# Autocomplete function for account names
+def _autocomplete_visibility(inter: disnake.ApplicationCommandInteraction) -> tuple[int, set[int], bool]:
+    """Like ``_visibility_context`` but safe to call from autocomplete handlers.
+
+    Defined alongside the autocompletes so it can be used before ``is_admin`` /
+    ``_is_visible`` appear in source order.
+    """
+    role_ids = {role.id for role in inter.author.roles}
+    return inter.user.id, role_ids, is_admin(list(role_ids), inter.guild_id)
+
+
 async def account_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
-    """Autocomplete function for account names available to the user."""
+    """Account-name autocomplete restricted to accounts visible to the caller."""
     try:
-        # Get the user's roles
-        user_roles = [role.id for role in inter.author.roles]
-        user_is_admin = is_admin(user_roles, inter.guild_id)
-
-        # Get all accounts for this guild
+        user_id, role_ids, admin = _autocomplete_visibility(inter)
         all_accounts = sso_model.list_accounts(inter.guild_id)
-
-        # Filter accounts based on user's roles and access permissions
-        available_accounts = []
-        for account in all_accounts:
-            # Check if account is in a group that the user has access to
-            has_access = False
-            if user_is_admin:
-                has_access = True
-            else:
-                for group in account.groups:
-                    if group.role_id in user_roles:
-                        has_access = True
-                        break
-
-            # If no groups or has access, add to available accounts
-            if has_access:
-                available_accounts.append(account)
-
-        # Filter by the input string if provided
-        if string:
-            filtered_accounts = [
-                account.real_user for account in available_accounts if string.lower() in account.real_user.lower()
-            ]
-        else:
-            filtered_accounts = [account.real_user for account in available_accounts]
-
-        # Return up to 50 choices
-        return filtered_accounts[:25]
+        available_accounts = (
+            all_accounts
+            if admin
+            else [a for a in all_accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)]
+        )
+        needle = (string or "").lower()
+        names = [a.real_user for a in available_accounts if not needle or needle in a.real_user.lower()]
+        return names[:25]
     except Exception:
-        # In case of error, return an empty list
         return []
 
 
 async def character_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
-    """Autocomplete function for character names available to the user."""
+    """Character-name autocomplete restricted to characters on visible accounts."""
     try:
-        # Get the user's roles
-        user_roles = [role.id for role in inter.author.roles]
-        user_is_admin = is_admin(user_roles, inter.guild_id)
-
-        # Get all accounts for this guild
+        user_id, role_ids, admin = _autocomplete_visibility(inter)
         all_accounts = sso_model.list_accounts(inter.guild_id)
-
-        # Filter accounts based on user's roles and access permissions
-        available_accounts = []
-        for account in all_accounts:
-            # Check if account is in a group that the user has access to
-            has_access = False
-            if user_is_admin:
-                has_access = True
-            else:
-                for group in account.groups:
-                    if group.role_id in user_roles:
-                        has_access = True
-                        break
-
-            # If no groups or has access, add to available accounts
-            if has_access:
-                available_accounts.append(account)
-
-        # Get all the character names from the accounts
-        character_names = []
-        for account in available_accounts:
-            for character in account.characters:
-                character_names.append(character.name)
-
-        # Filter by the input string if provided
-        if string:
-            filtered_characters = [name for name in character_names if string.lower() in name.lower()]
-        else:
-            filtered_characters = character_names
-
-        # Return up to 50 choices
-        return filtered_characters[:25]
+        available_accounts = (
+            all_accounts
+            if admin
+            else [a for a in all_accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)]
+        )
+        needle = (string or "").lower()
+        names = [c.name for a in available_accounts for c in a.characters if not needle or needle in c.name.lower()]
+        return names[:25]
     except Exception:
-        # In case of error, return an empty list
         return []
 
 
@@ -272,42 +227,19 @@ async def tracked_inventory_item_autocomplete(inter: disnake.ApplicationCommandI
 
 
 async def alias_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
-    """Autocomplete function for alias names available to the user."""
+    """Alias-name autocomplete restricted to aliases on visible accounts."""
     try:
-        # Get the user's roles
-        user_roles = [role.id for role in inter.author.roles]
-        user_is_admin = is_admin(user_roles, inter.guild_id)
-
-        # Get all aliases for this guild
+        user_id, role_ids, admin = _autocomplete_visibility(inter)
         all_aliases = sso_model.list_account_aliases(inter.guild_id)
-
-        # Filter aliases based on user's roles and access permissions
-        available_aliases = []
-        for alias in all_aliases:
-            # Check if the account the alias is for is in a group that the user has access to
-            has_access = False
-            if user_is_admin:
-                has_access = True
-            else:
-                for group in alias.account.groups:
-                    if group.role_id in user_roles:
-                        has_access = True
-                        break
-
-            # If has access, add to available aliases
-            if has_access:
-                available_aliases.append(alias)
-
-        # Filter by the input string if provided
-        if string:
-            filtered_aliases = [alias.alias for alias in available_aliases if string.lower() in alias.alias.lower()]
-        else:
-            filtered_aliases = [alias.alias for alias in available_aliases]
-
-        # Return up to 50 choices
-        return filtered_aliases[:25]
+        available_aliases = (
+            all_aliases
+            if admin
+            else [a for a in all_aliases if _is_visible(a.account, user_id=user_id, role_ids=role_ids, is_admin=False)]
+        )
+        needle = (string or "").lower()
+        names = [a.alias for a in available_aliases if not needle or needle in a.alias.lower()]
+        return names[:25]
     except Exception:
-        # In case of error, return an empty list
         return []
 
 
@@ -361,75 +293,55 @@ async def group_autocomplete(inter: disnake.ApplicationCommandInteraction, strin
 
 
 async def tag_autocomplete(inter: disnake.ApplicationCommandInteraction, string: str):
-    """Autocomplete function for tag names available to the user."""
+    """Tag-name autocomplete restricted to tags on accounts visible to the caller.
+
+    Filtering rules (matching the slash command sub-options):
+
+    * ``/sso_admin tag remove username=X`` (or owner equivalent): only tags currently on X.
+    * ``/sso_admin tag add username=X`` (or owner equivalent): only tags NOT already on X
+      (still drawn from the visible-account tag universe).
+    * Otherwise: union of tags on visible accounts.
+    """
     try:
-        # Get the user's roles
-        user_roles = [role.id for role in inter.author.roles]
-        user_is_admin = is_admin(user_roles, inter.guild_id)
+        user_id, role_ids, admin = _autocomplete_visibility(inter)
+        accounts = sso_model.list_accounts(inter.guild_id)
+        visible_accounts = (
+            accounts
+            if admin
+            else [a for a in accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)]
+        )
 
-        # Get all tags for this guild
-        all_tags = sso_model.list_tags(inter.guild_id)
-
-        # Filter tags based on user's roles and access permissions
-        available_tags = []
-
-        # There are a few possibilities for filtering.
-        # 1. inter.options['tag'] is set:
-        #    - We're in a tag function, in which case:
-        #        - if inter.options['tag']['remove'] is set:
-        #            - We're removing a tag, in which case:
-        #                - if inter.options['tag']['remove']['username'] is set, we only want tags on that account
-        #        - if inter.options['tag']['add'] is set:
-        #            - We're adding a tag, in which case:
-        #                - if inter.options['tag']['add']['username'] is set, we only want tags NOT already on that account
-        # 2. inter.options['tag'] is not set:
-        #    - We're not in a tag function, in which case:
-        #        - We only want tags that are on accounts the user has access to
+        # Detect username-scoped sub-options (used by /sso[_admin|_owner] tag add/remove).
         tag_remove = False
         tag_add = False
         tag_username = None
         if "tag" in inter.options:
-            if "remove" in inter.options["tag"]:
+            tag_options = inter.options["tag"]
+            if "remove" in tag_options and "username" in tag_options["remove"]:
                 tag_remove = True
-                tag_username = inter.options["tag"]["remove"]["username"]
-            if "add" in inter.options["tag"]:
+                tag_username = tag_options["remove"]["username"]
+            elif "add" in tag_options and "username" in tag_options["add"]:
                 tag_add = True
-                tag_username = inter.options["tag"]["add"]["username"]
-        for tag in all_tags:
-            # Check if tag is on an account that the user has access to
-            has_access = False
+                tag_username = tag_options["add"]["username"]
+
+        target_tags: set[str]
+        if tag_username:
+            target = next((a for a in visible_accounts if a.real_user == tag_username.lower()), None)
+            tags_on_target = {t.tag for t in (target.tags if target else [])}
             if tag_remove:
-                valid_tag = False
+                target_tags = tags_on_target
+            elif tag_add:
+                all_visible_tags = {t.tag for a in visible_accounts for t in a.tags}
+                target_tags = all_visible_tags - tags_on_target
             else:
-                valid_tag = True
-            for account in all_tags[tag]:
-                if tag_remove and tag_username == account:
-                    valid_tag = True
-                elif tag_add and tag_username == account:
-                    valid_tag = False
-
-                if user_is_admin:
-                    has_access = True
-                else:
-                    for group in account.groups:
-                        if group.role_id in user_roles:
-                            has_access = True
-                            break
-
-            # If has access, add to available tags
-            if has_access and valid_tag:
-                available_tags.append(tag)
-
-        # Filter by the input string if provided
-        if string:
-            filtered_tags = [tag for tag in available_tags if string.lower() in tag.lower()]
+                target_tags = {t.tag for a in visible_accounts for t in a.tags}
         else:
-            filtered_tags = [tag for tag in available_tags]
+            target_tags = {t.tag for a in visible_accounts for t in a.tags}
 
-        # Return up to 50 choices
-        return filtered_tags[:25]
+        needle = (string or "").lower()
+        filtered = sorted(t for t in target_tags if not needle or needle in t.lower())
+        return filtered[:25]
     except Exception:
-        # In case of error, return an empty list
         return []
 
 
@@ -461,6 +373,46 @@ def _inter_is_admin(inter: disnake.ApplicationCommandInteraction) -> bool:
 def require_manage(inter: disnake.ApplicationCommandInteraction, account: sso_model.SSOAccount) -> bool:
     """True if the invoking user may mutate ``account`` (admin override OR ownership)."""
     return sso_model.can_manage_account(account, inter.user.id, _inter_is_admin(inter))
+
+
+def _is_visible(
+    account: sso_model.SSOAccount,
+    *,
+    user_id: int,
+    role_ids: set[int] | frozenset[int],
+    is_admin: bool,
+) -> bool:
+    """Return True if the user can see ``account``.
+
+    Admins see everything. Non-admins see accounts they own, accounts directly
+    shared with them, and accounts in groups whose ``role_id`` matches one of
+    their Discord roles. Mirrors :meth:`ConnectionManager._filter_accessible`.
+
+    Relies on ``groups`` and ``shares`` being eager-loaded on ``account``.
+    """
+    if is_admin:
+        return True
+    if getattr(account, "owner_discord_user_id", None) == user_id:
+        return True
+    if any(s.shared_with_discord_user_id == user_id for s in (getattr(account, "shares", None) or [])):
+        return True
+    return any(g.role_id in role_ids for g in account.groups)
+
+
+def _visibility_context(inter: disnake.ApplicationCommandInteraction) -> tuple[int, set[int], bool]:
+    """Return ``(user_id, role_ids, is_admin)`` for the invoking interaction."""
+    role_ids = {role.id for role in inter.author.roles}
+    return inter.user.id, role_ids, is_admin(list(role_ids), inter.guild_id)
+
+
+def _filter_visible_accounts(
+    inter: disnake.ApplicationCommandInteraction, accounts: list[sso_model.SSOAccount]
+) -> list[sso_model.SSOAccount]:
+    """Filter ``accounts`` to those visible to the invoking user (admin override)."""
+    user_id, role_ids, admin = _visibility_context(inter)
+    if admin:
+        return list(accounts)
+    return [a for a in accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)]
 
 
 async def _resolve_manageable_account(
@@ -552,7 +504,7 @@ SHARE_DISCLAIMER_TEXT = (
     "\n"
     "Sharing an account with another Discord user gives them **login access** to that account. "
     "They'll use the same credentials you do and can play any character on the account.\n"
-    "It is also not a guarantee that they can't see the actual password -- do not share "
+    "There are also no guarantees that they can't see the real password -- do not share "
     "an account that uses a password you would be uncomfortable sharing directly."
     "\n"
     "• **This is trust-based.** Only share with people you'd personally hand the password to.\n"
@@ -734,10 +686,13 @@ class SSOCommands(commands.Cog):
             description="Account username to show details for", autocomplete=account_and_alias_autocomplete
         ),
     ):
-        # Implement account show logic
         try:
             account = sso_model.find_account_by_username(username, inter.guild_id)
             if not account:
+                raise sso_model.SSOAccountNotFoundError
+            user_id, role_ids, admin = _visibility_context(inter)
+            if not _is_visible(account, user_id=user_id, role_ids=role_ids, is_admin=admin):
+                # Mask existence: same response as a missing account.
                 raise sso_model.SSOAccountNotFoundError
             group_names = "\n".join([f" * `{group.group_name}`" for group in account.groups])
             group_string = f"\n🗂️ Groups:\n{group_names}" if group_names else ""
@@ -766,8 +721,8 @@ class SSOCommands(commands.Cog):
         ),
         tag: str = commands.Param(description="Tag to filter accounts by", autocomplete=tag_autocomplete, default=None),
     ):
-        # Implement account list logic
         account_list = sso_model.list_accounts(inter.guild_id, group, tag)
+        account_list = _filter_visible_accounts(inter, account_list)
         if not account_list:
             await inter.send(content="ℹ️ **No accounts found with the given filters.**", ephemeral=True)
             return
@@ -1031,12 +986,24 @@ class SSOCommands(commands.Cog):
 
     @tag.sub_command(description="List tags", name="list")
     async def tag_list(self, inter: disnake.ApplicationCommandInteraction):
-        # Implement tag list logic
-        tags = sso_model.list_tags(inter.guild_id)
-        if not tags:
+        user_id, role_ids, admin = _visibility_context(inter)
+        if admin:
+            tags = sso_model.list_tags(inter.guild_id)
+            visible_tag_names = list(tags)
+        else:
+            accounts = sso_model.list_accounts(inter.guild_id)
+            visible_tag_names = sorted(
+                {
+                    t.tag
+                    for a in accounts
+                    if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)
+                    for t in a.tags
+                }
+            )
+        if not visible_tag_names:
             await inter.send(content="ℹ️ **No tags found in this server.**", ephemeral=True)
             return
-        formatted = "\n".join([f"🏷️ **{tag}**" for tag in tags])
+        formatted = "\n".join([f"🏷️ **{tag}**" for tag in visible_tag_names])
         await send_and_split(inter.send, f"**Tags:**\n{formatted}", ephemeral=True)
 
     @tag.sub_command(description="Show a tag", name="show")
@@ -1045,9 +1012,12 @@ class SSOCommands(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         tag: str = commands.Param(description="Tag to show", autocomplete=tag_autocomplete),
     ):
-        # Implement tag show logic
         tags = sso_model.get_tag(inter.guild_id, tag)
+        user_id, role_ids, admin = _visibility_context(inter)
+        if not admin:
+            tags = [t for t in tags if _is_visible(t.account, user_id=user_id, role_ids=role_ids, is_admin=False)]
         if not tags:
+            # Mask existence: if no visible accounts hold this tag, treat as not-found.
             await inter.send(content=f"⚠️🏷️ **Tag not found:** `{tag}`", ephemeral=True)
             return
 
@@ -1056,16 +1026,13 @@ class SSOCommands(commands.Cog):
 
         for tag_obj in tags:
             formatted += f"  →  🤖 `{tag_obj.account.real_user}`\n"
-            # Check if this tag has a UI macro and we haven't already added it to files
             if tag_obj.ui_macro and not files:
-                # Create a file object from the binary data
                 macro_file = disnake.File(fp=io.BytesIO(tag_obj.ui_macro.ui_macro_data), filename=f"{tag}_macro.ini")
                 files.append(macro_file)
 
         if files:
             formatted += "  →  📄 UI Macro (attached)\n"
 
-        # Send the response with any attached files
         await send_and_split(inter.send, formatted, files=files, ephemeral=True)
 
     @sso_admin.sub_command_group(description="Tag related commands", name="tag")
@@ -1154,17 +1121,28 @@ class SSOCommands(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         name: str = commands.Param(description="Group name to show details for", autocomplete=group_autocomplete),
     ):
-        # Implement group show logic
         try:
             account_group = sso_model.get_account_group(inter.guild_id, name)
-            account_names = "\n".join([f" * `{account.real_user}`" for account in account_group.accounts])
-            await send_and_split(
-                inter.send,
-                f"🗂️ **Group:** `{account_group.group_name}`\n → 🤖 Accounts:\n{account_names}",
-                ephemeral=True,
-            )
-        except sqlalchemy.exc.NoResultFound:
+        except (sqlalchemy.exc.NoResultFound, sso_model.SSOAccountGroupNotFoundError):
             await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
+            return
+        user_id, role_ids, admin = _visibility_context(inter)
+        if not admin and account_group.role_id not in role_ids:
+            # Mask existence: caller has no role access to this group.
+            await inter.send(content=f"⚠️🗂️ **Group not found:** `{name}`", ephemeral=True)
+            return
+        if admin:
+            visible_accounts = list(account_group.accounts)
+        else:
+            visible_accounts = [
+                a for a in account_group.accounts if _is_visible(a, user_id=user_id, role_ids=role_ids, is_admin=False)
+            ]
+        account_names = "\n".join([f" * `{account.real_user}`" for account in visible_accounts])
+        await send_and_split(
+            inter.send,
+            f"🗂️ **Group:** `{account_group.group_name}`\n → 🤖 Accounts:\n{account_names}",
+            ephemeral=True,
+        )
 
     @group.sub_command(description="List groups", name="list")
     async def group_list(
@@ -1172,8 +1150,10 @@ class SSOCommands(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         role: disnake.Role = commands.Param(description="Role required for access to this group.", default=None),
     ):
-        # Implement group list logic
         account_groups = sso_model.list_account_groups(inter.guild_id, role.id if role else None)
+        _user_id, role_ids, admin = _visibility_context(inter)
+        if not admin:
+            account_groups = [g for g in account_groups if g.role_id in role_ids]
         if not account_groups:
             if role:
                 await inter.send(content=f"ℹ️ **No groups found for role: <@&{role.id}>.**", ephemeral=True)
@@ -1225,8 +1205,10 @@ class SSOCommands(commands.Cog):
 
     @alias.sub_command(description="List aliases", name="list")
     async def alias_list(self, inter: disnake.ApplicationCommandInteraction):
-        # Implement alias list logic
         aliases = sso_model.list_account_aliases(inter.guild_id)
+        user_id, role_ids, admin = _visibility_context(inter)
+        if not admin:
+            aliases = [a for a in aliases if _is_visible(a.account, user_id=user_id, role_ids=role_ids, is_admin=False)]
         if not aliases:
             await inter.send(content="ℹ️ **No aliases found in this server.**", ephemeral=True)
             return
@@ -1356,7 +1338,7 @@ class SSOCommands(commands.Cog):
             user_id = user.id
             user_mention = user.mention
 
-            logs = sso_model.get_audit_logs_for_user_id(user_id)
+            logs = sso_model.get_audit_logs_for_user_id(user_id, guild_id=inter.guild_id)
 
             if not logs:
                 await inter.send(content=f"📋 **No audit logs found for user:** {user_mention}", ephemeral=True)
@@ -1409,24 +1391,16 @@ class SSOCommands(commands.Cog):
             if hours > 0:
                 since = datetime.datetime.now() - datetime.timedelta(hours=hours)
 
-            # Get failed audit logs for all accounts in this guild
+            # Get failed audit logs for this guild (plus orphan NULL-guild attempts
+            # such as invalid access keys that never resolved a guild).
             logs = sso_model.get_audit_logs(
                 limit=max_records,
+                guild_id=inter.guild_id,
                 success=False,
                 since=since,
                 include_list=True,
+                include_unscoped=True,
             )
-
-            accounts = sso_model.list_accounts(inter.guild_id)
-            account_names = {account.real_user for account in accounts}
-
-            # Include entries that belong to this guild, match a known
-            # account, or have no guild (e.g. invalid access key attempts).
-            logs = [
-                log
-                for log in logs
-                if log.guild_id == inter.guild_id or log.guild_id is None or log.username in account_names
-            ]
 
             if not logs:
                 await inter.send(
@@ -2173,6 +2147,11 @@ class SSOCommands(commands.Cog):
     ):
         try:
             characters = sso_model.list_account_characters(guild_id=inter.guild_id, real_user=username)
+            user_id, role_ids, admin = _visibility_context(inter)
+            if not admin:
+                characters = [
+                    c for c in characters if _is_visible(c.account, user_id=user_id, role_ids=role_ids, is_admin=False)
+                ]
             if characters:
                 desc = "\n".join(
                     f" * `{c.name}` ({c.klass.value}){_character_key_list_suffix(c)}"
