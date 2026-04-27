@@ -356,7 +356,6 @@ async def partial_overview(request: Request):
 
     allowed = set(guild_ids)
     all_connections = [c for c in ws_manager.get_connections_summary() if c["guild_id"] in allowed]
-    client_version_counts = _histogram_client_versions(all_connections)
 
     active_session_count = 0
     for gid in guild_ids:
@@ -372,7 +371,6 @@ async def partial_overview(request: Request):
             "total_groups": total_groups,
             "ws_client_count": len(all_connections),
             "active_session_count": active_session_count,
-            "client_version_counts": client_version_counts,
         },
     )
 
@@ -386,6 +384,7 @@ async def partial_connections(request: Request):
     filter_gid = _parse_guild_filter(request)
     allowed = set(_sso_guild_ids(session["guilds"], filter_gid))
     connections = [c for c in ws_manager.get_connections_summary() if c["guild_id"] in allowed]
+    client_version_counts = _histogram_client_versions(connections)
 
     now = datetime.datetime.now()
     for conn in connections:
@@ -404,6 +403,7 @@ async def partial_connections(request: Request):
         "partials/connections.html",
         {
             "connections": connections,
+            "client_version_counts": client_version_counts,
             "is_super": session.get("super", False),
         },
     )

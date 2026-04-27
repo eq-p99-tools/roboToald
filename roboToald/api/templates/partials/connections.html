@@ -1,4 +1,27 @@
 {% if connections %}
+{% if client_version_counts %}
+<div class="version-breakdown">
+    <h4>Connections by client version</h4>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Connections</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in client_version_counts %}
+                <tr>
+                    <td>{% if row.version == 'unknown' %}<span class="muted-version">unknown</span>{% else %}{{ row.version }}{% endif %}</td>
+                    <td>{{ row.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 <div style="overflow-x: auto;">
 <table>
     <thead>
