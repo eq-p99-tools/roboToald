@@ -1,0 +1,52 @@
+{% include "partials/manage/_flash.html" %}
+<div class="sub-tab-bar">
+    {% for tab, label in [("accounts", "Accounts"), ("groups", "Groups"), ("tags", "Tags"), ("aliases", "Aliases"), ("characters", "Characters"), ("shares", "Shares")] %}
+    <button class="sub-tab-btn{% if active == tab %} active{% endif %}" hx-get="/admin/manage/partials/{{ tab }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">{{ label }}</button>
+    {% endfor %}
+</div>
+
+<p class="manage-intro">Direct shares grant login/read access to one user without changing Discord roles. They do not grant management rights.</p>
+
+{% for g in guilds %}
+<article>
+    <header><strong>{{ g.name }}</strong> <small>{{ g.id }}</small></header>
+    <details class="manage-card">
+        <summary>Add share <small>Share one account with one Discord user</small></summary>
+        <form hx-post="/admin/manage/shares" hx-target="#panel-manage" hx-swap="innerHTML show:none" class="manage-form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="guild_id" value="{{ g.id }}">
+            <label>Account
+                <select name="real_user" required>{% for a in g.accounts %}<option value="{{ a.real_user }}">{{ a.real_user }}</option>{% endfor %}</select>
+            </label>
+            <label>Shared user Discord ID<input name="shared_with_discord_user_id" inputmode="numeric" required></label>
+            <button type="submit">Add Share</button>
+        </form>
+    </details>
+    {% if g.shares %}
+    <table>
+        <thead><tr><th>Account</th><th>Shared With</th><th>Created By</th><th>Created At</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for share in g.shares %}
+        <tr>
+            <td><strong>{{ share.real_user }}</strong></td>
+            <td>{{ share.shared_with_name or share.shared_with_discord_user_id }}<br><small>{{ share.shared_with_discord_user_id }}</small></td>
+            <td>{% if share.created_by_discord_user_id %}{{ share.created_by_name or share.created_by_discord_user_id }}<br><small>{{ share.created_by_discord_user_id }}</small>{% else %}<span style="opacity: 0.4;">Unknown</span>{% endif %}</td>
+            <td>{% if share.created_at_iso %}<time class="local-time" datetime="{{ share.created_at_iso }}"></time>{% endif %}</td>
+            <td>
+                <div class="manage-compact-actions">
+                    <form hx-delete="/admin/manage/shares/{{ quote(share.real_user) }}/{{ share.shared_with_discord_user_id }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Remove share for {{ share.real_user }}?">
+                        <input type="hidden" name="csrf" value="{{ csrf }}">
+                        <input type="hidden" name="guild_id" value="{{ g.id }}">
+                        <button type="submit" class="outline contrast">Remove</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No direct shares in this guild</p>
+    {% endif %}
+</article>
+{% endfor %}

@@ -1,0 +1,55 @@
+<form hx-put="/admin/manage/characters/{{ quote(character.name) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" onsubmit="document.getElementById('character-form-modal').close()" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem;">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="guild_id" value="{{ guild_id }}">
+    <label>Name<input value="{{ character.name }}" disabled></label>
+    <label>Class
+        <select name="klass">
+            {% for klass in classes %}
+            <option value="{{ klass.name }}"{% if character.klass == klass %} selected{% endif %}>{{ klass.value }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Level<input name="level" inputmode="numeric" value="{{ character.level or "" }}"></label>
+    <label>Bind
+        <select name="bind_location">
+            <option value="">Unknown / unchanged</option>
+            {% if character.bind_location and character.bind_location not in zone_labels %}
+            <option value="{{ character.bind_location }}" selected>{{ character.bind_location }}</option>
+            {% endif %}
+            {% for zone_key, zone_label in zone_choices %}
+            <option value="{{ zone_key }}"{% if character.bind_location == zone_key %} selected{% endif %}>{{ zone_label }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Park
+        <select name="park_location">
+            <option value="">Unknown / unchanged</option>
+            {% if character.park_location and character.park_location not in zone_labels %}
+            <option value="{{ character.park_location }}" selected>{{ character.park_location }}</option>
+            {% endif %}
+            {% for zone_key, zone_label in zone_choices %}
+            <option value="{{ zone_key }}"{% if character.park_location == zone_key %} selected{% endif %}>{{ zone_label }}</option>
+            {% endfor %}
+        </select>
+    </label>
+
+    {% for field in bool_fields %}
+    <label title="{{ field }}">{{ item_field_labels.get(field, field) }}
+        {% set value = character|attr(field) %}
+        <select name="{{ field }}">
+            <option value=""{% if value is none %} selected{% endif %}>Unset</option>
+            <option value="true"{% if value is sameas true %} selected{% endif %}>True</option>
+            <option value="false"{% if value is sameas false %} selected{% endif %}>False</option>
+        </select>
+    </label>
+    {% endfor %}
+
+    {% for field in int_fields %}
+    <label title="{{ field }}">{{ item_field_labels.get(field, field) }}<input name="{{ field }}" inputmode="numeric" value="{{ character|attr(field) if character|attr(field) is not none else "" }}"></label>
+    {% endfor %}
+
+    <div style="grid-column: 1 / -1;">
+        <button type="submit">Save Character</button>
+        <button type="button" class="secondary" onclick="document.getElementById('character-form-modal').close()">Cancel</button>
+    </div>
+</form>

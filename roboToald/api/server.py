@@ -187,11 +187,11 @@ logging.getLogger("uvicorn.error").addFilter(_SuppressBareWsLifecycle())
 
 
 class _SuppressAdminPartials(logging.Filter):
-    """Drop access-log lines for /admin/partials/ HTMX polling requests."""
+    """Drop access-log lines for dashboard HTMX polling requests."""
 
     def filter(self, record):
         msg = record.getMessage()
-        return "/admin/partials/" not in msg
+        return "/admin/partials/" not in msg and "/admin/manage/partials/" not in msg
 
 
 logging.getLogger("uvicorn.access").addFilter(_SuppressAdminPartials())
@@ -201,8 +201,10 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 
 # Mount the admin dashboard router
 from roboToald.api.dashboard import router as dashboard_router  # noqa: E402
+from roboToald.api.dashboard_manage import router as dashboard_manage_router  # noqa: E402
 
 app.include_router(dashboard_router)
+app.include_router(dashboard_manage_router)
 
 # Expose a function to run the API server in a thread with injected discord_client
 

@@ -1,0 +1,50 @@
+{% include "partials/manage/_flash.html" %}
+<div class="sub-tab-bar">
+    {% for tab, label in [("accounts", "Accounts"), ("groups", "Groups"), ("tags", "Tags"), ("aliases", "Aliases"), ("characters", "Characters"), ("shares", "Shares")] %}
+    <button class="sub-tab-btn{% if active == tab %} active{% endif %}" hx-get="/admin/manage/partials/{{ tab }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">{{ label }}</button>
+    {% endfor %}
+</div>
+
+<p class="manage-intro">Aliases are alternate login names for one account. Keep them short and easy to recognize.</p>
+
+{% for g in guilds %}
+<article>
+    <header><strong>{{ g.name }}</strong> <small>{{ g.id }}</small></header>
+    <details class="manage-card">
+        <summary>Add alias <small>Point a friendly name at an account</small></summary>
+        <form hx-post="/admin/manage/aliases" hx-target="#panel-manage" hx-swap="innerHTML show:none" class="manage-form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="guild_id" value="{{ g.id }}">
+            <label>Account
+                <select name="real_user" required>{% for a in g.accounts %}<option value="{{ a.real_user }}">{{ a.real_user }}</option>{% endfor %}</select>
+            </label>
+            <label>Alias<input name="alias" autocomplete="off" required></label>
+            <button type="submit">Create Alias</button>
+        </form>
+    </details>
+    {% if g.aliases %}
+    <table>
+        <thead><tr><th>Alias</th><th>Account</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for alias in g.aliases %}
+        <tr>
+            <td><strong>{{ alias.alias }}</strong></td>
+            <td>{{ alias.real_user }}</td>
+            <td>
+                <div class="manage-compact-actions">
+                    <form hx-delete="/admin/manage/aliases/{{ quote(alias.alias) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Delete alias {{ alias.alias }}?">
+                            <input type="hidden" name="csrf" value="{{ csrf }}">
+                            <input type="hidden" name="guild_id" value="{{ g.id }}">
+                            <button type="submit" class="outline contrast">Delete</button>
+                        </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No aliases in this guild</p>
+    {% endif %}
+</article>
+{% endfor %}

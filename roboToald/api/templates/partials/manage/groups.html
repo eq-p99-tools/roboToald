@@ -1,0 +1,59 @@
+{% include "partials/manage/_flash.html" %}
+<div class="sub-tab-bar">
+    {% for tab, label in [("accounts", "Accounts"), ("groups", "Groups"), ("tags", "Tags"), ("aliases", "Aliases"), ("characters", "Characters"), ("shares", "Shares")] %}
+    <button class="sub-tab-btn{% if active == tab %} active{% endif %}" hx-get="/admin/manage/partials/{{ tab }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">{{ label }}</button>
+    {% endfor %}
+</div>
+
+<p class="manage-intro">Groups connect Discord roles to account access. Create groups sparingly, then attach accounts from the Accounts tab.</p>
+
+{% for g in guilds %}
+<article>
+    <header><strong>{{ g.name }}</strong> <small>{{ g.id }}</small></header>
+    <details class="manage-card">
+        <summary>Add group <small>Map a Discord role to an SSO group</small></summary>
+        <form hx-post="/admin/manage/groups" hx-target="#panel-manage" hx-swap="innerHTML show:none" class="manage-form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="guild_id" value="{{ g.id }}">
+            <label>Group name<input name="group_name" autocomplete="off" required></label>
+            <label>Discord role
+                <select name="role_id" required>
+                    {% for role in g.roles %}<option value="{{ role.id }}">{{ role.name }} ({{ role.id }})</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Create Group</button>
+        </form>
+    </details>
+    {% if g.groups %}
+    <table>
+        <thead><tr><th>Group</th><th>Role</th><th>Accounts</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for group in g.groups %}
+        <tr>
+            <td><strong>{{ group.group_name }}</strong></td>
+            <td>{{ group.role_name }}<br><small>{{ group.role_id }}</small></td>
+            <td data-sort="{{ group.account_count }}">{{ group.account_count }}</td>
+            <td>
+                <div class="manage-compact-actions">
+                    <form hx-put="/admin/manage/groups/{{ quote(group.group_name) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">
+                        <input type="hidden" name="csrf" value="{{ csrf }}">
+                        <input type="hidden" name="guild_id" value="{{ g.id }}">
+                        <input name="new_name" value="{{ group.group_name }}" required>
+                        <button type="submit" class="secondary">Rename</button>
+                    </form>
+                    <form hx-delete="/admin/manage/groups/{{ quote(group.group_name) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Delete group {{ group.group_name }}?">
+                        <input type="hidden" name="csrf" value="{{ csrf }}">
+                        <input type="hidden" name="guild_id" value="{{ g.id }}">
+                        <button type="submit" class="outline contrast">Delete</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No groups in this guild</p>
+    {% endif %}
+</article>
+{% endfor %}

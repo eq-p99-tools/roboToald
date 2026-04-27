@@ -76,6 +76,24 @@ Field details:
 
 Per-field “last updated” timestamps for keys and inventory are stored **only in the database** (for server-side use). They are **not** included in `full_state`, WebSocket payloads, or HTTP responses to clients.
 
+### Admin Dashboard Management API
+
+The Discord OAuth-protected dashboard includes admin-only HTMX routes under `/admin/manage/*`. These routes are not public client APIs; they require the signed `admin_session` cookie issued by `/admin/callback`, a per-session CSRF token for every mutating request, and a `guild_id` that is within the logged-in admin's authorized SSO guilds.
+
+Read partials render HTML fragments:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/admin/manage/partials/accounts` | Account management table and create/update/delete controls |
+| `GET` | `/admin/manage/partials/groups` | SSO group management table |
+| `GET` | `/admin/manage/partials/tags` | Account tag management table |
+| `GET` | `/admin/manage/partials/aliases` | Account alias management table |
+| `GET` | `/admin/manage/partials/characters` | Character management table |
+| `GET` | `/admin/manage/partials/character_form` | Per-character edit form |
+| `GET` | `/admin/manage/partials/shares` | Direct account share management table |
+
+Mutating routes mirror `/sso_admin` operations for accounts, groups, tags, aliases, characters, and shares. Successful mutations call `ws_manager.notify_guild(guild_id, immediate=True)` so connected login-proxy clients receive fresh account deltas, and write an `SSOAuditLog` entry with `rate_limit=False` and `details` prefixed with `dashboard:`.
+
 ### Dynamic Tags
 
 Dynamic tags are computed zone+class combinations not stored in the database. They are the Cartesian product of zone prefixes and class suffixes:

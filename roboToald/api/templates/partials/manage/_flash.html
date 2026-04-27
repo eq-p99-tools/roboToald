@@ -1,0 +1,5 @@
+{% if error %}
+<article style="border-color: var(--pico-del-color); color: var(--pico-del-color);">{{ error }}</article>
+{% elif message %}
+<article style="border-color: var(--pico-ins-color); color: var(--pico-ins-color);">{{ message }}</article>
+{% endif %}

@@ -271,6 +271,7 @@ async def oauth_callback(request: Request, code: str = "", error: str = "", stat
         "name": display_name,
         "avatar": avatar,
         "guilds": authorized_guilds,
+        "csrf": secrets.token_urlsafe(16),
         "iat": int(time.time()),
     }
     if is_super:
@@ -316,6 +317,7 @@ async def dashboard(request: Request):
         {
             "guilds": guilds,
             "user_name": session.get("name", ""),
+            "csrf": session.get("csrf", ""),
         },
     )
 

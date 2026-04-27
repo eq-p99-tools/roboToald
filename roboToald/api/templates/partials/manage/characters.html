@@ -1,0 +1,89 @@
+{% include "partials/manage/_flash.html" %}
+<div class="sub-tab-bar">
+    {% for tab, label in [("accounts", "Accounts"), ("groups", "Groups"), ("tags", "Tags"), ("aliases", "Aliases"), ("characters", "Characters"), ("shares", "Shares")] %}
+    <button class="sub-tab-btn{% if active == tab %} active{% endif %}" hx-get="/admin/manage/partials/{{ tab }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">{{ label }}</button>
+    {% endfor %}
+</div>
+
+<p class="manage-intro">Characters power class and zone matching. Add the basics here, then use Edit for keys and tracked items.</p>
+
+{% for g in guilds %}
+<article>
+    <header><strong>{{ g.name }}</strong> <small>{{ g.id }}</small></header>
+    <details class="manage-card">
+        <summary>Add character <small>Attach one character to an account</small></summary>
+        <form hx-post="/admin/manage/characters" hx-target="#panel-manage" hx-swap="innerHTML show:none" class="manage-form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="guild_id" value="{{ g.id }}">
+            <label>Account
+                <select name="real_user" required>{% for a in g.accounts %}<option value="{{ a.real_user }}">{{ a.real_user }}</option>{% endfor %}</select>
+            </label>
+            <label>Name<input name="name" autocomplete="off" required></label>
+            <label>Class
+                <select name="klass" required>{% for klass in classes %}<option value="{{ klass.name }}">{{ klass.value }}</option>{% endfor %}</select>
+            </label>
+            <label>Level<input name="level" inputmode="numeric"></label>
+            <label>Bind
+                <select name="bind_location">
+                    <option value="">Unknown / unchanged</option>
+                    {% for zone_key, zone_label in zone_choices %}<option value="{{ zone_key }}">{{ zone_label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Park
+                <select name="park_location">
+                    <option value="">Unknown / unchanged</option>
+                    {% for zone_key, zone_label in zone_choices %}<option value="{{ zone_key }}">{{ zone_label }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Add Character</button>
+        </form>
+    </details>
+    {% if g.characters %}
+    <div class="manage-table-wrapper">
+    <table>
+        <thead><tr><th>Name</th><th>Account</th><th>Class</th><th>Level</th><th>Bind</th><th>Park</th><th>Keys/Items</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for c in g.characters %}
+        <tr>
+            <td><strong>{{ c.name }}</strong></td>
+            <td>{{ c.account.real_user if c.account else "" }}</td>
+            <td>{{ c.klass.value }}</td>
+            <td>{{ c.level or "" }}</td>
+            <td>{% if c.bind_location %}<span title="{{ c.bind_location }}">{{ zone_labels.get(c.bind_location, c.bind_location) }}</span>{% endif %}</td>
+            <td>{% if c.park_location %}<span title="{{ c.park_location }}">{{ zone_labels.get(c.park_location, c.park_location) }}</span>{% endif %}</td>
+            <td>
+                {% for field in character_item_fields %}
+                    {% set value = c|attr(field) %}
+                    {% if value is not none %}<span class="badge" title="{{ field }}">{{ item_field_labels.get(field, field) }}={{ value }}</span>{% endif %}
+                {% endfor %}
+            </td>
+            <td>
+                <div class="manage-compact-actions">
+                    <button type="button" class="secondary" hx-get="/admin/manage/partials/character_form?guild_id={{ g.id }}&name={{ quote(c.name) }}" hx-target="#character-form-body" hx-swap="innerHTML" onclick="document.getElementById('character-form-modal').showModal()">Edit</button>
+                    <form hx-delete="/admin/manage/characters/{{ quote(c.name) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Delete character {{ c.name }}?">
+                        <input type="hidden" name="csrf" value="{{ csrf }}">
+                        <input type="hidden" name="guild_id" value="{{ g.id }}">
+                        <button type="submit" class="outline contrast">Delete</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No characters in this guild</p>
+    {% endif %}
+</article>
+{% endfor %}
+
+<dialog id="character-form-modal">
+    <article style="max-width: 900px; width: 90vw;">
+        <header>
+            <button type="button" aria-label="Close" rel="prev" onclick="document.getElementById('character-form-modal').close()"></button>
+            <strong>Edit Character</strong>
+        </header>
+        <div id="character-form-body"><p class="empty-state" aria-busy="true">Loading...</p></div>
+    </article>
+</dialog>

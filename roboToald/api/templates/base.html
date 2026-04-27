@@ -248,6 +248,97 @@
             margin-bottom: 0.5rem;
             font-size: 1rem;
         }
+        .manage-intro {
+            margin: 0 0 0.75rem 0;
+            color: var(--pico-muted-color);
+            font-size: 0.9rem;
+        }
+        .manage-card {
+            border: 1px solid var(--pico-muted-border-color);
+            border-radius: 0.6rem;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            background: var(--pico-card-background-color);
+        }
+        .manage-card > summary,
+        .manage-actions > summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--pico-primary);
+        }
+        .manage-card > summary small,
+        .manage-actions > summary small {
+            color: var(--pico-muted-color);
+            font-weight: 400;
+        }
+        .manage-form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+            gap: 0.6rem;
+            align-items: end;
+            margin-top: 0.75rem;
+        }
+        .manage-actions {
+            min-width: 10rem;
+        }
+        .manage-actions form {
+            margin: 0.45rem 0;
+        }
+        .manage-actions button,
+        .manage-actions input,
+        .manage-actions select {
+            margin-bottom: 0;
+        }
+        .manage-inline-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            align-items: center;
+        }
+        .manage-muted {
+            color: var(--pico-muted-color);
+            font-size: 0.85rem;
+        }
+        .manage-table-wrapper {
+            overflow-x: auto;
+        }
+        .manage-compact-actions {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            align-items: center;
+            min-width: min(24rem, max-content);
+        }
+        .manage-compact-actions form {
+            display: inline-flex;
+            gap: 0.25rem;
+            align-items: center;
+            margin: 0;
+        }
+        .manage-compact-actions button,
+        .manage-compact-actions input,
+        .manage-compact-actions select,
+        .manage-actions > summary {
+            padding: 0.25rem 0.55rem;
+            font-size: 0.82rem;
+            line-height: 1.2;
+            min-height: 0;
+            width: auto;
+            margin-bottom: 0;
+        }
+        .manage-compact-actions input,
+        .manage-compact-actions select {
+            max-width: 10rem;
+            height: 1.75rem;
+            padding-top: 0.15rem;
+            padding-bottom: 0.15rem;
+            line-height: 1;
+        }
+        .manage-actions > summary {
+            display: inline-block;
+            border: 1px solid var(--pico-muted-border-color);
+            border-radius: 0.35rem;
+        }
         @media (max-width: 768px) {
             body > nav {
                 flex-wrap: wrap;
@@ -316,6 +407,17 @@
             white-space: nowrap;
             border: 0;
         }
+        .confirm-modal article {
+            max-width: 32rem;
+        }
+        .confirm-modal footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        .confirm-modal p {
+            margin-bottom: 1rem;
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -331,6 +433,16 @@
     <main class="container-fluid">
         {% block content %}{% endblock %}
     </main>
+    <dialog id="confirm-modal" class="confirm-modal">
+        <article>
+            <header><strong>Confirm Action</strong></header>
+            <p id="confirm-modal-message">Are you sure?</p>
+            <footer>
+                <button type="button" class="secondary" id="confirm-modal-cancel">Cancel</button>
+                <button type="button" class="contrast" id="confirm-modal-confirm">Confirm</button>
+            </footer>
+        </article>
+    </dialog>
     <script>
     function formatLocalTimes(root) {
         (root || document).querySelectorAll('time.local-time').forEach(function(el) {
@@ -386,6 +498,48 @@
     if (tableFilterEl) {
         tableFilterEl.addEventListener('input', window.dashboardApplyTableFilter);
     }
+
+    (function setupConfirmModal() {
+        var modal = document.getElementById('confirm-modal');
+        var messageEl = document.getElementById('confirm-modal-message');
+        var cancelBtn = document.getElementById('confirm-modal-cancel');
+        var confirmBtn = document.getElementById('confirm-modal-confirm');
+        var pendingIssueRequest = null;
+        if (!modal || !messageEl || !cancelBtn || !confirmBtn) return;
+
+        function closeConfirmModal() {
+            pendingIssueRequest = null;
+            modal.close();
+        }
+
+        document.body.addEventListener('htmx:confirm', function(evt) {
+            if (!evt.detail || !evt.detail.question) return;
+            evt.preventDefault();
+            messageEl.textContent = evt.detail.question;
+            pendingIssueRequest = evt.detail.issueRequest;
+            if (typeof modal.showModal === 'function') {
+                modal.showModal();
+            } else if (pendingIssueRequest) {
+                pendingIssueRequest(true);
+                pendingIssueRequest = null;
+            }
+        });
+
+        confirmBtn.addEventListener('click', function() {
+            var issueRequest = pendingIssueRequest;
+            pendingIssueRequest = null;
+            modal.close();
+            if (issueRequest) issueRequest(true);
+        });
+
+        cancelBtn.addEventListener('click', closeConfirmModal);
+        modal.addEventListener('cancel', function() {
+            pendingIssueRequest = null;
+        });
+        modal.addEventListener('click', function(evt) {
+            if (evt.target === modal) closeConfirmModal();
+        });
+    })();
 
     function dashboardTableSortKey(table) {
         var el = table;

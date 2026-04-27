@@ -1,0 +1,90 @@
+{% include "partials/manage/_flash.html" %}
+<div class="sub-tab-bar">
+    {% for tab, label in [("accounts", "Accounts"), ("groups", "Groups"), ("tags", "Tags"), ("aliases", "Aliases"), ("characters", "Characters"), ("shares", "Shares")] %}
+    <button class="sub-tab-btn{% if active == tab %} active{% endif %}" hx-get="/admin/manage/partials/{{ tab }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">{{ label }}</button>
+    {% endfor %}
+</div>
+
+<p class="manage-intro">Create accounts here, then use the compact row controls for day-to-day edits.</p>
+
+{% for g in guilds %}
+<article>
+    <header><strong>{{ g.name }}</strong> <small>{{ g.id }}</small></header>
+    <details class="manage-card">
+        <summary>Add account <small>Create one bot account in {{ g.name }}</small></summary>
+        <form hx-post="/admin/manage/accounts" hx-target="#panel-manage" hx-swap="innerHTML show:none" class="manage-form-grid">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="guild_id" value="{{ g.id }}">
+            <label>Account<input name="real_user" autocomplete="off" required></label>
+            <label>Password<input name="real_pass" type="password" autocomplete="new-password" required></label>
+            <label>Initial group
+                <select name="group_name">
+                    <option value="">None</option>
+                    {% for group in g.groups %}<option value="{{ group.group_name }}">{{ group.group_name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Owner Discord ID<input name="owner_discord_user_id" inputmode="numeric" autocomplete="off"></label>
+            <button type="submit">Create Account</button>
+        </form>
+    </details>
+
+    {% if g.accounts %}
+    <div class="manage-table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Account</th><th>Owner</th><th>Groups</th><th>Characters</th><th>Tags</th><th>Aliases</th><th>Last Login</th><th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for a in g.accounts %}
+            <tr>
+                <td><strong>{{ a.real_user }}</strong></td>
+                <td>{% if a.owner_id %}{{ a.owner_name or a.owner_id }}<br><small>{{ a.owner_id }}</small>{% else %}<span style="opacity: 0.4;">Admin-only</span>{% endif %}</td>
+                <td>{% for group in a.groups %}<span class="badge">{{ group.group_name }}</span> {% endfor %}{% if not a.groups %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
+                <td>{% for c in a.characters %}<span class="badge">{{ c.name }} <small>({{ c.klass.value }})</small></span> {% endfor %}{% if not a.characters %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
+                <td>{% for tag in a.tags %}<span class="badge">{{ tag }}</span> {% endfor %}{% if not a.tags %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
+                <td>{% for alias in a.aliases %}<span class="badge">{{ alias }}</span> {% endfor %}{% if not a.aliases %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
+                <td>{% if a.last_login_iso %}<time class="local-time" datetime="{{ a.last_login_iso }}"></time>{% if a.last_login_by %}<br><small>by {{ a.last_login_by }}</small>{% endif %}{% else %}<span style="opacity: 0.4;">Never</span>{% endif %}</td>
+                <td>
+                    <div class="manage-compact-actions">
+                        <form hx-put="/admin/manage/accounts/{{ quote(a.real_user) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none">
+                            <input type="hidden" name="csrf" value="{{ csrf }}">
+                            <input type="hidden" name="guild_id" value="{{ g.id }}">
+                            <input name="real_pass" type="password" placeholder="New password" autocomplete="new-password" style="width: 10rem;">
+                            <input name="owner_discord_user_id" placeholder="Owner ID blank clears" inputmode="numeric" style="width: 11rem;">
+                            <button type="submit" class="secondary">Update</button>
+                        </form>
+                        <form hx-post="/admin/manage/accounts/{{ quote(a.real_user) }}/groups" hx-target="#panel-manage" hx-swap="innerHTML show:none">
+                            <input type="hidden" name="csrf" value="{{ csrf }}">
+                            <input type="hidden" name="guild_id" value="{{ g.id }}">
+                            <select name="group_name" style="width: 10rem;">{% for group in g.groups %}<option value="{{ group.group_name }}">{{ group.group_name }}</option>{% endfor %}</select>
+                            <button type="submit" class="secondary">Add</button>
+                        </form>
+                        {% if a.groups %}
+                        {% for group in a.groups %}
+                        <form hx-delete="/admin/manage/accounts/{{ quote(a.real_user) }}/groups/{{ quote(group.group_name) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Remove {{ a.real_user }} from {{ group.group_name }}?">
+                            <input type="hidden" name="csrf" value="{{ csrf }}">
+                            <input type="hidden" name="guild_id" value="{{ g.id }}">
+                            <button type="submit" class="outline secondary" title="Remove from {{ group.group_name }}">{{ group.group_name }}</button>
+                        </form>
+                        {% endfor %}
+                        {% endif %}
+                        <form hx-delete="/admin/manage/accounts/{{ quote(a.real_user) }}" hx-target="#panel-manage" hx-swap="innerHTML show:none" hx-confirm="Delete account {{ a.real_user }}?">
+                            <input type="hidden" name="csrf" value="{{ csrf }}">
+                            <input type="hidden" name="guild_id" value="{{ g.id }}">
+                            <button type="submit" class="outline contrast">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No accounts in this guild</p>
+    {% endif %}
+</article>
+{% endfor %}
+{% if not guilds %}<p class="empty-state">No SSO-enabled guilds in scope</p>{% endif %}

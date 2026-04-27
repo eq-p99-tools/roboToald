@@ -32,6 +32,10 @@
 </li>
 {% endblock %}
 
+{% block head %}
+<meta name="csrf-token" content="{{ csrf }}">
+{% endblock %}
+
 {% block content %}
 
 <!-- Overview: always visible -->
@@ -61,6 +65,7 @@
     <button type="button" class="tab-btn" id="tab-btn-sessions" role="tab" aria-selected="false" aria-controls="tab-sessions" tabindex="-1" data-tab="sessions">Sessions</button>
     <button type="button" class="tab-btn" id="tab-btn-audit" role="tab" aria-selected="false" aria-controls="tab-audit" tabindex="-1" data-tab="audit">Auth Log</button>
     <button type="button" class="tab-btn" id="tab-btn-ratelimit" role="tab" aria-selected="false" aria-controls="tab-ratelimit" tabindex="-1" data-tab="ratelimit">Rate Limited</button>
+    <button type="button" class="tab-btn" id="tab-btn-manage" role="tab" aria-selected="false" aria-controls="tab-manage" tabindex="-1" data-tab="manage">Manage</button>
 </div>
 
 <div class="tab-panel active" id="tab-accounts" role="tabpanel" aria-labelledby="tab-btn-accounts" aria-hidden="false">
@@ -71,6 +76,17 @@
          hx-swap="innerHTML show:none"
          hx-indicator="#accounts-indicator">
         <p class="empty-state" aria-busy="true">Loading accounts...</p>
+    </div>
+</div>
+
+<div class="tab-panel" id="tab-manage" role="tabpanel" aria-labelledby="tab-btn-manage" aria-hidden="true">
+    <small class="htmx-indicator" id="manage-indicator">Updating...</small>
+    <div id="panel-manage"
+         hx-get="/admin/manage/partials/accounts"
+         hx-trigger="load, refreshAll from:body"
+         hx-swap="innerHTML show:none"
+         hx-indicator="#manage-indicator">
+        <p class="empty-state" aria-busy="true">Loading manage UI...</p>
     </div>
 </div>
 
