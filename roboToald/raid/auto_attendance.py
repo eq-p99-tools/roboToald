@@ -158,12 +158,13 @@ async def _get_player_character(
         logger.exception("EQDKP lookup failed for discord_user_id=%s guild=%s", discord_user_id, guild_id)
         return None
 
-    names = sorted(m["name"] for m in members if m.get("name"))
-    if not names:
+    named = [m for m in members if m.get("name")]
+    if not named:
         return None
 
-    player_char = names[0]
-    all_chars = frozenset(n.lower() for n in names)
+    mains = [m for m in named if m.get("main")]
+    player_char = sorted(mains, key=lambda m: m["name"])[0]["name"] if mains else min(m["name"] for m in named)
+    all_chars = frozenset(m["name"].lower() for m in named)
     _player_char_cache[cache_key] = (player_char, all_chars, time.monotonic())
     return player_char, all_chars
 
@@ -373,8 +374,12 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
     if not is_ignore and not is_kill and not is_nokill and not is_apply:
         return
 
+    # Acknowledge immediately so Discord doesn't expire the 3-second interaction token
+    # while we do EQDKP HTTP lookups and DB writes.
+    await inter.response.defer()
+
     if is_ignore:
-        await inter.response.edit_message(view=_make_resolved_view(f"Ignored by {inter.author.display_name}"))
+        await inter.edit_original_message(view=_make_resolved_view(f"Ignored by {inter.author.display_name}"))
         return
 
     kill_flag: bool | None
@@ -388,19 +393,19 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
     if is_kill or is_nokill:
         member = _guild_member_for_perms(inter)
         if member is None:
-            await inter.response.send_message(
+            await inter.followup.send(
                 "```diff\n- Could not resolve member for permission check.```",
                 ephemeral=True,
             )
             return
         if is_kill and not perms.can(member, "kill", guild_id):
-            await inter.response.send_message(
+            await inter.followup.send(
                 "```diff\n- You do not have permission for Kill (requires kill permission).```",
                 ephemeral=True,
             )
             return
         if is_nokill and not perms.can(member, "nokill", guild_id):
-            await inter.response.send_message(
+            await inter.followup.send(
                 "```diff\n- You do not have permission for No Kill (requires nokill permission).```",
                 ephemeral=True,
             )
@@ -413,7 +418,7 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
         # e.g. reconcile with no EQDKP lines — plain-text body, no fence
         raw_lines = []
     if not raw_lines and kill_flag is None:
-        await inter.response.edit_message(
+        await inter.edit_original_message(
             view=_make_resolved_view(f"Applied by {inter.author.display_name} (nothing to add)")
         )
         return
@@ -432,7 +437,7 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
     with get_raid_session(guild_id) as session:
         evt = session.query(Event).filter_by(channel_id=str(inter.channel_id)).first()
         if not evt:
-            await inter.response.send_message("```diff\n- No event found for this channel.```", ephemeral=True)
+            await inter.followup.send("```diff\n- No event found for this channel.```", ephemeral=True)
             return
 
         for line in cleaned_lines:
@@ -531,7 +536,7 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
 
     out.append("```")
 
-    await inter.response.edit_message(view=_make_resolved_view(f"Applied by {resolved_suffix}"))
+    await inter.edit_original_message(view=_make_resolved_view(f"Applied by {resolved_suffix}"))
     await inter.followup.send("\n".join(out))
 
     if kill_flag is not None and rename_channel and dkp_for_rename is not None:

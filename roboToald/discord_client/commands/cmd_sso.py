@@ -1,18 +1,21 @@
 import asyncio
 import datetime
+import io
+import logging
 import re
 import zoneinfo
 
 import disnake
 from disnake.ext import commands
 import sqlalchemy.exc
-import io
 
 from roboToald import config
 from roboToald.api.websocket import manager as ws_manager
 from roboToald.db.models import sso as sso_model
 from roboToald.db.raid_base import get_raid_session
 from roboToald.db.raid_models.raid import Event
+
+logger = logging.getLogger(__name__)
 
 SSO_GUILDS = config.guilds_for_command("sso")
 
@@ -656,6 +659,24 @@ class ShareDisclaimerView(disnake.ui.View):
         )
 
 
+async def _send_audit_trail(inter: disnake.ApplicationCommandInteraction, message: str) -> None:
+    """Post a public audit-trail echo of an ephemeral command response.
+
+    Swallows Forbidden so a missing Send Messages permission in the channel
+    doesn't blow up the command after the ephemeral reply already succeeded.
+    """
+    try:
+        await inter.channel.send(
+            f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
+        )
+    except disnake.Forbidden:
+        logger.warning(
+            "Cannot send audit message in channel %s (guild %s) — bot lacks Send Messages permission",
+            inter.channel_id,
+            inter.guild_id,
+        )
+
+
 class SSOCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -780,9 +801,7 @@ class SSOCommands(commands.Cog):
             account = sso_model.create_account(inter.guild_id, username, password, group)
             message = f"✨🤖{'🗂️' if group else ''} **Created account** `{account.real_user}`{' **in group** `' + group + '`' if group else ''}"
             await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
-            await inter.channel.send(
-                f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
-            )
+            await _send_audit_trail(inter, message)
             ws_manager.notify_guild(inter.guild_id, immediate=True)
         except sqlalchemy.exc.IntegrityError:
             await inter.send(content=f"⚠️🤖 **Account already exists:** `{username}`", ephemeral=True)
@@ -803,9 +822,7 @@ class SSOCommands(commands.Cog):
             sso_model.update_account(inter.guild_id, username, new_password)
             message = f"🔑🤖 **Updated password** for account `{username}`"
             await inter.send(content=message, ephemeral=True)  # Need to hide passwords, unfortunately
-            await inter.channel.send(
-                f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
-            )
+            await _send_audit_trail(inter, message)
             ws_manager.notify_guild(inter.guild_id, immediate=True)
         except sso_model.SSOAccountNotFoundError:
             await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
@@ -2201,9 +2218,7 @@ class SSOCommands(commands.Cog):
         group_str = f" **in group** `{group}`" if group else ""
         message = f"✨🤖👑 **Created owned account** `{account.real_user}`{group_str}"
         await inter.send(content=message, ephemeral=True)
-        await inter.channel.send(
-            f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
-        )
+        await _send_audit_trail(inter, message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
     @owner_account.sub_command(description="List accounts you own", name="list")
@@ -2233,9 +2248,7 @@ class SSOCommands(commands.Cog):
             return
         message = f"🔑🤖 **Updated password** for account `{account.real_user}`"
         await inter.send(content=message, ephemeral=True)
-        await inter.channel.send(
-            f"{inter.author.mention}:\n" + message, allowed_mentions=disnake.AllowedMentions.none()
-        )
+        await _send_audit_trail(inter, message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
     @owner_account.sub_command(description="Delete an account you own", name="delete")
