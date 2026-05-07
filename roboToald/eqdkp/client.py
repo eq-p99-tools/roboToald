@@ -18,6 +18,22 @@ class EqdkpApiError(RuntimeError):
     """EQdkp API returned status 0 or an error payload (HTTP may still be 200)."""
 
 
+class EqdkpCommunicationError(RuntimeError):
+    """EQdkp request failed before a valid API payload was returned."""
+
+
+def _raise_for_status(resp: httpx.Response, function: str, body: dict | None = None) -> None:
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        logger.warning("EQdkp %s request failed with HTTP %s", function, status_code)
+        message = f"EQdkp communication error (HTTP {status_code})"
+        if body is not None:
+            message = f"{message}: {body}"
+        raise EqdkpCommunicationError(message) from exc
+
+
 def _raise_if_eqdkp_error(data: dict) -> None:
     if data.get("status") == 0:
         raise EqdkpApiError(data.get("error") or "unknown EQdkp error")
@@ -49,7 +65,7 @@ class EqdkpClient:
                 params=self._params(function, **extra),
                 headers=self._headers(),
             )
-            resp.raise_for_status()
+            _raise_for_status(resp, function)
             return resp.json()
 
     async def _post(self, function: str, body: dict) -> dict:
@@ -60,7 +76,7 @@ class EqdkpClient:
                 headers=self._headers(),
                 json=body,
             )
-            resp.raise_for_status()
+            _raise_for_status(resp, function, body)
             data = resp.json()
             _raise_if_eqdkp_error(data)
             return data

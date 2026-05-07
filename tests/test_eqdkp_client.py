@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import pytest
+import httpx
 
 from roboToald import config
-from roboToald.eqdkp.client import EqdkpApiError, EqdkpClient, _raise_if_eqdkp_error, _values_with_prefix
+from roboToald.eqdkp.client import (
+    EqdkpApiError,
+    EqdkpClient,
+    EqdkpCommunicationError,
+    _raise_for_status,
+    _raise_if_eqdkp_error,
+    _values_with_prefix,
+)
 
 
 def test_raise_if_eqdkp_error():
@@ -26,6 +34,22 @@ def test_values_with_prefix_filters_dict_values():
     got = _values_with_prefix(data, "member:")
     assert len(got) == 2
     assert {"id": 1} in got
+
+
+def test_raise_for_status_hides_admin_token():
+    token = "secret-admin-token"
+    request = httpx.Request("POST", f"http://example.test/api.php?function=add_raid&atoken={token}")
+    resp = httpx.Response(500, request=request)
+    body = {"raid_note": "debuggable request", "raid_attendees": {"member": [1, 2]}}
+
+    with pytest.raises(EqdkpCommunicationError) as exc_info:
+        _raise_for_status(resp, "add_raid", body)
+
+    assert token not in str(exc_info.value)
+    assert str(exc_info.value) == (
+        "EQdkp communication error (HTTP 500): "
+        "{'raid_note': 'debuggable request', 'raid_attendees': {'member': [1, 2]}}"
+    )
 
 
 @pytest.mark.asyncio
