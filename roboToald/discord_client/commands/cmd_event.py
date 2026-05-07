@@ -783,7 +783,8 @@ async def _handle_batphone(message: disnake.Message):
                 should_send = False
 
         if should_send and config.get_raid_setting(guild_id, "send_batphone"):
-            send_batphone(
+            await asyncio.to_thread(
+                send_batphone,
                 config.get_pushsafer_setting(guild_id, "title") or "Batphone",
                 str(message.content),
                 guild_id,

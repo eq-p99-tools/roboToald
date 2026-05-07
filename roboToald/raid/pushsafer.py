@@ -11,6 +11,7 @@ from roboToald import config
 logger = logging.getLogger(__name__)
 
 PUSHSAFER_API_URL = "https://www.pushsafer.com/api"
+PUSHSAFER_TIMEOUT = (5, 30)
 
 
 def send_batphone(title: str, message: str, guild_id: int, opts: dict | None = None) -> None:
@@ -32,7 +33,11 @@ def send_batphone(title: str, message: str, guild_id: int, opts: dict | None = N
         payload.update(opts)
 
     try:
-        resp = requests.post(PUSHSAFER_API_URL, data=payload, timeout=10)
+        resp = requests.post(PUSHSAFER_API_URL, data=payload, timeout=PUSHSAFER_TIMEOUT)
         resp.raise_for_status()
+    except requests.ReadTimeout:
+        logger.warning(
+            "Timed out waiting for Pushsafer response after request was sent; notification may have been delivered"
+        )
     except requests.RequestException:
         logger.exception("Failed to send Pushsafer notification")

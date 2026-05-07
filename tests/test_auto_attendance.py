@@ -299,12 +299,14 @@ async def test_apply_button_creates_attendees(
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
+    inter.edit_original_message = AsyncMock()
     inter.channel = MagicMock()
     inter.channel.edit = AsyncMock()
 
     await on_auto_att_button(inter)
 
-    inter.response.edit_message.assert_awaited_once()
+    inter.response.defer.assert_awaited_once()
+    inter.edit_original_message.assert_awaited_once()
     inter.followup.send.assert_awaited_once()
     followup_text = inter.followup.send.call_args[0][0]
     assert "Amy" in followup_text
@@ -367,6 +369,7 @@ async def test_apply_button_dedup(
     inter.author.display_name = "RaidLead"
     inter.response = AsyncMock()
     inter.followup = AsyncMock()
+    inter.edit_original_message = AsyncMock()
     inter.channel = MagicMock()
     inter.channel.edit = AsyncMock()
 
