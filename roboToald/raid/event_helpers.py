@@ -201,11 +201,29 @@ def build_target_loot_table_lines(evt: Event, target: Target, session: Session) 
         "",
         "+ Loot Table:",
     ]
-    items = (
-        session.query(Item).join(LootTable, LootTable.item_id == Item.id).filter(LootTable.target_id == target.id).all()
+    loot_entries = (
+        session.query(LootTable)
+        .filter(LootTable.target_id == target.id)
+        .order_by(LootTable.from_group, Item.name)
+        .join(Item)
+        .all()
     )
-    for item in items:
-        lines.append(f"+  {item.name} (ID: {item.id})")
+    # Reserve space for the suffix, closing fence, and the "What's next?" block
+    # that gets appended after this in _perform_create_event (~350 chars).
+    char_budget = 2000 - 400
+    current_len = sum(len(line) + 1 for line in lines)
+    shown = 0
+    for lt in loot_entries:
+        entry = f"+  {lt.item.name} (ID: {lt.item.id})"
+        # +1 for the newline, +50 for the potential truncation suffix + closing fence
+        if current_len + len(entry) + 1 + 50 > char_budget:
+            break
+        lines.append(entry)
+        current_len += len(entry) + 1
+        shown += 1
+    remaining = len(loot_entries) - shown
+    if remaining > 0:
+        lines.append(f"+  ... and {remaining} more items (use /loot add autocomplete to see all)")
     lines.append("```")
     return lines
 

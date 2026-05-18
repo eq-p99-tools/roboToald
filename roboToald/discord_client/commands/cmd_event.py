@@ -65,6 +65,7 @@ async def event(inter: disnake.ApplicationCommandInteraction):
 async def create(
     inter: disnake.ApplicationCommandInteraction,
     target_name: str = disnake.ext.commands.Param(description="Target name or alias", autocomplete=True),
+    force: bool = disnake.ext.commands.Param(description="Bypass lockout check", default=False),
 ):
     guild_id = inter.guild.id
     if not perms.can(inter.author, "create_event", guild_id):
@@ -84,7 +85,7 @@ async def create(
             await inter.followup.send(f"```diff\n- Multiple targets found ({names}). Please be more specific.```")
             return
 
-        if _is_locked_out(target, session):
+        if not force and _is_locked_out(target, session):
             await inter.followup.send(
                 "```diff\n- An event for this target was created recently (lockout). Skipping.```"
             )
@@ -1783,6 +1784,17 @@ async def reload(
                                 session.add(Permission(role=role, server=server, permission=perm_name))
 
         if do_loot_tables:
+            loot_groups: dict[str, list[str]] = {}
+            if len(worksheets) > 5:
+                grp_ws = worksheets[5]
+                grp_rows = grp_ws.get_all_values()
+                for grp_row in grp_rows[1:]:
+                    if len(grp_row) >= 2:
+                        grp_name = grp_row[0].strip().lower()
+                        item_name_val = grp_row[1].strip()
+                        if grp_name and item_name_val:
+                            loot_groups.setdefault(grp_name, []).append(item_name_val)
+
             ws = worksheets[4]
             rows = ws.get_all_values()
             existing_ids = [lt.id for lt in session.query(LootTable).all()]
@@ -1800,23 +1812,28 @@ async def reload(
                     target_cache[target_name] = session.query(Target).filter(Target.name.ilike(target_name)).first()
                 tgt = target_cache[target_name]
 
-                item = session.query(Item).filter(Item.name.ilike(item_name)).first()
-                if not item:
-                    item = Item(name=item_name)
-                    session.add(item)
-                    session.flush()
+                item_names = loot_groups.get(item_name.lower(), [item_name])
+                is_from_group = item_name.lower() in loot_groups
 
-                if tgt and item:
-                    lt = session.query(LootTable).filter_by(target_id=tgt.id, item_id=item.id).first()
-                    if lt:
-                        found_ids.append(lt.id)
-                    else:
-                        lt = LootTable(target_id=tgt.id, item_id=item.id)
-                        session.add(lt)
+                for resolved_name in item_names:
+                    item = session.query(Item).filter(Item.name.ilike(resolved_name)).first()
+                    if not item:
+                        item = Item(name=resolved_name)
+                        session.add(item)
                         session.flush()
-                        new_ids.append(lt.id)
-                elif not tgt:
-                    not_found.append(f"- Target: {target_name}")
+
+                    if tgt and item:
+                        lt = session.query(LootTable).filter_by(target_id=tgt.id, item_id=item.id).first()
+                        if lt:
+                            lt.from_group = is_from_group
+                            found_ids.append(lt.id)
+                        else:
+                            lt = LootTable(target_id=tgt.id, item_id=item.id, from_group=is_from_group)
+                            session.add(lt)
+                            session.flush()
+                            new_ids.append(lt.id)
+                    elif not tgt:
+                        not_found.append(f"- Target: {target_name}")
 
             to_delete = set(existing_ids) - set(found_ids)
             if to_delete:

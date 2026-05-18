@@ -41,5 +41,6 @@ class LootTable(RaidBase):
     id = sa.Column(sa.Integer, primary_key=True)
     item_id = sa.Column(sa.Integer, sa.ForeignKey("items.id"))
     target_id = sa.Column(sa.Integer, sa.ForeignKey("targets.id"))
+    from_group = sa.Column(sa.Boolean, default=False)
 
     item = sa.orm.relationship("Item", foreign_keys=[item_id], lazy="joined")
