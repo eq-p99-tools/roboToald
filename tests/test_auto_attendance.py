@@ -383,6 +383,145 @@ async def test_apply_button_dedup(
     assert count == 2
 
 
+@pytest.mark.asyncio
+async def test_apply_button_removes_sibling_characters(
+    raid_session,
+    monkeypatch,
+    patch_auto_att_raid_session,
+    fake_auto_att_config,
+):
+    """When +Main on Alt1 is applied, standalone attendees for Alt2/Alt3 (same eqdkp_user_id) are also removed."""
+    EQDKP_USER_ID = "42"
+
+    target = Target(name=MOB_NAME)
+    raid_session.add(target)
+    raid_session.flush()
+
+    main_char = Character(name="Mainchar", eqdkp_member_id=100, eqdkp_user_id=EQDKP_USER_ID)
+    alt1 = Character(name="Alt1", eqdkp_member_id=101, eqdkp_user_id=EQDKP_USER_ID)
+    alt2 = Character(name="Alt2", eqdkp_member_id=102, eqdkp_user_id=EQDKP_USER_ID)
+    alt3 = Character(name="Alt3", eqdkp_member_id=103, eqdkp_user_id=EQDKP_USER_ID)
+    unrelated = Character(name="Outsider", eqdkp_member_id=200, eqdkp_user_id="99")
+    raid_session.add_all([main_char, alt1, alt2, alt3, unrelated])
+    raid_session.flush()
+
+    evt = Event(
+        target_id=target.id,
+        channel_id=str(EVENT_CHANNEL_ID),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        killed=False,
+        dkp=50,
+        nokill_dkp=10,
+    )
+    raid_session.add(evt)
+    raid_session.flush()
+
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(alt1.id)))
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(alt2.id)))
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(alt3.id)))
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(unrelated.id)))
+    raid_session.commit()
+
+    async def fake_find_character(self, char_name: str) -> dict | None:
+        return {"id": 100, "user_id": int(EQDKP_USER_ID), "main_id": None}
+
+    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
+    monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
+
+    inter = MagicMock()
+    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_KILL}:{GUILD_ID}"
+    inter.channel_id = EVENT_CHANNEL_ID
+    inter.message.content = "```diff\n+Mainchar on Alt1 (30m) [Alice]\n```"
+    inter.author.display_name = "RaidLead"
+    inter.response = AsyncMock()
+    inter.followup = AsyncMock()
+    inter.edit_original_message = AsyncMock()
+    inter.channel = MagicMock()
+    inter.channel.edit = AsyncMock()
+
+    await on_auto_att_button(inter)
+
+    followup_text = inter.followup.send.call_args[0][0]
+    assert "Mainchar was added" in followup_text
+    assert "Alt1 removed (replaced by boxed entry)" in followup_text
+    assert "Alt2 removed (same player as Mainchar)" in followup_text
+    assert "Alt3 removed (same player as Mainchar)" in followup_text
+    assert "Outsider" not in followup_text or "removed" not in followup_text.split("Outsider")[-1].split("\n")[0]
+
+    attendees = raid_session.query(Attendee).filter_by(event_id=evt.id).all()
+    att_char_ids = {int(a.character_id) for a in attendees}
+    assert main_char.id in att_char_ids
+    assert unrelated.id in att_char_ids
+    assert alt1.id not in att_char_ids
+    assert alt2.id not in att_char_ids
+    assert alt3.id not in att_char_ids
+    assert len(attendees) == 2
+
+    main_att = next(a for a in attendees if int(a.character_id) == main_char.id)
+    assert main_att.on_character_id == str(alt1.id)
+
+
+@pytest.mark.asyncio
+async def test_sibling_removal_skipped_when_no_eqdkp_user(
+    raid_session,
+    monkeypatch,
+    patch_auto_att_raid_session,
+    fake_auto_att_config,
+):
+    """Sibling removal does not fire when the added character has no eqdkp_user_id."""
+    target = Target(name=MOB_NAME)
+    raid_session.add(target)
+    raid_session.flush()
+
+    boxchar = Character(name="Boxchar1")
+    other = Character(name="Other")
+    raid_session.add_all([boxchar, other])
+    raid_session.flush()
+
+    evt = Event(
+        target_id=target.id,
+        channel_id=str(EVENT_CHANNEL_ID),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        killed=False,
+        dkp=50,
+        nokill_dkp=10,
+    )
+    raid_session.add(evt)
+    raid_session.flush()
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(boxchar.id)))
+    raid_session.add(Attendee(event_id=evt.id, character_id=str(other.id)))
+    raid_session.commit()
+
+    async def fake_find_character(self, char_name: str) -> dict | None:
+        return {"id": 101, "user_id": 0, "main_id": None}
+
+    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
+    monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
+
+    inter = MagicMock()
+    inter.component.custom_id = f"{auto_attendance.CUSTOM_ID_KILL}:{GUILD_ID}"
+    inter.channel_id = EVENT_CHANNEL_ID
+    inter.message.content = "```diff\n+Amy on Boxchar1 (30m)\n```"
+    inter.author.display_name = "RaidLead"
+    inter.response = AsyncMock()
+    inter.followup = AsyncMock()
+    inter.edit_original_message = AsyncMock()
+    inter.channel = MagicMock()
+    inter.channel.edit = AsyncMock()
+
+    await on_auto_att_button(inter)
+
+    followup_text = inter.followup.send.call_args[0][0]
+    assert "same player as" not in followup_text
+
+    attendees = raid_session.query(Attendee).filter_by(event_id=evt.id).all()
+    att_char_ids = {int(a.character_id) for a in attendees}
+    assert other.id in att_char_ids
+    assert len(attendees) == 2
+
+
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------

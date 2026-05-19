@@ -602,6 +602,31 @@ async def _handle_add_player(message: disnake.Message):
                     session.delete(dup)
                     out.append(f"- {on_character.name} was removed from this event")
 
+                if char.eqdkp_user_id and str(char.eqdkp_user_id) != "0":
+                    sibling_chars = (
+                        session.query(Character)
+                        .filter(
+                            Character.eqdkp_user_id == char.eqdkp_user_id,
+                            Character.id != char.id,
+                        )
+                        .all()
+                    )
+                    sibling_ids = [str(c.id) for c in sibling_chars]
+                    if sibling_ids:
+                        sibling_dups = (
+                            session.query(Attendee)
+                            .filter(
+                                Attendee.event_id == evt.id,
+                                Attendee.character_id.in_(sibling_ids),
+                                Attendee.on_character_id.is_(None),
+                            )
+                            .all()
+                        )
+                        for sd in sibling_dups:
+                            sib_char = session.query(Character).filter_by(id=int(sd.character_id)).first()
+                            session.delete(sd)
+                            out.append(f"- {sib_char.name if sib_char else '?'} removed (same player as {char.name})")
+
         session.commit()
     out.append("```")
     await message.channel.send("\n".join(out))
