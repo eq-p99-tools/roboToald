@@ -2,6 +2,7 @@ import contextlib
 import logging
 
 import sqlalchemy
+import sqlalchemy.event
 import sqlalchemy.orm
 
 from roboToald import config
@@ -19,12 +20,22 @@ def _db_path(guild_id: int) -> str:
 
 def get_raid_engine(guild_id: int) -> sqlalchemy.engine.Engine:
     if guild_id not in _engines:
-        _engines[guild_id] = sqlalchemy.create_engine(
+        engine = sqlalchemy.create_engine(
             f"sqlite:///{_db_path(guild_id)}",
             echo=False,
             future=True,
+            connect_args={"timeout": 30},
         )
+        sqlalchemy.event.listen(engine, "connect", _set_sqlite_pragmas)
+        _engines[guild_id] = engine
     return _engines[guild_id]
+
+
+def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def initialize_raid_database(guild_id: int, run_migrations=True):

@@ -2,6 +2,7 @@ import contextlib
 import logging
 
 import sqlalchemy
+import sqlalchemy.event
 import sqlalchemy.orm
 
 from roboToald import exceptions
@@ -34,8 +35,22 @@ class MyBase:
 # get_engine returns a Singleton engine object
 def get_engine(store={}) -> sqlalchemy.engine.Engine:
     if not store:
-        store["engine"] = sqlalchemy.create_engine("sqlite:///data/alerts.db", echo=False, future=True)
+        engine = sqlalchemy.create_engine(
+            "sqlite:///data/alerts.db",
+            echo=False,
+            future=True,
+            connect_args={"timeout": 30},
+        )
+        sqlalchemy.event.listen(engine, "connect", _set_sqlite_pragmas)
+        store["engine"] = engine
     return store["engine"]
+
+
+def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def initialize_database(run_migrations=True):

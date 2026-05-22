@@ -240,7 +240,11 @@ async def _perform_create_event(
         ]
     )
 
+    session.commit()
+
     msg_obj = await channel.send("\n".join(output_lines))
+
+    # Store message ID in a separate short transaction
     evt.first_message_id = str(msg_obj.id)
     session.commit()
 
@@ -295,16 +299,13 @@ async def target(
 
         emoji = "\U0001f480" if evt.killed is True else ("\u26d4" if evt.killed is False else "\u23f2\ufe0f")
 
+        first_msg_content = None
+        first_message_id = evt.first_message_id
         try:
             output = build_target_loot_table_lines(evt, tgt, session)
-            if evt.first_message_id:
-                try:
-                    first_msg = await inter.channel.fetch_message(int(evt.first_message_id))
-                    await first_msg.edit(content="\n".join(output))
-                except (disnake.NotFound, disnake.HTTPException):
-                    pass
+            first_msg_content = "\n".join(output)
         except Exception:
-            logger.exception("Failed to update first message")
+            logger.exception("Failed to build target loot table lines")
 
         if old_target_id:
             session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).delete(
@@ -312,22 +313,35 @@ async def target(
             )
 
         tracking_msgs = rte_tracking_creator(evt, tgt, None, session, target_name=display_name)
+
+        channel_name = evt.channel_name
+        tgt_name = tgt.name
+        tgt_dkp_kill = tgt.dkp_value(True)
+        tgt_dkp_nokill = tgt.dkp_value(False)
+
         session.commit()
 
+    if first_msg_content and first_message_id:
         try:
-            await inter.channel.edit(name=f"{emoji}{evt.channel_name}")
-        except disnake.HTTPException:
+            first_msg = await inter.channel.fetch_message(int(first_message_id))
+            await first_msg.edit(content=first_msg_content)
+        except (disnake.NotFound, disnake.HTTPException):
             pass
 
-        await inter.followup.send(
-            f"```diff\n+ Target is changed to {tgt.name}. DKP value is {tgt.dkp_value(True)}. No kill value is {tgt.dkp_value(False)}.```"
-        )
+    try:
+        await inter.channel.edit(name=f"{emoji}{channel_name}")
+    except disnake.HTTPException:
+        pass
 
-        tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
-        tracking_ch = inter.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
-        if tracking_ch:
-            for tmsg in tracking_msgs:
-                await tracking_ch.send(tmsg)
+    await inter.followup.send(
+        f"```diff\n+ Target is changed to {tgt_name}. DKP value is {tgt_dkp_kill}. No kill value is {tgt_dkp_nokill}.```"
+    )
+
+    tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
+    tracking_ch = inter.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
+    if tracking_ch:
+        for tmsg in tracking_msgs:
+            await tracking_ch.send(tmsg)
 
 
 @event.sub_command(description="List all available targets.")
@@ -1280,16 +1294,13 @@ async def _cmd_target(message: disnake.Message, args: str):
 
         emoji = "\U0001f480" if evt.killed is True else ("\u26d4" if evt.killed is False else "\u23f2\ufe0f")
 
+        first_msg_content = None
+        first_message_id = evt.first_message_id
         try:
             output = build_target_loot_table_lines(evt, tgt, session)
-            if evt.first_message_id:
-                try:
-                    first_msg = await message.channel.fetch_message(int(evt.first_message_id))
-                    await first_msg.edit(content="\n".join(output))
-                except (disnake.NotFound, disnake.HTTPException):
-                    pass
+            first_msg_content = "\n".join(output)
         except Exception:
-            logger.exception("Failed to update first message")
+            logger.exception("Failed to build target loot table lines")
 
         if old_target_id:
             session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).delete(
@@ -1297,22 +1308,35 @@ async def _cmd_target(message: disnake.Message, args: str):
             )
 
         tracking_msgs = rte_tracking_creator(evt, tgt, None, session, target_name=display_name)
+
+        channel_name = evt.channel_name
+        tgt_name = tgt.name
+        tgt_dkp_kill = tgt.dkp_value(True)
+        tgt_dkp_nokill = tgt.dkp_value(False)
+
         session.commit()
 
+    if first_msg_content and first_message_id:
         try:
-            await message.channel.edit(name=f"{emoji}{evt.channel_name}")
-        except disnake.HTTPException:
+            first_msg = await message.channel.fetch_message(int(first_message_id))
+            await first_msg.edit(content=first_msg_content)
+        except (disnake.NotFound, disnake.HTTPException):
             pass
 
-        await message.channel.send(
-            f"```diff\n+ Target is changed to {tgt.name}. DKP value is {tgt.dkp_value(True)}. No kill value is {tgt.dkp_value(False)}.```"
-        )
+    try:
+        await message.channel.edit(name=f"{emoji}{channel_name}")
+    except disnake.HTTPException:
+        pass
 
-        tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
-        tracking_ch = message.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
-        if tracking_ch:
-            for tmsg in tracking_msgs:
-                await tracking_ch.send(tmsg)
+    await message.channel.send(
+        f"```diff\n+ Target is changed to {tgt_name}. DKP value is {tgt_dkp_kill}. No kill value is {tgt_dkp_nokill}.```"
+    )
+
+    tracking_ch_id = config.get_raid_setting(guild_id, "tracking_channel_id")
+    tracking_ch = message.guild.get_channel(tracking_ch_id) if tracking_ch_id else None
+    if tracking_ch:
+        for tmsg in tracking_msgs:
+            await tracking_ch.send(tmsg)
 
 
 @_dollar("loot")
