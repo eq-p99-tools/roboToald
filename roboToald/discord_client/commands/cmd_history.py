@@ -26,6 +26,41 @@ logger = logging.getLogger(__name__)
 
 RAID_GUILDS = config.guilds_for_command("raid")
 
+EMBED_FIELD_MAX = 1024
+
+
+def _chunk_field(
+    embed: disnake.Embed,
+    title: str,
+    lines: list[str],
+    *,
+    max_len: int = EMBED_FIELD_MAX,
+    prefix: str = "diff",
+):
+    """Add one or more embed fields, splitting when a single value would exceed *max_len*."""
+    fence_open = f"```{prefix}\n" if prefix else "```\n"
+    fence_close = "```"
+    overhead = len(fence_open) + len(fence_close)
+
+    texts: list[str] = []
+    buf = ""
+    for line in lines:
+        candidate = buf + line + "\n"
+        if len(candidate) + overhead > max_len and buf:
+            texts.append(buf)
+            buf = line + "\n"
+        else:
+            buf = candidate
+    if buf:
+        texts.append(buf)
+
+    for i, text in enumerate(texts):
+        embed.add_field(
+            name=title if i == 0 else f"{title} (cont.)",
+            value=f"{fence_open}{text}{fence_close}",
+            inline=False,
+        )
+
 
 @base.DISCORD_CLIENT.slash_command(description="Look up history", guild_ids=RAID_GUILDS)
 async def history(inter: disnake.ApplicationCommandInteraction):
@@ -86,11 +121,7 @@ async def character(
             dkp_amount = "?"
 
         char_lines = [f"+ {c.name} (ID: {c.id})" for c in all_chars]
-        embed.add_field(
-            name=f"Estimated DKP: {dkp_amount}",
-            value=f"```diff\n{chr(10).join(char_lines)}```",
-            inline=False,
-        )
+        _chunk_field(embed, f"Estimated DKP: {dkp_amount}", char_lines)
 
         # Recent attendance (joined via events that have been submitted)
         att_rows = (
@@ -136,11 +167,7 @@ async def character(
             att_lines.append(f"+ {date_str}: {row.event_name} ({char_name}{on_str}{reason_str}){tracking_str}")
 
         if att_lines:
-            embed.add_field(
-                name="Recent Attendance:",
-                value=f"```diff\n{chr(10).join(att_lines)}```",
-                inline=False,
-            )
+            _chunk_field(embed, "Recent Attendance:", att_lines)
 
         # Recent loot
         loot_rows = (
@@ -167,11 +194,7 @@ async def character(
             )
 
         if loot_lines:
-            embed.add_field(
-                name="Recent Loot History:",
-                value=f"```diff\n{chr(10).join(loot_lines)}```",
-                inline=False,
-            )
+            _chunk_field(embed, "Recent Loot History:", loot_lines)
 
         await inter.followup.send(embed=embed, ephemeral=True)
 
@@ -213,14 +236,20 @@ async def _item_search(inter, criteria: str, session):
     recent = [el for el in loots if el.created_at and el.created_at >= cutoff]
     avg_60 = sum(el.dkp or 0 for el in recent) // max(len(recent), 1) if recent else 0
 
-    lines = ["```", f"{it.name} History", "", f"60 Day Avg: {avg_60}", "", "- Most recent items looted:", ""]
+    loot_lines = []
     for el in loots[:20]:
         c = session.query(Character).get(el.character_id) if el.character_id else None
         date_str = el.created_at.strftime("%Y-%m-%d") if el.created_at else "?"
-        lines.append(f"{date_str}: {str(el.dkp or 0).ljust(7)} {c.name if c else '?'}")
-    lines.append("```")
+        loot_lines.append(f"{date_str}: {str(el.dkp or 0).ljust(7)} {c.name if c else '?'}")
 
-    await inter.followup.send("\n".join(lines), ephemeral=True)
+    embed = disnake.Embed(title=f"{it.name} History")
+    embed.add_field(name="60 Day Avg", value=str(avg_60), inline=False)
+    if loot_lines:
+        _chunk_field(embed, "Most Recent Loot:", loot_lines, prefix="")
+    else:
+        embed.add_field(name="Most Recent Loot:", value="```\nNo loot history.```", inline=False)
+
+    await inter.followup.send(embed=embed, ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
