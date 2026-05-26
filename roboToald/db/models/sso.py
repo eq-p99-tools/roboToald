@@ -2259,6 +2259,59 @@ def expire_other_sessions(guild_id: int, discord_user_id: int, keep_account_id: 
     return count
 
 
+def heartbeat_and_session(
+    account_id: int,
+    guild_id: int,
+    character_name: str,
+    discord_user_id: int,
+    login_by: str | None = None,
+) -> None:
+    """Batched heartbeat: update_last_login + record_heartbeat_session + expire_other_sessions in one transaction."""
+    now = datetime.datetime.now()
+    threshold = now - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)
+    expired_time = threshold - datetime.timedelta(seconds=1)
+
+    with base.get_session() as session:
+        account = session.query(SSOAccount).filter(SSOAccount.id == account_id).one_or_none()
+        if account:
+            account.last_login = now
+            if login_by is not None:
+                account.last_login_by = login_by
+
+        active = (
+            session.query(SSOCharacterSession)
+            .filter(
+                SSOCharacterSession.guild_id == guild_id,
+                SSOCharacterSession.character_name == character_name,
+                SSOCharacterSession.last_seen >= threshold,
+            )
+            .first()
+        )
+        if active:
+            active.last_seen = now
+            active.discord_user_id = discord_user_id
+        else:
+            session.add(
+                SSOCharacterSession(
+                    guild_id=guild_id,
+                    account_id=account_id,
+                    character_name=character_name,
+                    discord_user_id=discord_user_id,
+                    first_seen=now,
+                    last_seen=now,
+                )
+            )
+
+        session.query(SSOCharacterSession).filter(
+            SSOCharacterSession.guild_id == guild_id,
+            SSOCharacterSession.discord_user_id == discord_user_id,
+            SSOCharacterSession.account_id != account_id,
+            SSOCharacterSession.last_seen >= threshold,
+        ).update({SSOCharacterSession.last_seen: expired_time})
+
+        session.commit()
+
+
 def get_active_characters(guild_id: int) -> dict[int, str]:
     """Return a mapping of account_id -> character_name for currently active sessions."""
     threshold = datetime.datetime.now() - datetime.timedelta(seconds=config.SSO_INACTIVITY_SECONDS)

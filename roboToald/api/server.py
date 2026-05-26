@@ -614,27 +614,33 @@ async def websocket_accounts(websocket: WebSocket):
         return
 
     client_host = websocket.client.host if websocket.client else "unknown"
+    ws_client_ver = msg.get("client_version")
 
-    if sso_model.is_ip_rate_limited(client_host, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
+    def _auth_lookup():
+        if sso_model.is_ip_rate_limited(client_host, config.RATE_LIMIT_MAX_ATTEMPTS, config.RATE_LIMIT_WINDOW_MINUTES):
+            return "rate_limited", None
+        key = sso_model.get_access_key_by_key(msg["access_key"])
+        if not key:
+            sso_model.create_audit_log(
+                username="ws_auth",
+                ip_address=client_host,
+                success=False,
+                discord_user_id=None,
+                account_id=None,
+                guild_id=None,
+                details="Invalid access key (WebSocket)",
+                client_version=ws_client_ver,
+            )
+            return "invalid_key", None
+        return None, key
+
+    auth_error, access_key = await asyncio.to_thread(_auth_lookup)
+    if auth_error == "rate_limited":
         logger.warning("WebSocket rejected: rate limit exceeded for IP %s", client_host)
         await _ws_close(websocket, 4003, "Invalid access key")
         return
-
-    ws_client_ver = msg.get("client_version")
-
-    access_key = sso_model.get_access_key_by_key(msg["access_key"])
-    if not access_key:
+    if auth_error == "invalid_key":
         logger.warning("WebSocket auth failed: invalid access key from %s", client_host)
-        sso_model.create_audit_log(
-            username="ws_auth",
-            ip_address=client_host,
-            success=False,
-            discord_user_id=None,
-            account_id=None,
-            guild_id=None,
-            details="Invalid access key (WebSocket)",
-            client_version=ws_client_ver,
-        )
         await _ws_close(websocket, 4003, "Invalid access key")
         return
 
@@ -661,7 +667,7 @@ async def websocket_accounts(websocket: WebSocket):
     session_ctx = _session_context_log(guild_label, user_label, client_ver, client_host)
 
     # --- Check revocation ---
-    if sso_model.is_user_access_revoked(guild_id, discord_user_id):
+    if await asyncio.to_thread(sso_model.is_user_access_revoked, guild_id, discord_user_id):
         logger.warning("WebSocket rejected: access revoked | %s", session_ctx)
         await _ws_close(websocket, 4003, "Access revoked")
         return
@@ -689,7 +695,7 @@ async def websocket_accounts(websocket: WebSocket):
 
     # --- Phase 2: send full state ---
     account_tree = await ws_manager.build_full_state(guild_id, discord_user_id)
-    dynamic_tag_zones, dynamic_tag_classes = sso_model.get_dynamic_tags()
+    dynamic_tag_zones, dynamic_tag_classes = await asyncio.to_thread(sso_model.get_dynamic_tags)
 
     conn = ClientConnection(
         websocket=websocket,
@@ -765,18 +771,28 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     character_name = msg.get("character_name")
     if not character_name:
         return
-    account = sso_model.find_account_by_character(conn.guild_id, character_name)
-    if not account:
-        return
 
-    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
-        return
+    def _sync():
+        account = sso_model.find_account_by_character(conn.guild_id, character_name)
+        if not account:
+            return False
+        if not user_has_access_to_accounts(
+            ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]
+        ):
+            return False
+        login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
+        sso_model.heartbeat_and_session(
+            account.id, conn.guild_id, character_name, conn.discord_user_id, login_by=login_name
+        )
+        return True
 
-    login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
-    sso_model.update_last_login(account.id, login_by=login_name)
-    sso_model.record_heartbeat_session(conn.guild_id, account.id, character_name, conn.discord_user_id)
-    sso_model.expire_other_sessions(conn.guild_id, conn.discord_user_id, account.id)
-    await ws_manager.notify_guild_async(conn.guild_id)
+    try:
+        if await asyncio.to_thread(_sync):
+            await ws_manager.notify_guild_async(conn.guild_id)
+    except Exception:
+        logger.exception(
+            "heartbeat failed | guild_id=%s user_id=%s char=%s", conn.guild_id, conn.discord_user_id, character_name
+        )
 
 
 async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
@@ -784,31 +800,44 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     character_name = msg.get("character_name")
     if not character_name:
         return
-    account = sso_model.find_account_by_character(conn.guild_id, character_name)
-    if not account:
-        return
 
-    if not user_has_access_to_accounts(ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]):
-        return
+    def _sync():
+        account = sso_model.find_account_by_character(conn.guild_id, character_name)
+        if not account:
+            return None
+        if not user_has_access_to_accounts(
+            ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]
+        ):
+            return None
+        login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
+        sso_model.heartbeat_and_session(
+            account.id, conn.guild_id, character_name, conn.discord_user_id, login_by=login_name
+        )
+        kw = {
+            "guild_id": conn.guild_id,
+            "name": character_name,
+            "bind_location": msg.get("bind_location"),
+            "park_location": msg.get("park_location"),
+            "level": msg.get("level"),
+        }
+        merged = sso_model.merge_keys_and_items_message(msg)
+        if merged:
+            kw.update(sso_model.merged_wires_to_character_kwargs(merged))
+        character_changed = sso_model.update_account_character(**kw)
+        key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
+        return character_changed or key_marked
 
-    login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
-    sso_model.update_last_login(account.id, login_by=login_name)
-    sso_model.record_heartbeat_session(conn.guild_id, account.id, character_name, conn.discord_user_id)
-    sso_model.expire_other_sessions(conn.guild_id, conn.discord_user_id, account.id)
-    kw = {
-        "guild_id": conn.guild_id,
-        "name": character_name,
-        "bind_location": msg.get("bind_location"),
-        "park_location": msg.get("park_location"),
-        "level": msg.get("level"),
-    }
-    merged = sso_model.merge_keys_and_items_message(msg)
-    if merged:
-        kw.update(sso_model.merged_wires_to_character_kwargs(merged))
-    character_changed = sso_model.update_account_character(**kw)
-    key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
-    if character_changed or key_marked:
-        await ws_manager.notify_guild_async(conn.guild_id)
+    try:
+        result = await asyncio.to_thread(_sync)
+        if result is not None:
+            await ws_manager.notify_guild_async(conn.guild_id)
+    except Exception:
+        logger.exception(
+            "update_location failed | guild_id=%s user_id=%s char=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
+        )
 
 
 async def _ws_handle_fte(conn: ClientConnection, msg: dict):
@@ -906,15 +935,30 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
         return
 
     discord_client = ws_manager._discord_client
-    result = _perform_login_auth(
-        username=username,
-        guild_id=conn.guild_id,
-        discord_user_id=conn.discord_user_id,
-        client_ip=conn.client_ip,
-        client_ver=conn.client_version,
-        discord_client=discord_client,
-        auth_source="websocket",
-    )
+    try:
+        result = await asyncio.to_thread(
+            _perform_login_auth,
+            username=username,
+            guild_id=conn.guild_id,
+            discord_user_id=conn.discord_user_id,
+            client_ip=conn.client_ip,
+            client_ver=conn.client_version,
+            discord_client=discord_client,
+            auth_source="websocket",
+        )
+    except Exception:
+        logger.exception(
+            "login_auth failed | guild_id=%s user_id=%s username=%s", conn.guild_id, conn.discord_user_id, username
+        )
+        await conn.websocket.send_json(
+            {
+                "type": "login_auth_response",
+                "request_id": request_id,
+                "error": "Internal server error",
+                "status": 500,
+            }
+        )
+        return
 
     if result.success:
         encrypted = _des_encrypt_credentials(result.real_user, result.real_pass)

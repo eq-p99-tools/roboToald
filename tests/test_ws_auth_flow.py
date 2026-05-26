@@ -253,7 +253,7 @@ def test_ws_heartbeat_updates_session(client, monkeypatch):
     from types import SimpleNamespace
 
     _patch_ws_auth_ok(monkeypatch)
-    calls: dict[str, list] = {"update_last_login": [], "record": [], "expire": [], "notify": []}
+    calls: dict[str, list] = {"heartbeat_and_session": [], "notify": []}
 
     acc = SimpleNamespace(id=7, real_user="u")
 
@@ -265,20 +265,10 @@ def test_ws_heartbeat_updates_session(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server.sso_model.find_account_by_character", fake_find_char)
     monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
 
-    def ul(aid, login_by=None):
-        calls["update_last_login"].append((aid, login_by))
+    def hbs(account_id, guild_id, character_name, discord_user_id, login_by=None):
+        calls["heartbeat_and_session"].append((account_id, guild_id, character_name, discord_user_id, login_by))
 
-    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login", ul)
-
-    def rec(gid, aid, cname, duid):
-        calls["record"].append((gid, aid, cname, duid))
-
-    monkeypatch.setattr("roboToald.api.server.sso_model.record_heartbeat_session", rec)
-
-    def exp(gid, duid, keep):
-        calls["expire"].append((gid, duid, keep))
-
-    monkeypatch.setattr("roboToald.api.server.sso_model.expire_other_sessions", exp)
+    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", hbs)
 
     async def notify(gid, immediate=False):
         calls["notify"].append((gid, immediate))
@@ -289,13 +279,10 @@ def test_ws_heartbeat_updates_session(client, monkeypatch):
         ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
         assert ws.receive_json()["type"] == "full_state"
         ws.send_json({"type": "heartbeat", "character_name": "Hero"})
-        # Allow async handler to run
         import time
 
-        time.sleep(0.05)
-    assert calls["update_last_login"] == [(7, None)]
-    assert calls["record"] == [(1, 7, "Hero", 99)]
-    assert calls["expire"] == [(1, 99, 7)]
+        time.sleep(0.1)
+    assert calls["heartbeat_and_session"] == [(7, 1, "Hero", 99, None)]
     assert calls["notify"] == [(1, False)]
 
 
@@ -308,9 +295,7 @@ def test_ws_update_location_updates_character(client, monkeypatch):
         "roboToald.api.server.sso_model.find_account_by_character", lambda g, n: acc if n == "Zed" else None
     )
     monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
-    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login", lambda *a, **k: None)
-    monkeypatch.setattr("roboToald.api.server.sso_model.record_heartbeat_session", lambda *a, **k: None)
-    monkeypatch.setattr("roboToald.api.server.sso_model.expire_other_sessions", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", lambda *a, **k: None)
 
     uac_calls: list[dict] = []
 
@@ -362,9 +347,7 @@ def test_ws_update_location_items_overrides_keys(client, monkeypatch):
         "roboToald.api.server.sso_model.find_account_by_character", lambda g, n: acc if n == "Zed" else None
     )
     monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
-    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login", lambda *a, **k: None)
-    monkeypatch.setattr("roboToald.api.server.sso_model.record_heartbeat_session", lambda *a, **k: None)
-    monkeypatch.setattr("roboToald.api.server.sso_model.expire_other_sessions", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", lambda *a, **k: None)
 
     uac_calls: list[dict] = []
 
