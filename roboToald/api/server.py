@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
 from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -441,6 +441,34 @@ def _perform_login_auth(
         real_user=account.real_user,
         real_pass=account.real_pass,
     )
+
+
+@app.post("/list_accounts", include_in_schema=False)
+@app.post("/heartbeat", include_in_schema=False)
+@app.post("/update_location", include_in_schema=False)
+async def deprecated_http_endpoint(request: Request):
+    """Catch old HTTP-only clients still hitting removed endpoints."""
+    client_ip = _get_client_ip(request)
+    client_ver = request.headers.get("X-Client-Version", "unknown")
+    path = request.url.path
+    try:
+        body = await request.json()
+        raw_key = body.get("access_key", "")
+    except Exception:
+        raw_key = ""
+    if raw_key:
+        key = sso_model.get_access_key_by_key(raw_key)
+        if key:
+            discord_client = request.app.state.discord_client if hasattr(request.app.state, "discord_client") else None
+            guild_label = _guild_label_for_log(discord_client, key.guild_id)
+            user_label = _user_label_for_log(discord_client, key.guild_id, key.discord_user_id)
+            ctx = _session_context_log(guild_label, user_label, client_ver, client_ip)
+            logger.warning("DEPRECATED endpoint hit | path=%s | %s", path, ctx)
+        else:
+            logger.warning("DEPRECATED endpoint hit (invalid key) | path=%s | ip=%s | v=%s", path, client_ip, client_ver)
+    else:
+        logger.warning("DEPRECATED endpoint hit (no key) | path=%s | ip=%s | v=%s", path, client_ip, client_ver)
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 @app.post(
