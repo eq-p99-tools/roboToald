@@ -238,18 +238,40 @@ def build_raid_status_embed(channel_id: str, guild_id: int) -> disnake.Embed:
         total_dkp_spend = 0
 
         attendees = session.query(Attendee).filter_by(event_id=evt.id, tracking_id=None).all()
-        attendance_lines = []
+
+        att_chars: list[tuple[Attendee, Character]] = []
         for att in attendees:
             char = session.query(Character).filter_by(id=int(att.character_id)).first() if att.character_id else None
-            if not char:
-                continue
+            if char:
+                att_chars.append((att, char))
+
+        user_id_groups: dict[str, list[str]] = {}
+        for _, char in att_chars:
+            uid = char.eqdkp_user_id
+            if uid and str(uid) != "0":
+                user_id_groups.setdefault(str(uid), []).append(char.name)
+        dup_user_ids = {uid for uid, names in user_id_groups.items() if len(names) > 1}
+
+        attendance_lines = []
+        for att, char in att_chars:
+            uid = str(char.eqdkp_user_id) if char.eqdkp_user_id else None
+            is_dup = uid is not None and uid in dup_user_ids
+
             if att.on_character_id:
                 on_char = session.query(Character).filter_by(id=int(att.on_character_id)).first()
-                attendance_lines.append(f"+ {char.name} on {on_char.name}" if on_char else f"+ {char.name}")
+                line = f"{char.name} on {on_char.name}" if on_char else char.name
             elif att.reason:
-                attendance_lines.append(f"+ {char.name} ({att.reason})")
+                line = f"{char.name} ({att.reason})"
             else:
-                attendance_lines.append(f"+ {char.name}")
+                line = char.name
+
+            if is_dup:
+                others = [n for n in user_id_groups[uid] if n != char.name]
+                line = f"- {line} [dup: same player as {', '.join(others)}]"
+            else:
+                line = f"+ {line}"
+
+            attendance_lines.append(line)
 
         if not attendance_lines:
             attendance_lines.append("- There are no attendees added yet. Please submit logs.")
@@ -315,7 +337,11 @@ def build_raid_status_embed(channel_id: str, guild_id: int) -> disnake.Embed:
             details.append(f"+ {name} added at {time_str} ({ago} ago)")
         else:
             details.append(f"+ {name}")
-        details.append(f"+ Total Attendees: {len(attendees)}")
+        num_dups = sum(1 for _, c in att_chars if str(c.eqdkp_user_id or "") in dup_user_ids)
+        if num_dups:
+            details.append(f"+ Total Attendees: {len(attendees)} ({num_dups} duplicate-player)")
+        else:
+            details.append(f"+ Total Attendees: {len(attendees)}")
 
         if target or evt.dkp is not None:
             suffix = ""
