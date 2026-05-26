@@ -5,9 +5,10 @@ import time
 
 import disnake
 
-from roboToald import asyncio_default_executor
+from roboToald import asyncio_default_executor, config
 from roboToald.discord_client import commands
 from roboToald.discord_client.base import DISCORD_CLIENT
+from roboToald.discord_dm_log_handler import install_discord_dm_handler
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,8 @@ async def on_ready():
     logger.info("Restored DS spawn overrides from timers.")
     await commands.cmd_ds.schedule_messages()
     logger.info("Scheduled DS messages.")
+    install_discord_dm_handler(DISCORD_CLIENT, config.ERROR_DM_USER_ID)
+
     SUBSCRIPTION_TASK = asyncio.create_task(announce_subscriptions_task())
     asyncio.ensure_future(SUBSCRIPTION_TASK)
     logger.info("Started Subscription Notifier.")

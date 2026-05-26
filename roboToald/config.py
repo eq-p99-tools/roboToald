@@ -95,6 +95,8 @@ DASHBOARD_SUPER_ADMINS: set[int] = {
     int(x.strip()) for x in CONF.get("sso", "dashboard_super_admins", fallback="").split(",") if x.strip()
 }
 REQUIRE_KEYS_FOR_DYNAMIC_TAGS = CONF.getboolean("sso", "require_keys_for_dynamic_tags", fallback=False)
+
+ERROR_DM_USER_ID = CONF.getint("discord", "error_dm_user_id", fallback=0)
 # Default asyncio thread pool for asyncio.to_thread / run_in_executor (Python default is min(32, cpu+4)).
 ASYNCIO_DEFAULT_THREAD_POOL_MAX_WORKERS = CONF.getint("sso", "asyncio_default_thread_pool_max_workers", fallback=64)
 
