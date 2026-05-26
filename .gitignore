@@ -2,6 +2,8 @@ __pycache__
 .idea
 .pyc
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 *.json
 batphone.ini*
