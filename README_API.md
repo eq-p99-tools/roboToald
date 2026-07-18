@@ -269,6 +269,10 @@ On failure:
 
 WebSocket endpoint for real-time account data. This is the primary interface for the login proxy after initial authentication.
 
+### WebSocket message schema
+
+The wire contract for every message below is pinned by a JSON Schema (draft 2020-12) at [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json), with one canonical example per message type under [`schemas/fixtures/`](schemas/fixtures/). This schema is **canonical**: the `p99-login-proxy` client vendors a byte-identical copy and validates against it, and `tests/test_ws_protocol_schema.py` validates both the fixtures and live server output (`build_account_tree` / `compute_diff`) against it. Bulk payloads (`account_tree`, `changes`) are loosely typed and unknown extra fields are permitted, so additive server changes stay backward compatible; when you change a message shape, update the schema and fixtures in the same commit.
+
 ### Connection Protocol
 
 ```

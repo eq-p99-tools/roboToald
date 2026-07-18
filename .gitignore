@@ -6,6 +6,9 @@ __pycache__
 *.db-shm
 *.sqlite3
 *.json
+# Canonical WS protocol schema + fixtures are source-controlled contract artifacts.
+!schemas/
+!schemas/**/*.json
 batphone.ini*
 .python-version
 certs
