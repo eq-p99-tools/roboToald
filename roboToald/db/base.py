@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import time
 
 import sqlalchemy
 import sqlalchemy.event
@@ -93,7 +94,12 @@ def initialize_database(run_migrations=True):
     logger.info("Database schema is up to date.")
 
 
+_record_session_duration = lambda elapsed: None  # noqa: E731 — replaced by health_monitor.start()
+
+
 @contextlib.contextmanager
 def get_session(autocommit=False) -> sqlalchemy.orm.Session:
+    t0 = time.monotonic()
     with sqlalchemy.orm.Session(get_engine(), autocommit=autocommit) as SESSION:
         yield SESSION
+    _record_session_duration(time.monotonic() - t0)

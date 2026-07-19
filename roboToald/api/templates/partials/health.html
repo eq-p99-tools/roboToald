@@ -1,0 +1,159 @@
+<div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem;">
+    <label for="health-range" style="margin: 0; white-space: nowrap;">Time range</label>
+    <select id="health-range" style="width: auto;"
+            hx-get="/admin/partials/health"
+            hx-target="#panel-health"
+            hx-swap="innerHTML show:none"
+            hx-include="this"
+            name="hours">
+        <option value="1"{% if selected_hours == 1 %} selected{% endif %}>Last hour</option>
+        <option value="24"{% if selected_hours == 24 %} selected{% endif %}>Last 24h</option>
+        <option value="168"{% if selected_hours == 168 %} selected{% endif %}>Last 7 days</option>
+        <option value="720"{% if selected_hours == 720 %} selected{% endif %}>Last 30 days</option>
+        <option value="2160"{% if selected_hours == 2160 %} selected{% endif %}>Last 90 days</option>
+        <option value="8760"{% if selected_hours == 8760 %} selected{% endif %}>Last year</option>
+    </select>
+</div>
+
+{% if snapshots %}
+<div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+    <div style="background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem;">
+        <h4 style="margin: 0 0 0.5rem 0;">WebSocket Connections</h4>
+        <div style="position: relative; height: 220px;"><canvas id="chart-ws"></canvas></div>
+    </div>
+    <div style="background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem;">
+        <h4 style="margin: 0 0 0.5rem 0;">Event Loop Latency (ms)</h4>
+        <div style="position: relative; height: 220px;"><canvas id="chart-loop"></canvas></div>
+    </div>
+    <div style="background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem;">
+        <h4 style="margin: 0 0 0.5rem 0;">DB Sessions</h4>
+        <div style="position: relative; height: 220px;"><canvas id="chart-db"></canvas></div>
+    </div>
+</div>
+
+<details>
+    <summary>Raw data ({{ snapshots|length }} snapshots)</summary>
+    <div style="overflow-x: auto; margin-top: 0.5rem;">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>WS</th>
+                <th>WS Peak</th>
+                <th>Loop Avg</th>
+                <th>Loop Max</th>
+                <th>DB Count</th>
+                <th>DB Avg</th>
+                <th>DB Max</th>
+                <th>DB P95</th>
+                <th>TP Queue</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in snapshots|reverse %}
+            <tr{% if s.loop_lag_max_ms and s.loop_lag_max_ms > 100 %} style="color: var(--pico-del-color);"{% elif s.db_max_ms and s.db_max_ms > 500 %} style="color: var(--pico-del-color);"{% endif %}>
+                <td style="white-space: nowrap;"><time class="local-time" datetime="{{ s.ts }}"></time></td>
+                <td>{{ s.ws_conns }}</td>
+                <td>{{ s.ws_peak }}</td>
+                <td>{{ "%.1f"|format(s.loop_lag_avg_ms or 0) }}</td>
+                <td>{{ "%.1f"|format(s.loop_lag_max_ms or 0) }}</td>
+                <td>{{ s.db_session_count }}</td>
+                <td>{{ "%.1f"|format(s.db_avg_ms or 0) }}</td>
+                <td>{{ "%.1f"|format(s.db_max_ms or 0) }}</td>
+                <td>{{ "%.1f"|format(s.db_p95_ms or 0) }}</td>
+                <td>{{ s.threadpool_peak_queued }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</details>
+
+<script>
+(function() {
+    var data = {{ snapshots_json|safe }};
+    var labels = data.map(function(r) { return r.ts; });
+    var gridColor = 'rgba(128,128,128,0.2)';
+    var tickColor = 'rgba(180,180,180,0.8)';
+    var baseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: tickColor } } },
+        scales: {
+            x: {
+                ticks: { color: tickColor, maxTicksLimit: 12, maxRotation: 0 },
+                grid: { color: gridColor }
+            },
+            y: {
+                beginAtZero: true,
+                ticks: { color: tickColor },
+                grid: { color: gridColor }
+            }
+        }
+    };
+
+    /* WS connections chart */
+    new Chart(document.getElementById('chart-ws'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Connections', data: data.map(function(r) { return r.ws_conns; }),
+                  borderColor: '#5cb3ff', backgroundColor: 'rgba(92,179,255,0.1)', fill: true, tension: 0.3, pointRadius: 0 },
+                { label: 'Peak', data: data.map(function(r) { return r.ws_peak; }),
+                  borderColor: '#ff6b6b', borderDash: [5,3], fill: false, tension: 0.3, pointRadius: 0 }
+            ]
+        },
+        options: baseOpts
+    });
+
+    /* Loop latency chart */
+    new Chart(document.getElementById('chart-loop'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Avg (ms)', data: data.map(function(r) { return r.loop_lag_avg_ms; }),
+                  borderColor: '#69db7c', backgroundColor: 'rgba(105,219,124,0.1)', fill: true, tension: 0.3, pointRadius: 0 },
+                { label: 'Max (ms)', data: data.map(function(r) { return r.loop_lag_max_ms; }),
+                  borderColor: '#ff6b6b', borderDash: [5,3], fill: false, tension: 0.3, pointRadius: 0 }
+            ]
+        },
+        options: baseOpts
+    });
+
+    /* DB sessions chart (dual axis) */
+    var dbOpts = JSON.parse(JSON.stringify(baseOpts));
+    dbOpts.scales.y = {
+        type: 'linear', position: 'left', beginAtZero: true,
+        title: { display: true, text: 'Session count', color: tickColor },
+        ticks: { color: tickColor }, grid: { color: gridColor }
+    };
+    dbOpts.scales.y1 = {
+        type: 'linear', position: 'right', beginAtZero: true,
+        title: { display: true, text: 'Latency (ms)', color: tickColor },
+        ticks: { color: tickColor }, grid: { drawOnChartArea: false }
+    };
+    new Chart(document.getElementById('chart-db'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Count', data: data.map(function(r) { return r.db_session_count; }),
+                  backgroundColor: 'rgba(92,179,255,0.4)', yAxisID: 'y', order: 2 },
+                { label: 'Avg (ms)', type: 'line', data: data.map(function(r) { return r.db_avg_ms; }),
+                  borderColor: '#69db7c', fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'y1', order: 1 },
+                { label: 'Max (ms)', type: 'line', data: data.map(function(r) { return r.db_max_ms; }),
+                  borderColor: '#ff6b6b', borderDash: [5,3], fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'y1', order: 1 },
+                { label: 'P95 (ms)', type: 'line', data: data.map(function(r) { return r.db_p95_ms; }),
+                  borderColor: '#ffa94d', borderDash: [3,3], fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'y1', order: 1 }
+            ]
+        },
+        options: dbOpts
+    });
+})();
+</script>
+{% else %}
+<p class="empty-state">No health data available yet. Snapshots are recorded hourly.</p>
+{% endif %}

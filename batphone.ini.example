@@ -1,5 +1,7 @@
 [discord]
 token = <discord_token>
+# Optional: Discord user ID to receive ERROR+ log records via DM (rate-limited)
+#error_dm_user_id = <discord_user_id>
 # OAuth2 credentials for the admin dashboard (from Discord Developer Portal > OAuth2 tab)
 #oauth_client_id = <application_client_id>
 #oauth_client_secret = <application_client_secret>

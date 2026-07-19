@@ -13,6 +13,7 @@ from roboToald.discord_dm_log_handler import install_discord_dm_handler
 logger = logging.getLogger(__name__)
 
 SUBSCRIPTION_TASK = None
+_BOT_READY = False
 
 
 async def announce_subscriptions_task():
@@ -29,13 +30,18 @@ async def announce_subscriptions_task():
 
 @DISCORD_CLIENT.event
 async def on_ready():
-    global SUBSCRIPTION_TASK
+    global SUBSCRIPTION_TASK, _BOT_READY
 
     asyncio_default_executor.install_enlarged_default_executor(
         asyncio.get_running_loop(),
         thread_name_prefix="discord-asyncio",
     )
 
+    if _BOT_READY:
+        logger.info("Discord client reconnected as: %s", DISCORD_CLIENT.user.name)
+        return
+
+    _BOT_READY = True
     logger.info("Logged in as: %s", DISCORD_CLIENT.user.name)
 
     await commands.cmd_timer.load_timers()

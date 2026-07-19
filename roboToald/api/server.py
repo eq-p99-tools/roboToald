@@ -237,6 +237,10 @@ async def _on_startup():
         lg.handlers = uvicorn_logger.handlers
         lg.setLevel(uvicorn_logger.level)
 
+    from roboToald.api import health_monitor
+
+    health_monitor.start(ws_manager)
+
 
 def run_api_server(discord_client, certfile, keyfile, host, port):
     """
@@ -465,7 +469,9 @@ async def deprecated_http_endpoint(request: Request):
             ctx = _session_context_log(guild_label, user_label, client_ver, client_ip)
             logger.warning("DEPRECATED endpoint hit | path=%s | %s", path, ctx)
         else:
-            logger.warning("DEPRECATED endpoint hit (invalid key) | path=%s | ip=%s | v=%s", path, client_ip, client_ver)
+            logger.warning(
+                "DEPRECATED endpoint hit (invalid key) | path=%s | ip=%s | v=%s", path, client_ip, client_ver
+            )
     else:
         logger.warning("DEPRECATED endpoint hit (no key) | path=%s | ip=%s | v=%s", path, client_ip, client_ver)
     return JSONResponse(status_code=404, content={"detail": "Not found"})

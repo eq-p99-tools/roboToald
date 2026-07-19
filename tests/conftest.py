@@ -115,6 +115,35 @@ def sso_session(monkeypatch):
 
 
 @pytest.fixture()
+def subscription_session(monkeypatch):
+    """In-memory SQLite with subscription schema; patches ``base.get_session`` for tests."""
+    import roboToald.db.models.subscription  # noqa: F401 — register Subscription on Base.metadata
+
+    from roboToald.db import base
+
+    engine = sqlalchemy.create_engine(
+        "sqlite:///:memory:",
+        echo=False,
+        future=True,
+        connect_args={"check_same_thread": False},
+    )
+    base.Base.metadata.create_all(engine)
+    SessionLocal = sqlalchemy.orm.sessionmaker(bind=engine, future=True)
+    session = SessionLocal()
+
+    @contextlib.contextmanager
+    def get_session_patched(autocommit=False):
+        yield session
+
+    monkeypatch.setattr(base, "get_session", get_session_patched)
+
+    yield session
+
+    session.close()
+    engine.dispose()
+
+
+@pytest.fixture()
 def points_session(monkeypatch):
     """In-memory SQLite with points (DS) schema; patches ``base.get_session`` for tests."""
     import roboToald.db.models.points  # noqa: F401 — register PointsAudit etc. on Base.metadata

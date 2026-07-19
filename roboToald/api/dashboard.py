@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from roboToald import config
+from roboToald.api import health_monitor
 from roboToald.db.models import sso as sso_model
 from roboToald.api.websocket import manager as ws_manager
 
@@ -653,5 +654,22 @@ async def partial_rate_limited(request: Request):
         {
             "rate_limited": hashed,
             "is_super": is_super,
+        },
+    )
+
+
+@router.get("/partials/health", response_class=HTMLResponse)
+async def partial_health(request: Request, hours: int = 24):
+    session = _get_session(request)
+    if not session:
+        return Response(status_code=401)
+    snapshots = health_monitor.get_snapshots(hours=hours)
+    return templates.TemplateResponse(
+        request,
+        "partials/health.html",
+        {
+            "snapshots": snapshots,
+            "snapshots_json": json.dumps(snapshots),
+            "selected_hours": hours,
         },
     )

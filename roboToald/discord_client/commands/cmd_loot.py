@@ -17,6 +17,8 @@ from roboToald.db.raid_models.loot import EventLoot, Loot, Item, LootTable
 from roboToald.db.raid_models.character import Character
 from roboToald.discord_client import base
 from roboToald.raid import permissions as perms
+from roboToald.raid.eqdkp_character import EqdkpLookupStatus, resolve_character_for_raid
+from roboToald.eqdkp.client import EqdkpClient
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +82,24 @@ async def add(
             return
 
         # Resolve character
-        char = session.query(Character).filter(Character.name.ilike(character)).first()
-        if not char:
-            await inter.response.send_message(
-                f"```diff\n- {character} not found. Add them with +Player first.```",
-                ephemeral=True,
-            )
-            return
+        eqdkp_client = EqdkpClient(guild_id) if config.eqdkp_is_configured(guild_id) else None
+        if eqdkp_client:
+            char_result = await resolve_character_for_raid(eqdkp_client, session, character, create_local=True)
+            if char_result.status != EqdkpLookupStatus.OK:
+                await inter.response.send_message(
+                    f"```diff\n{char_result.error_line}```",
+                    ephemeral=True,
+                )
+                return
+            char = char_result.char
+        else:
+            char = session.query(Character).filter(Character.name.ilike(character)).first()
+            if not char:
+                await inter.response.send_message(
+                    f"```diff\n- {character} not found. Add them with +Player first.```",
+                    ephemeral=True,
+                )
+                return
 
         attendee = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 

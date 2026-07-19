@@ -2,8 +2,8 @@
 
 ## /rte (Tracking Channel)
 
-- `/rte start role character target` — starts RTE, posts in channel, sends DM with X reaction
-- `/rte start` with `on_character` — same but with alt character
+- `/rte start role character target` — starts RTE, posts in channel, sends DM with X reaction; rejects characters not on EQdkp
+- `/rte start` with `on_character` — same but with alt character; validates both characters on EQdkp
 - `/rte unrte character target` — ends RTE, message includes role/duration/DKP/ID, replies to original
 - `/rte status` — embed grouped by target then role, shows duration and ID
 - `/rte pending` — embed grouped by target then character, filters out 0-DKP linked chars
@@ -25,19 +25,19 @@
 - `/event clear` — clears attendees/loot/RTE for the event
 - `/event targets` — lists all targets with aliases, DKP values, chunked embed
 - `/event reorder` — repacks event channels across categories
-- **+Player messages** in event channel — adds attendee(s) from `+Name` or `+Name (reason)`
+- **+Player messages** in event channel — adds attendee(s) from `+Name` or `+Name (reason)`; rejects characters not found on EQdkp
 - **-Player messages** in event channel — removes attendee(s)
-- **Log paste** in event channel — parses EQ log lines to add attendees
+- **Log paste** in event channel — parses EQ log lines to add attendees; skips names not found on EQdkp
 - **@everyone batphone** in batphone channel — triggers batphone notification
 
 ## /loot (Event Channels)
 
-- `/loot add item character dkp` — records loot for a character
+- `/loot add item character dkp` — records loot for a character; rejects characters not on EQdkp
 - `/loot remove loot_id` — removes a loot record
 
 ## /fte (Event Channels)
 
-- `/fte add character` — awards FTE DKP
+- `/fte add character` — awards FTE DKP; rejects characters not on EQdkp
 - `/fte remove fte_id` — removes an FTE award
 
 ## /history (Any Channel)

@@ -66,6 +66,7 @@
     <button type="button" class="tab-btn" id="tab-btn-audit" role="tab" aria-selected="false" aria-controls="tab-audit" tabindex="-1" data-tab="audit">Auth Log</button>
     <button type="button" class="tab-btn" id="tab-btn-ratelimit" role="tab" aria-selected="false" aria-controls="tab-ratelimit" tabindex="-1" data-tab="ratelimit">Rate Limited</button>
     <button type="button" class="tab-btn" id="tab-btn-manage" role="tab" aria-selected="false" aria-controls="tab-manage" tabindex="-1" data-tab="manage">Manage</button>
+    <button type="button" class="tab-btn" id="tab-btn-health" role="tab" aria-selected="false" aria-controls="tab-health" tabindex="-1" data-tab="health">Health</button>
 </div>
 
 <div class="tab-panel active" id="tab-accounts" role="tabpanel" aria-labelledby="tab-btn-accounts" aria-hidden="false">
@@ -131,6 +132,17 @@
          hx-swap="innerHTML show:none"
          hx-indicator="#ratelimit-indicator">
         <p class="empty-state" aria-busy="true">Loading...</p>
+    </div>
+</div>
+
+<div class="tab-panel" id="tab-health" role="tabpanel" aria-labelledby="tab-btn-health" aria-hidden="true">
+    <small class="htmx-indicator" id="health-indicator">Updating...</small>
+    <div id="panel-health"
+         hx-get="/admin/partials/health"
+         hx-trigger="load"
+         hx-swap="innerHTML show:none"
+         hx-indicator="#health-indicator">
+        <p class="empty-state" aria-busy="true">Loading health data...</p>
     </div>
 </div>
 

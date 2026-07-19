@@ -17,6 +17,7 @@ All configuration lives in `batphone.ini`. Copy `batphone.ini.example` to `batph
 | Key | Description |
 |---|---|
 | `token` | Discord bot token |
+| `error_dm_user_id` | Optional Discord user ID to receive rate-limited ERROR+ log DMs (transient gateway reconnect noise is filtered) |
 
 ### `[sso]`
 
@@ -84,6 +85,8 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 ### Per-guild `[eqdkp.<id>]` (required for raid)
 
 Raid commands (`/event`, `/rte`, `/loot`, `/history`), `$submit`, and event-channel message handlers (`+Player`, log paste, etc.) are only enabled when **`enable_raid` is true** and this section exists with **`url`** and **`api_key`** set. Optional keys include `host` and `adjustment_event_id`.
+
+When EQdkp is configured, every raid character association (`+Player`, log paste, auto-attendance Apply, `/rte start`, `$fte`, `$loot`, `/loot add`) performs a fresh lookup-only validation against EQdkp before the local DB row is linked. Characters that are missing, ambiguous, or unreachable on EQdkp are rejected at add time with an actionable message. `$submit` and `/rte submit` perform a final lookup-only preflight before any EQdkp writes; they do not auto-create EQdkp characters.
 
 ### Per-guild `[raid.<id>]`
 

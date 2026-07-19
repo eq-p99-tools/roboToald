@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 import httpx
 
@@ -12,6 +15,9 @@ from roboToald import config
 logger = logging.getLogger(__name__)
 
 API_PATH = "/api.php"
+HTTP_TIMEOUT = 30.0
+GET_RETRY_STATUS = {502, 503, 504}
+MAX_GET_RETRIES = 2
 
 
 class EqdkpApiError(RuntimeError):
@@ -22,7 +28,19 @@ class EqdkpCommunicationError(RuntimeError):
     """EQdkp request failed before a valid API payload was returned."""
 
 
-def _raise_for_status(resp: httpx.Response, function: str, body: dict | None = None) -> None:
+@dataclass
+class CharacterLookupResult:
+    status: Literal["found", "not_found", "ambiguous"]
+    member: dict | None = None
+
+
+def _raise_for_status(
+    resp: httpx.Response,
+    function: str,
+    body: dict | None = None,
+    *,
+    character_name: str | None = None,
+) -> None:
     try:
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -31,7 +49,9 @@ def _raise_for_status(resp: httpx.Response, function: str, body: dict | None = N
         message = f"EQdkp communication error (HTTP {status_code})"
         if body is not None:
             message = f"{message}: {body}"
-        raise EqdkpCommunicationError(message) from exc
+        if character_name:
+            message = f"{message} for character {character_name}"
+        raise EqdkpCommunicationError(message) from None
 
 
 def _raise_if_eqdkp_error(data: dict) -> None:
@@ -56,42 +76,69 @@ class EqdkpClient:
         return {"function": function, "atoken": self.api_key, "type": "api", "format": "json", **extra}
 
     def _headers(self) -> dict:
-        return {"Content-Type": "application/json", "Host": self.host}
+        headers = {"Content-Type": "application/json"}
+        if self.host:
+            headers["Host"] = self.host
+        return headers
 
-    async def _get(self, function: str, **extra) -> dict:
-        async with httpx.AsyncClient(verify=False) as client:
-            resp = await client.get(
+    async def _request_get(self, function: str, **extra) -> httpx.Response:
+        async with httpx.AsyncClient(verify=False, timeout=HTTP_TIMEOUT) as client:
+            return await client.get(
                 f"{self.base_url}{API_PATH}",
                 params=self._params(function, **extra),
                 headers=self._headers(),
             )
-            _raise_for_status(resp, function)
-            return resp.json()
 
-    async def _post(self, function: str, body: dict) -> dict:
-        async with httpx.AsyncClient(verify=False) as client:
+    async def _get(self, function: str, **extra) -> dict:
+        last_exc: Exception | None = None
+        for attempt in range(MAX_GET_RETRIES + 1):
+            resp = await self._request_get(function, **extra)
+            try:
+                _raise_for_status(resp, function)
+            except EqdkpCommunicationError as exc:
+                last_exc = exc
+                status_code = resp.status_code
+                if attempt < MAX_GET_RETRIES and status_code in GET_RETRY_STATUS:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                raise
+            data = resp.json()
+            _raise_if_eqdkp_error(data)
+            return data
+        if last_exc:
+            raise last_exc
+        raise EqdkpCommunicationError(f"EQdkp {function} request failed")
+
+    async def _post(self, function: str, body: dict, *, character_name: str | None = None) -> dict:
+        async with httpx.AsyncClient(verify=False, timeout=HTTP_TIMEOUT) as client:
             resp = await client.post(
                 f"{self.base_url}{API_PATH}",
                 params=self._params(function),
                 headers=self._headers(),
                 json=body,
             )
-            _raise_for_status(resp, function, body)
+            _raise_for_status(resp, function, body, character_name=character_name)
             data = resp.json()
             _raise_if_eqdkp_error(data)
             return data
 
-    async def find_character(self, char_name: str) -> dict | None:
+    async def lookup_character(self, char_name: str) -> CharacterLookupResult:
         data = await self._get("search", **{"in": "charname", "for": char_name})
-        logger.debug("find_character(%s) raw: %s", char_name, data)
+        logger.debug("lookup_character(%s) raw: %s", char_name, data)
         direct = data.get("direct", {})
         members = _values_with_prefix(direct, "member:")
         if not members:
-            return None
+            return CharacterLookupResult(status="not_found")
         if len(members) == 1:
-            return members[0]
+            return CharacterLookupResult(status="found", member=members[0])
         valid = [m for m in members if str(m.get("user_id", "0")) != "0"]
-        return valid[0] if len(valid) == 1 else None
+        if len(valid) == 1:
+            return CharacterLookupResult(status="found", member=valid[0])
+        return CharacterLookupResult(status="ambiguous")
+
+    async def find_character(self, char_name: str) -> dict | None:
+        lookup = await self.lookup_character(char_name)
+        return lookup.member if lookup.status == "found" else None
 
     async def find_characters_by_discord_id(
         self,
@@ -134,39 +181,38 @@ class EqdkpClient:
         return data["event_id"]
 
     async def create_character(self, name: str) -> dict | None:
-        await self._post("character", {"name": name})
+        await self._post("character", {"name": name}, character_name=name)
         return await self.find_character(name)
 
-    async def create_member(self, character, session=None):
-        """Find or create an EQdkp member for a Character, updating IDs.
-
-        If *session* is provided the update is flushed (not committed) on that
-        session so the caller can commit as part of a larger transaction.
-        """
+    async def bind_member(self, character, session=None):
+        """Bind EQdkp IDs for a Character after a fresh lookup-only validation."""
         from roboToald.db.raid_base import get_raid_session
 
-        member = await self.find_character(character.name)
-        if not member:
-            await self._post("character", {"name": character.name})
-            member = await self.find_character(character.name)
-        if member:
-            if session is not None:
-                char = session.merge(character)
-                char.eqdkp_member_id = member.get("id")
-                char.eqdkp_user_id = member.get("user_id")
-                char.eqdkp_main_id = member.get("main_id")
-                session.flush()
-                return char
-            else:
-                with get_raid_session(self.guild_id) as own_session:
-                    char = own_session.merge(character)
-                    char.eqdkp_member_id = member.get("id")
-                    char.eqdkp_user_id = member.get("user_id")
-                    char.eqdkp_main_id = member.get("main_id")
-                    own_session.commit()
-                    own_session.refresh(char)
-                    return char
-        return character
+        lookup = await self.lookup_character(character.name)
+        if lookup.status == "not_found":
+            raise EqdkpCommunicationError(f"Character {character.name} not found on EQdkp")
+        if lookup.status == "ambiguous":
+            raise EqdkpCommunicationError(f"Character {character.name} is ambiguous on EQdkp")
+        member = lookup.member
+        if session is not None:
+            char = session.merge(character)
+            char.eqdkp_member_id = member.get("id")
+            char.eqdkp_user_id = member.get("user_id")
+            char.eqdkp_main_id = member.get("main_id")
+            session.flush()
+            return char
+        with get_raid_session(self.guild_id) as own_session:
+            char = own_session.merge(character)
+            char.eqdkp_member_id = member.get("id")
+            char.eqdkp_user_id = member.get("user_id")
+            char.eqdkp_main_id = member.get("main_id")
+            own_session.commit()
+            own_session.refresh(char)
+            return char
+
+    async def create_member(self, character, session=None):
+        """Lookup-only alias retained for callers; does not create EQdkp characters."""
+        return await self.bind_member(character, session=session)
 
     async def create_raid(
         self,

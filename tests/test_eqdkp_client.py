@@ -7,6 +7,7 @@ import httpx
 
 from roboToald import config
 from roboToald.eqdkp.client import (
+    CharacterLookupResult,
     EqdkpApiError,
     EqdkpClient,
     EqdkpCommunicationError,
@@ -46,10 +47,67 @@ def test_raise_for_status_hides_admin_token():
         _raise_for_status(resp, "add_raid", body)
 
     assert token not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
     assert str(exc_info.value) == (
         "EQdkp communication error (HTTP 500): "
         "{'raid_note': 'debuggable request', 'raid_attendees': {'member': [1, 2]}}"
     )
+
+
+@pytest.mark.asyncio
+async def test_lookup_character_ambiguous(monkeypatch):
+    monkeypatch.setitem(
+        config.EQDKP_SETTINGS,
+        1,
+        {"url": "http://example.test", "host": "example.test", "api_key": "token"},
+    )
+    client = EqdkpClient(1)
+
+    async def fake_get(function, **extra):
+        return {
+            "direct": {
+                "member:0": {"user_id": "1", "name": "X"},
+                "member:1": {"user_id": "2", "name": "X"},
+            }
+        }
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    lookup = await client.lookup_character("X")
+    assert lookup.status == "ambiguous"
+    assert lookup.member is None
+
+
+@pytest.mark.asyncio
+async def test_bind_member_does_not_post(monkeypatch, raid_session):
+    from roboToald.db.raid_models.character import Character
+
+    monkeypatch.setitem(
+        config.EQDKP_SETTINGS,
+        1,
+        {"url": "http://example.test", "host": "example.test", "api_key": "token"},
+    )
+    client = EqdkpClient(1)
+    char = Character(name="Bob")
+    raid_session.add(char)
+    raid_session.commit()
+
+    post_called = False
+
+    async def fake_post(*args, **kwargs):
+        nonlocal post_called
+        post_called = True
+        return {}
+
+    async def fake_lookup(name):
+        return CharacterLookupResult(status="found", member={"id": 1, "user_id": "2", "main_id": 0})
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    monkeypatch.setattr(client, "lookup_character", fake_lookup)
+
+    bound = await client.bind_member(char, session=raid_session)
+
+    assert post_called is False
+    assert bound.eqdkp_member_id == 1
 
 
 @pytest.mark.asyncio

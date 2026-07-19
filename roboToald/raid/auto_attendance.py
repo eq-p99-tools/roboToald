@@ -26,6 +26,7 @@ from roboToald.db.raid_models.raid import Attendee, Event
 from roboToald.discord_client import base as discord_base
 from roboToald.eqdkp.client import EqdkpClient
 from roboToald.raid import permissions as perms
+from roboToald.raid.eqdkp_character import EqdkpLookupStatus, resolve_character_for_raid
 from roboToald.raid.event_helpers import resolve_target
 from roboToald.raid.event_kill_mark import (
     apply_kill_state_to_event,
@@ -451,33 +452,31 @@ async def on_auto_att_button(inter: disnake.MessageInteraction) -> None:
             if not player_name:
                 continue
 
-            char = session.query(Character).filter(Character.name.ilike(player_name)).first()
-            if not char:
-                char = Character(name=player_name)
-                session.add(char)
-                session.flush()
-
-            if eqdkp_client and not char.eqdkp_member_id:
-                try:
-                    eqdkp_member = await eqdkp_client.find_character(char.name)
-                except Exception as exc:
-                    logger.exception("EQdkp find_character failed for %s", char.name)
-                    out.append(f"- {char.name}: EQdkp lookup failed ({exc}). Skipped.")
+            if eqdkp_client:
+                char_result = await resolve_character_for_raid(eqdkp_client, session, player_name, create_local=True)
+                if char_result.status != EqdkpLookupStatus.OK:
+                    out.append(char_result.error_line or f"- {player_name}: EQdkp validation failed.")
                     continue
-                if eqdkp_member:
-                    char.eqdkp_member_id = eqdkp_member.get("id")
-                    char.eqdkp_user_id = eqdkp_member.get("user_id")
-                    char.eqdkp_main_id = eqdkp_member.get("main_id")
+                char = char_result.char
+            else:
+                char = session.query(Character).filter(Character.name.ilike(player_name)).first()
+                if not char:
+                    char = Character(name=player_name)
+                    session.add(char)
                     session.flush()
-                else:
-                    out.append(f"- {player_name}: not found on EQDKP. Skipped.")
-                    continue
 
             on_character = None
             on_match = re.match(r"^on\s+(.+)$", reason, re.IGNORECASE)
             if on_match:
                 on_name = on_match.group(1).strip().capitalize()
-                on_character = session.query(Character).filter(Character.name.ilike(on_name)).first()
+                if eqdkp_client:
+                    on_result = await resolve_character_for_raid(eqdkp_client, session, on_name, create_local=True)
+                    if on_result.status != EqdkpLookupStatus.OK:
+                        out.append(on_result.error_line or f"- {on_name}: EQdkp validation failed.")
+                        continue
+                    on_character = on_result.char
+                else:
+                    on_character = session.query(Character).filter(Character.name.ilike(on_name)).first()
 
             if on_character:
                 on_existing = (

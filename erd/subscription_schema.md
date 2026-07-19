@@ -14,7 +14,6 @@ erDiagram
         int user_id PK
         string target PK
         int guild_id PK
-        int expiry
         int last_notified
         int lead_time
         int last_window_start
@@ -32,7 +31,6 @@ Each row is a user's subscription to a specific raid target. The user receives D
 | `user_id` | Integer | PK (composite) | Discord user ID |
 | `target` | String(255) | PK (composite) | Raid target name |
 | `guild_id` | Integer | PK (composite), NOT NULL | Discord guild |
-| `expiry` | Integer | NOT NULL | Unix timestamp when this subscription expires |
 | `last_notified` | Integer | default `0` | Unix timestamp of last notification sent |
 | `lead_time` | Integer | NOT NULL, default `1800` | Seconds before window open to send notification (default 30 minutes) |
 | `last_window_start` | Integer | default `0` | Unix timestamp of the last window start that triggered a notification |
@@ -44,15 +42,13 @@ Each row is a user's subscription to a specific raid target. The user receives D
 1. A background task (`announce_subscriptions_task`) runs every ~60 seconds.
 2. It fetches raid target data from the configured `raidtargets_endpoint` for each guild.
 3. For each subscription, it checks:
-   - Has the subscription expired? If so, it is cleaned up.
    - Is a raid window currently open or within `lead_time` seconds of opening?
    - Has a notification already been sent for this specific window (`last_window_start` match)?
-4. If conditions are met, the bot DMs the user with the raid window details (start/end/next), subscription expiry and lead time, and **Refresh** / **Unsubscribe** buttons. Button `custom_id` values encode `action:target:guild_id` so handlers do not rely on embed footers.
+   - Does the user still have the guild member role? If not, the subscription is removed.
+4. If conditions are met, the bot DMs the user with the raid window details (start/end/next), lead time, and an **Unsubscribe** button. Button `custom_id` values encode `action:target:guild_id`.
 5. `last_notified` and `last_window_start` are updated to prevent duplicate notifications.
 
-## Expiry and Renewal
+## Lifetime
 
-- Subscriptions are created with a 30-day expiry (`time.time() + 30 days`).
-- When a notification is sent, it includes a "Refresh" button that extends the expiry by another 30 days.
-- An "Unsubscribe" button is also included for easy removal.
-- Expired subscriptions are cleaned up by `clean_expired_subscriptions()`.
+- Subscriptions do **not** expire. They persist until the user unsubscribes or loses the required member role when a notification would fire.
+- Legacy DMs may still show a **Refresh** button; clicking it updates the message to note that subscriptions no longer expire.

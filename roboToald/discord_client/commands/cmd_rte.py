@@ -23,6 +23,8 @@ from roboToald.discord_client import base
 from roboToald.raid import permissions as perms
 from roboToald.raid.dkp_calculator import dkp_from_duration
 from roboToald.raid.event_helpers import resolve_target, _time_ago_in_words
+from roboToald.raid.eqdkp_character import EqdkpLookupStatus, resolve_character_for_raid, validate_characters_for_eqdkp
+from roboToald.eqdkp.client import EqdkpApiError, EqdkpClient, EqdkpCommunicationError
 
 logger = logging.getLogger(__name__)
 
@@ -56,20 +58,22 @@ async def start(
 
     role_id = next((k for k, v in RTE_ROLES.items() if v["name"].lower() == role.lower()), None)
 
+    eqdkp = EqdkpClient(guild_id)
+
     with get_raid_session(guild_id) as session:
-        char = session.query(Character).filter(Character.name.ilike(character)).first()
-        if not char:
-            char = Character(name=character.capitalize())
-            session.add(char)
-            session.flush()
+        char_result = await resolve_character_for_raid(eqdkp, session, character, create_local=True)
+        if char_result.status != EqdkpLookupStatus.OK:
+            await inter.followup.send(f"```diff\n{char_result.error_line}```")
+            return
+        char = char_result.char
 
         on_char = None
         if on_character:
-            on_char = session.query(Character).filter(Character.name.ilike(on_character)).first()
-            if not on_char:
-                on_char = Character(name=on_character.capitalize())
-                session.add(on_char)
-                session.flush()
+            on_result = await resolve_character_for_raid(eqdkp, session, on_character, create_local=True)
+            if on_result.status != EqdkpLookupStatus.OK:
+                await inter.followup.send(f"```diff\n{on_result.error_line}```")
+                return
+            on_char = on_result.char
 
         targets, _ = resolve_target(target_name, session)
         if len(targets) > 1:
@@ -419,8 +423,6 @@ async def submit(
 
         tgt = targets[0]
         try:
-            from roboToald.eqdkp.client import EqdkpClient
-
             eqdkp = EqdkpClient(guild_id)
 
             trackings = (
@@ -438,11 +440,21 @@ async def submit(
                 key = (char.id, tgt.id, t.rate_per_hour)
                 groups.setdefault(key, []).append(t)
 
+            preflight_chars = [session.query(Character).get(char_id) for (char_id, _, _) in groups]
+            preflight_chars = [c for c in preflight_chars if c]
+            preflight_errors = await validate_characters_for_eqdkp(eqdkp, preflight_chars)
+            if preflight_errors:
+                lines = ["```diff", "- Cannot submit RTE: the following characters are not valid on EQdkp:", ""]
+                lines.extend(preflight_errors)
+                lines.append("```")
+                await inter.followup.send("\n".join(lines), ephemeral=True)
+                return
+
             for (char_id, _, rate), items in groups.items():
                 char = session.query(Character).get(char_id)
                 if not char:
                     continue
-                char = await eqdkp.create_member(char, session=session)
+                char = await eqdkp.bind_member(char, session=session)
                 if not char.eqdkp_member_id:
                     continue
 
@@ -465,9 +477,12 @@ async def submit(
 
             session.commit()
             await inter.followup.send("```diff\n+ RTE submitted to EQdkp.```")
-        except Exception as exc:
-            logger.exception("RTE submission failed")
+        except (EqdkpCommunicationError, EqdkpApiError) as exc:
+            logger.warning("RTE submission failed: %s", exc)
             await inter.followup.send(f"```diff\n- Error submitting RTE: {exc}```")
+        except Exception:
+            logger.exception("RTE submission failed")
+            await inter.followup.send("```diff\n- Error submitting RTE: unexpected error. Check logs.```")
 
 
 # ---------------------------------------------------------------------------

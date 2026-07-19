@@ -29,8 +29,13 @@ from roboToald.db.raid_models.loot import EventLoot, Loot, Item, LootTable
 from roboToald.db.raid_models.character import Character
 from roboToald.db.raid_models.permission import Permission
 from roboToald.discord_client import base
-from roboToald.eqdkp.client import EqdkpClient
+from roboToald.eqdkp.client import EqdkpApiError, EqdkpClient, EqdkpCommunicationError
 from roboToald.raid import permissions as perms
+from roboToald.raid.eqdkp_character import (
+    EqdkpLookupStatus,
+    resolve_character_for_raid,
+    validate_characters_for_eqdkp,
+)
 from roboToald.raid.event_helpers import (
     resolve_target,
     get_shortest_alias,
@@ -547,31 +552,18 @@ async def _handle_add_player(message: disnake.Message):
             if not player_name:
                 continue
 
-            char = session.query(Character).filter(Character.name.ilike(player_name)).first()
-            if not char:
-                char = Character(name=player_name)
-                session.add(char)
-                session.flush()
-
-            # batphone-bot add_player.rb: only allow names that exist in EQdkp (lookup only; no auto-create).
-            if eqdkp_client and not char.eqdkp_member_id:
-                try:
-                    member = await eqdkp_client.find_character(char.name)
-                except Exception as exc:
-                    logger.exception("EQdkp find_character failed for %s", char.name)
-                    out.append(f"- {char.name}: EQdkp lookup failed ({exc}). Try again later.")
+            if eqdkp_client:
+                char_result = await resolve_character_for_raid(eqdkp_client, session, player_name, create_local=True)
+                if char_result.status != EqdkpLookupStatus.OK:
+                    out.append(char_result.error_line or f"- {player_name}: EQdkp validation failed.")
                     continue
-                if member:
-                    char.eqdkp_member_id = member.get("id")
-                    char.eqdkp_user_id = member.get("user_id")
-                    char.eqdkp_main_id = member.get("main_id")
+                char = char_result.char
+            else:
+                char = session.query(Character).filter(Character.name.ilike(player_name)).first()
+                if not char:
+                    char = Character(name=player_name)
+                    session.add(char)
                     session.flush()
-                else:
-                    out.append(
-                        f"- Unable to locate the character {player_name} on EQDKP Site. "
-                        "Please make sure that character exists there first."
-                    )
-                    continue
 
             existing = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
@@ -579,7 +571,14 @@ async def _handle_add_player(message: disnake.Message):
             on_match = re.match(r"^on\s+(.+)$", reason, re.IGNORECASE)
             if on_match:
                 on_name = on_match.group(1).strip().capitalize()
-                on_character = session.query(Character).filter(Character.name.ilike(on_name)).first()
+                if eqdkp_client:
+                    on_result = await resolve_character_for_raid(eqdkp_client, session, on_name, create_local=True)
+                    if on_result.status != EqdkpLookupStatus.OK:
+                        out.append(on_result.error_line or f"- {on_name}: EQdkp validation failed.")
+                        continue
+                    on_character = on_result.char
+                else:
+                    on_character = session.query(Character).filter(Character.name.ilike(on_name)).first()
 
             if on_character:
                 on_existing = (
@@ -710,44 +709,29 @@ async def _handle_log_parse(message: disnake.Message):
 
         num_added = 0
         for p in players:
-            member = None
-            char = session.query(Character).filter(Character.name.ilike(p.name)).first()
-            if not char:
-                if eqdkp_client:
-                    try:
-                        member = await eqdkp_client.find_character(p.name)
-                    except Exception as exc:
-                        logger.exception("EQdkp find_character failed for %s", p.name)
-                        eqdkp_lookup_errors.append(f"{p.name} ({exc})")
-                        continue
-                    if not member:
-                        not_in_eqdkp.append(p.name)
-                        continue
-                char = Character(name=p.name, klass=p.klass)
-                if member:
-                    char.eqdkp_member_id = member.get("id")
-                    char.eqdkp_user_id = member.get("user_id")
-                    char.eqdkp_main_id = member.get("main_id")
-                session.add(char)
-                session.flush()
+            if eqdkp_client:
+                char_result = await resolve_character_for_raid(
+                    eqdkp_client, session, p.name, create_local=True, klass=p.klass
+                )
+                if char_result.status == EqdkpLookupStatus.NOT_FOUND:
+                    not_in_eqdkp.append(p.name)
+                    continue
+                if char_result.status == EqdkpLookupStatus.AMBIGUOUS:
+                    eqdkp_lookup_errors.append(f"{p.name} (ambiguous on EQdkp)")
+                    continue
+                if char_result.status != EqdkpLookupStatus.OK:
+                    eqdkp_lookup_errors.append(char_result.error_line or f"{p.name} (EQdkp lookup failed)")
+                    continue
+                char = char_result.char
             else:
-                if not char.klass and p.klass:
+                char = session.query(Character).filter(Character.name.ilike(p.name)).first()
+                if not char:
+                    char = Character(name=p.name, klass=p.klass)
+                    session.add(char)
+                    session.flush()
+                elif not char.klass and p.klass:
                     char.klass = p.klass
-                if eqdkp_client and not char.eqdkp_member_id:
-                    try:
-                        member = await eqdkp_client.find_character(char.name)
-                    except Exception as exc:
-                        logger.exception("EQdkp find_character failed for %s", char.name)
-                        eqdkp_lookup_errors.append(f"{char.name} ({exc})")
-                        continue
-                    if member:
-                        char.eqdkp_member_id = member.get("id")
-                        char.eqdkp_user_id = member.get("user_id")
-                        char.eqdkp_main_id = member.get("main_id")
-                        session.flush()
-                    else:
-                        not_in_eqdkp.append(char.name)
-                        continue
+                    session.flush()
 
             existing = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
             if not existing:
@@ -1039,6 +1023,48 @@ async def _cmd_submit(message: disnake.Message, args: str):
                 tgt = session.query(Target).get(evt.target_id) if evt.target_id else None
                 event_name = tgt.name if tgt else evt.name
 
+                characters_for_preflight: list[Character] = []
+                attendees = session.query(Attendee).filter_by(event_id=evt.id, tracking_id=None).all()
+                for att in attendees:
+                    char = (
+                        session.query(Character).filter_by(id=int(att.character_id)).first()
+                        if att.character_id
+                        else None
+                    )
+                    if char:
+                        characters_for_preflight.append(char)
+
+                event_loots_preflight = session.query(EventLoot).filter_by(event_id=evt.id).all()
+                ftes_preflight = session.query(Fte).filter_by(event_id=evt.id).all()
+                rte_attendees_preflight = (
+                    session.query(Attendee).filter(Attendee.event_id == evt.id, Attendee.tracking_id.isnot(None)).all()
+                )
+
+                for el in event_loots_preflight:
+                    char = session.query(Character).get(el.character_id) if el.character_id else None
+                    if char:
+                        characters_for_preflight.append(char)
+                for fte_rec in ftes_preflight:
+                    char = session.query(Character).get(fte_rec.character_id) if fte_rec.character_id else None
+                    if char:
+                        characters_for_preflight.append(char)
+                for att in rte_attendees_preflight:
+                    char = (
+                        session.query(Character).filter_by(id=int(att.character_id)).first()
+                        if att.character_id
+                        else None
+                    )
+                    if char:
+                        characters_for_preflight.append(char)
+
+                preflight_errors = await validate_characters_for_eqdkp(eqdkp, characters_for_preflight)
+                if preflight_errors:
+                    lines = ["```diff", "- Cannot submit: the following characters are not valid on EQdkp:", ""]
+                    lines.extend(preflight_errors)
+                    lines.append("```")
+                    await message.channel.send("\n".join(lines))
+                    return
+
                 eqdkp_evt = session.query(EqdkpEvent).filter(EqdkpEvent.name.ilike(event_name)).first()
                 if not eqdkp_evt or not eqdkp_evt.eqdkp_event_id:
                     new_id = await eqdkp.create_event(event_name, evt.dkp_value or 0)
@@ -1059,7 +1085,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                         else None
                     )
                     if char:
-                        char = await eqdkp.create_member(char, session=session)
+                        char = await eqdkp.bind_member(char, session=session)
                         characters.append(char)
 
                 members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
@@ -1073,7 +1099,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                             else None
                         )
                         if char:
-                            char = await eqdkp.create_member(char, session=session)
+                            char = await eqdkp.bind_member(char, session=session)
                             characters.append(char)
                     members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
 
@@ -1082,7 +1108,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                     for fte_rec in session.query(Fte).filter_by(event_id=evt.id).all():
                         char = session.query(Character).get(fte_rec.character_id) if fte_rec.character_id else None
                         if char:
-                            char = await eqdkp.create_member(char, session=session)
+                            char = await eqdkp.bind_member(char, session=session)
                             characters.append(char)
                     members_by_user = list({c.eqdkp_user_id: c for c in characters if c.eqdkp_member_id}.values())
                     if members_by_user:
@@ -1120,7 +1146,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                     )
                     if not char:
                         continue
-                    char = await eqdkp.create_member(char, session=session)
+                    char = await eqdkp.bind_member(char, session=session)
                     other_chars = session.query(Character).filter_by(eqdkp_user_id=char.eqdkp_user_id).all()
                     other_ids = [str(c.id) for c in other_chars]
                     other_att = (
@@ -1144,7 +1170,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                 for fte_rec in ftes:
                     char = session.query(Character).get(fte_rec.character_id) if fte_rec.character_id else None
                     if char:
-                        char = await eqdkp.create_member(char, session=session)
+                        char = await eqdkp.bind_member(char, session=session)
                         if char.eqdkp_member_id:
                             await eqdkp.add_adjustment(
                                 char.eqdkp_member_id,
@@ -1160,7 +1186,7 @@ async def _cmd_submit(message: disnake.Message, args: str):
                     loot_rec = session.query(Loot).get(el.loot_id) if el.loot_id else None
                     char = session.query(Character).get(el.character_id) if el.character_id else None
                     if loot_rec and char:
-                        char = await eqdkp.create_member(char, session=session)
+                        char = await eqdkp.bind_member(char, session=session)
                         if char.eqdkp_member_id:
                             item_id = await eqdkp.add_item(
                                 loot_rec.name,
@@ -1183,9 +1209,12 @@ async def _cmd_submit(message: disnake.Message, args: str):
                     embed = build_raid_status_embed(str(message.channel.id), guild_id)
                     await thread.send(embed=embed)
 
-            except Exception as exc:
-                logger.exception("EQdkp submission failed")
+            except (EqdkpCommunicationError, EqdkpApiError) as exc:
+                logger.warning("EQdkp submission failed: %s", exc)
                 await message.channel.send(f"```diff\n- Error submitting to EQdkp: {exc}```")
+            except Exception:
+                logger.exception("EQdkp submission failed")
+                await message.channel.send("```diff\n- Error submitting to EQdkp: unexpected error. Check logs.```")
 
 
 async def _cmd_submit_reset(message: disnake.Message):
@@ -1364,6 +1393,8 @@ async def _cmd_loot(message: disnake.Message, args: str):
         return
     dkp_value = int(dkp_str)
 
+    eqdkp_client = EqdkpClient(guild_id) if config.eqdkp_is_configured(guild_id) else None
+
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
         if not evt:
@@ -1375,10 +1406,17 @@ async def _cmd_loot(message: disnake.Message, args: str):
             await message.channel.send(item_record)
             return
 
-        char = session.query(Character).filter(Character.name.ilike(character)).first()
-        if not char:
-            await message.channel.send(f"```diff\n- {character} not found. Add them with +Player first.```")
-            return
+        if eqdkp_client:
+            char_result = await resolve_character_for_raid(eqdkp_client, session, character, create_local=True)
+            if char_result.status != EqdkpLookupStatus.OK:
+                await message.channel.send(f"```diff\n{char_result.error_line}```")
+                return
+            char = char_result.char
+        else:
+            char = session.query(Character).filter(Character.name.ilike(character)).first()
+            if not char:
+                await message.channel.send(f"```diff\n- {character} not found. Add them with +Player first.```")
+                return
 
         attendee = session.query(Attendee).filter_by(event_id=evt.id, character_id=str(char.id)).first()
 
@@ -1478,15 +1516,23 @@ async def _cmd_fte(message: disnake.Message, args: str):
         return
     character = parts[0]
     dkp_value = int(parts[1])
+    eqdkp_client = EqdkpClient(guild_id) if config.eqdkp_is_configured(guild_id) else None
     with get_raid_session(guild_id) as session:
         evt = _get_event(session, str(message.channel.id))
         if not evt:
             await message.channel.send("```diff\n- No event here.```")
             return
-        char = session.query(Character).filter(Character.name.ilike(character)).first()
-        if not char:
-            await message.channel.send(f"```diff\n- Character {character} not found.```")
-            return
+        if eqdkp_client:
+            char_result = await resolve_character_for_raid(eqdkp_client, session, character, create_local=True)
+            if char_result.status != EqdkpLookupStatus.OK:
+                await message.channel.send(f"```diff\n{char_result.error_line}```")
+                return
+            char = char_result.char
+        else:
+            char = session.query(Character).filter(Character.name.ilike(character)).first()
+            if not char:
+                await message.channel.send(f"```diff\n- Character {character} not found.```")
+                return
         fte_rec = Fte(event_id=evt.id, character_id=char.id, dkp=dkp_value)
         session.add(fte_rec)
         session.commit()

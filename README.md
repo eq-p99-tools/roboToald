@@ -97,7 +97,7 @@ Subscribe to raid target windows and get DM notifications when a window opens or
 - `/raidtarget unsubscribe` -- unsubscribe.
 - `/raidtarget subscriptions` -- list your subscriptions.
 
-Subscriptions expire after 30 days and can be refreshed via the button on the notification.
+Subscriptions persist until you unsubscribe or lose the guild member role.
 
 ## Command Reference
 
@@ -187,9 +187,9 @@ Subscriptions expire after 30 days and can be refreshed via the button on the no
 |---|---|
 | `subscribe` | Subscribe to a raid target |
 | `unsubscribe` | Unsubscribe |
-| `subscriptions` | List your subscriptions (DM includes Refresh / Unsubscribe buttons) |
+| `subscriptions` | List your subscriptions (DM includes an Unsubscribe button) |
 
-When a raid window is within your lead time, the bot DMs you with window times, how long until the subscription expires, and the same Refresh / Unsubscribe buttons. Button actions use encoded `custom_id` values (`action:target:guild_id`).
+When a raid window is within your lead time, the bot DMs you with window times and an Unsubscribe button. Subscriptions persist until you unsubscribe or lose the guild member role. Button actions use encoded `custom_id` values (`action:target:guild_id`).
 
 ### `/lookup`
 

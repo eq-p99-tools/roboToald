@@ -18,7 +18,7 @@ from roboToald import config
 from roboToald.db.raid_models.character import Character
 from roboToald.db.raid_models.raid import Attendee, Event
 from roboToald.db.raid_models.target import Target
-from roboToald.eqdkp.client import EqdkpClient
+from roboToald.eqdkp.client import CharacterLookupResult, EqdkpClient
 from roboToald.raid import auto_attendance
 from roboToald.raid.auto_attendance import (
     MIN_PRESENCE_PERCENT,
@@ -29,6 +29,17 @@ from roboToald.raid.auto_attendance import (
     propose_online_players,
     qualifying_players_for_event_window,
 )
+
+
+def _patch_eqdkp_lookup(monkeypatch, member_id: int = 101, user_id: int = 201):
+    async def fake_lookup_character(self, char_name: str) -> CharacterLookupResult:
+        return CharacterLookupResult(
+            status="found",
+            member={"id": member_id, "user_id": user_id, "main_id": None},
+        )
+
+    monkeypatch.setattr(EqdkpClient, "lookup_character", fake_lookup_character)
+
 
 GUILD_ID = 900_001
 EVENT_CHANNEL_ID = 999
@@ -285,10 +296,7 @@ async def test_apply_button_creates_attendees(
     raid_session.add(Character(name="Boxchar1"))
     raid_session.commit()
 
-    async def fake_find_character(self, char_name: str) -> dict | None:
-        return {"id": 101, "user_id": 201, "main_id": None}
-
-    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    _patch_eqdkp_lookup(monkeypatch)
     monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
     monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
@@ -355,10 +363,7 @@ async def test_apply_button_dedup(
     raid_session.add(Character(name="Boxchar1"))
     raid_session.commit()
 
-    async def fake_find_character(self, char_name: str) -> dict | None:
-        return {"id": 101, "user_id": 201, "main_id": None}
-
-    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    _patch_eqdkp_lookup(monkeypatch)
     monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
     monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
@@ -422,10 +427,18 @@ async def test_apply_button_removes_sibling_characters(
     raid_session.add(Attendee(event_id=evt.id, character_id=str(unrelated.id)))
     raid_session.commit()
 
-    async def fake_find_character(self, char_name: str) -> dict | None:
-        return {"id": 100, "user_id": int(EQDKP_USER_ID), "main_id": None}
+    async def fake_lookup_character(self, char_name: str) -> CharacterLookupResult:
+        if char_name.lower() == "mainchar":
+            return CharacterLookupResult(
+                status="found",
+                member={"id": 100, "user_id": int(EQDKP_USER_ID), "main_id": None},
+            )
+        return CharacterLookupResult(
+            status="found",
+            member={"id": 101, "user_id": 999, "main_id": None},
+        )
 
-    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr(EqdkpClient, "lookup_character", fake_lookup_character)
     monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
     monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
@@ -493,10 +506,13 @@ async def test_sibling_removal_skipped_when_no_eqdkp_user(
     raid_session.add(Attendee(event_id=evt.id, character_id=str(other.id)))
     raid_session.commit()
 
-    async def fake_find_character(self, char_name: str) -> dict | None:
-        return {"id": 101, "user_id": 0, "main_id": None}
+    async def fake_lookup_character(self, char_name: str) -> CharacterLookupResult:
+        return CharacterLookupResult(
+            status="found",
+            member={"id": 101, "user_id": 0, "main_id": None},
+        )
 
-    monkeypatch.setattr(EqdkpClient, "find_character", fake_find_character)
+    monkeypatch.setattr(EqdkpClient, "lookup_character", fake_lookup_character)
     monkeypatch.setattr("roboToald.raid.auto_attendance.perms.can", lambda *_a, **_k: True)
     monkeypatch.setattr("roboToald.raid.auto_attendance._guild_member_for_perms", lambda _i: MagicMock())
 
