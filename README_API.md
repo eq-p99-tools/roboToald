@@ -52,7 +52,8 @@ The primary data structure returned by the API is the `account_tree` -- a dictio
     },
     "last_login": "2025-01-15T03:22:00+00:00",
     "last_login_by": "DiscordDisplayName",
-    "active_character": "CharName_or_null"
+    "active_character": "CharName_or_null",
+    "group_roles": ["Member", "Officer"]
   }
 }
 ```
@@ -73,6 +74,9 @@ Field details:
 | `last_login` | `string?` | ISO 8601 UTC timestamp of last login. Null if never logged in. Accounts with `last_login` before epoch year 2 are treated as never-logged-in. |
 | `last_login_by` | `string?` | Discord display name of the user who last logged in |
 | `active_character` | `string?` | Character name from the most recent active heartbeat session, or null if no active session |
+| `group_roles` | `string[]` | Discord role names configured on this account's SSO groups (sorted, deduplicated). Empty when the account belongs to no groups or roles cannot be resolved. Display-only metadata; access control remains server-side. |
+| `owned` | `boolean?` | When the viewer's Discord user id is known, true if they own the account |
+| `shared` | `boolean?` | When the viewer's Discord user id is known, true if they have a direct user share (and are not the owner) |
 
 Per-field “last updated” timestamps for keys and inventory are stored **only in the database** (for server-side use). They are **not** included in `full_state`, WebSocket payloads, or HTTP responses to clients.
 

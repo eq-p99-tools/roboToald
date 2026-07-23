@@ -46,6 +46,7 @@ def _account(
     id=1,
     owner_discord_user_id=None,
     shares=(),
+    groups=(),
 ):
     return SimpleNamespace(
         id=id,
@@ -57,6 +58,7 @@ def _account(
         last_login_by=last_login_by,
         owner_discord_user_id=owner_discord_user_id,
         shares=[SimpleNamespace(shared_with_discord_user_id=uid) for uid in shares],
+        groups=[SimpleNamespace(role_id=rid) for rid in groups],
     )
 
 
@@ -119,6 +121,7 @@ def test_build_account_tree_shape():
             "active_character": "Raid",
             "owned": False,
             "shared": False,
+            "group_roles": [],
         }
     }
 
@@ -141,6 +144,7 @@ def test_compute_diff_add_remove_account():
             "active_character": None,
             "owned": False,
             "shared": False,
+            "group_roles": [],
         }
     }
     ch = compute_diff(old, new)
@@ -256,3 +260,39 @@ def test_compute_diff_scalar_fields():
     assert ch["last_login"] == "b"
     assert ch["last_login_by"] == "bob"
     assert ch["active_character"] == "Z"
+
+
+def test_build_account_tree_group_roles_sorted_deduped():
+    acc = _account("main", groups=[100, 200, 100])
+    role_map = {100: "Member", 200: "Officer"}
+    tree = build_account_tree([acc], role_names_by_id=role_map)
+    assert tree["main"]["group_roles"] == ["Member", "Officer"]
+
+
+def test_build_account_tree_group_roles_omits_unresolved_ids():
+    acc = _account("main", groups=[100, 999])
+    tree = build_account_tree([acc], role_names_by_id={100: "Member"})
+    assert tree["main"]["group_roles"] == ["Member"]
+
+
+def test_build_account_tree_group_roles_empty_without_groups():
+    acc = _account("main")
+    tree = build_account_tree([acc], role_names_by_id={100: "Member"})
+    assert tree["main"]["group_roles"] == []
+
+
+def test_compute_diff_group_roles_changes():
+    base = {
+        "aliases": [],
+        "tags": [],
+        "characters": {},
+        "last_login": None,
+        "last_login_by": None,
+        "active_character": None,
+        "group_roles": ["Member"],
+    }
+    old_t = {"u": dict(base)}
+    new_t = {"u": {**base, "group_roles": ["Member", "Officer"]}}
+    ch = compute_diff(old_t, new_t)
+    assert len(ch) == 1
+    assert ch[0]["fields"]["group_roles"] == {"add": ["Officer"], "remove": []}

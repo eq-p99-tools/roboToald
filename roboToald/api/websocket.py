@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import logging
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket
@@ -68,10 +69,23 @@ def _brief_exc_info() -> str:
     return f"{type(exc).__name__}: {exc}" if exc else "unknown"
 
 
+def _group_roles_for_account(account, role_names_by_id: Mapping[int, str] | None) -> list[str]:
+    """Discord role names configured on the account's SSO groups (sorted, deduped)."""
+    if not role_names_by_id:
+        return []
+    names: set[str] = set()
+    for group in getattr(account, "groups", None) or []:
+        role_name = role_names_by_id.get(group.role_id)
+        if role_name:
+            names.add(role_name)
+    return sorted(names, key=str.casefold)
+
+
 def build_account_tree(
     accessible_accounts,
     active_characters: dict[int, str] | None = None,
     viewer_discord_user_id: int | None = None,
+    role_names_by_id: Mapping[int, str] | None = None,
 ) -> dict:
     """Build an account_tree dict from a list of SSOAccount objects.
 
@@ -107,6 +121,7 @@ def build_account_tree(
             "active_character": active_characters.get(account.id),
             "owned": is_owner,
             "shared": is_shared,
+            "group_roles": _group_roles_for_account(account, role_names_by_id),
         }
     return tree
 
@@ -151,7 +166,7 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
         fields: dict = {}
 
         # Set-based fields
-        for f in ("aliases", "tags"):
+        for f in ("aliases", "tags", "group_roles"):
             old_set = set(old_data.get(f, []))
             new_set = set(new_data.get(f, []))
             added = sorted(new_set - old_set)
@@ -347,6 +362,15 @@ class ConnectionManager:
 
     # -- Internal -------------------------------------------------------------
 
+    def _guild_role_names_by_id(self, guild_id: int) -> dict[int, str]:
+        """Build a guild role ID → Discord role name map for account-tree metadata."""
+        if not self._discord_client:
+            return {}
+        guild = self._discord_client.get_guild(guild_id)
+        if not guild:
+            return {}
+        return {role.id: role.name for role in guild.roles}
+
     def _filter_accessible(self, discord_user_id: int, guild_id: int, accounts: list) -> list:
         """Filter accounts to those accessible by the user.
 
@@ -380,10 +404,11 @@ class ConnectionManager:
 
         all_accounts = await asyncio.to_thread(sso_model.list_accounts, guild_id)
         active_characters = await asyncio.to_thread(sso_model.get_active_characters, guild_id)
+        role_names_by_id = self._guild_role_names_by_id(guild_id)
 
         async def _safe_push(conn: ClientConnection):
             try:
-                await self._push_delta(conn, guild_id, all_accounts, active_characters)
+                await self._push_delta(conn, guild_id, all_accounts, active_characters, role_names_by_id)
             except WebSocketDisconnect:
                 logger.info(
                     "WS client disconnected during delta push guild=%s user=%s",
@@ -402,13 +427,25 @@ class ConnectionManager:
 
         await asyncio.gather(*[_safe_push(conn) for conn in connections])
 
-    async def _push_delta(self, conn: ClientConnection, guild_id: int, all_accounts, active_characters: dict[int, str]):
+    async def _push_delta(
+        self,
+        conn: ClientConnection,
+        guild_id: int,
+        all_accounts,
+        active_characters: dict[int, str],
+        role_names_by_id: dict[int, str],
+    ):
         if conn.websocket.client_state != WebSocketState.CONNECTED:
             self.unregister(conn.websocket)
             return
 
         accessible = self._filter_accessible(conn.discord_user_id, guild_id, all_accounts)
-        new_tree = build_account_tree(accessible, active_characters, viewer_discord_user_id=conn.discord_user_id)
+        new_tree = build_account_tree(
+            accessible,
+            active_characters,
+            viewer_discord_user_id=conn.discord_user_id,
+            role_names_by_id=role_names_by_id,
+        )
         changes = compute_diff(conn.last_sent_state, new_tree)
 
         if changes:
@@ -422,7 +459,13 @@ class ConnectionManager:
             asyncio.to_thread(sso_model.get_active_characters, guild_id),
         )
         accessible = self._filter_accessible(discord_user_id, guild_id, all_accounts)
-        return build_account_tree(accessible, active_characters, viewer_discord_user_id=discord_user_id)
+        role_names_by_id = self._guild_role_names_by_id(guild_id)
+        return build_account_tree(
+            accessible,
+            active_characters,
+            viewer_discord_user_id=discord_user_id,
+            role_names_by_id=role_names_by_id,
+        )
 
 
 manager = ConnectionManager()

@@ -122,6 +122,7 @@ async def test_build_full_state(monkeypatch):
         characters=[],
         last_login=None,
         last_login_by=None,
+        groups=[],
     )
     monkeypatch.setattr("roboToald.api.websocket.sso_model.list_accounts", lambda gid: [acc])
     monkeypatch.setattr("roboToald.api.websocket.sso_model.get_active_characters", lambda gid: {})
@@ -144,6 +145,7 @@ async def test_push_delta_sends_when_tree_changes(monkeypatch):
         characters=[],
         last_login=None,
         last_login_by=None,
+        groups=[],
     )
     conn = ClientConnection(
         websocket=ws,
@@ -157,6 +159,7 @@ async def test_push_delta_sends_when_tree_changes(monkeypatch):
                 "last_login": None,
                 "last_login_by": None,
                 "active_character": None,
+                "group_roles": [],
             }
         },
     )
@@ -171,8 +174,9 @@ async def test_push_delta_sends_when_tree_changes(monkeypatch):
         characters=[],
         last_login=None,
         last_login_by=None,
+        groups=[],
     )
-    await mgr._push_delta(conn, 1, [acc2], {})
+    await mgr._push_delta(conn, 1, [acc2], {}, {})
     ws.send_json.assert_awaited()
     call = ws.send_json.await_args[0][0]
     assert call["type"] == "delta"
@@ -192,6 +196,7 @@ async def test_push_delta_skips_when_no_changes(monkeypatch):
         "last_login": None,
         "last_login_by": None,
         "active_character": None,
+        "group_roles": [],
     }
     acc = SimpleNamespace(
         id=1,
@@ -201,12 +206,13 @@ async def test_push_delta_skips_when_no_changes(monkeypatch):
         characters=[],
         last_login=None,
         last_login_by=None,
+        groups=[],
     )
     conn = ClientConnection(websocket=ws, guild_id=1, discord_user_id=9, last_sent_state={"alpha": dict(blob)})
     monkeypatch.setattr("roboToald.api.websocket.sso_model.list_accounts", lambda gid: [acc])
     monkeypatch.setattr("roboToald.api.websocket.sso_model.get_active_characters", lambda gid: {})
     monkeypatch.setattr(mgr, "_filter_accessible", lambda uid, gid, accounts: accounts)
-    await mgr._push_delta(conn, 1, [acc], {})
+    await mgr._push_delta(conn, 1, [acc], {}, {})
     ws.send_json.assert_not_called()
 
 
@@ -243,6 +249,7 @@ async def test_notify_guild_entry_immediate_pushes_delta(monkeypatch):
         characters=[],
         last_login=None,
         last_login_by=None,
+        groups=[],
     )
     conn = ClientConnection(websocket=ws, guild_id=7, discord_user_id=8, last_sent_state={})
     mgr.register(conn)

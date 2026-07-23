@@ -92,6 +92,7 @@ def _account(real_user: str, *, tags=(), characters=(), id=1) -> SimpleNamespace
         last_login_by=None,
         owner_discord_user_id=None,
         shares=[],
+        groups=[],
     )
 
 
