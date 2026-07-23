@@ -27,7 +27,12 @@ fi
 if [ -f "$STATE_FILE" ]; then
     saved_commit="$(grep '^commit=' "$STATE_FILE" | cut -d= -f2- || true)"
     saved_branch="$(grep '^branch=' "$STATE_FILE" | cut -d= -f2- || true)"
+    saved_database_backup="$(grep '^database_backup=' "$STATE_FILE" | cut -d= -f2- || true)"
     log "Saved source state: commit=${saved_commit:-?} branch=${saved_branch:-?}"
+    if [ -n "$saved_database_backup" ]; then
+        log "Saved database backup: $saved_database_backup"
+        log "(Database restoration is manual; rollback only restores the image.)"
+    fi
     log "(Working tree left as-is. To inspect the rolled-back source: git show $saved_commit)"
 else
     log "No state file '$STATE_FILE' found (continuing — only restoring image)."
