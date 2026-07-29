@@ -46,7 +46,7 @@
 - `/history character name` with ambiguous match — shows "multiple characters" list
 - `/history character name` with no eqdkp user — falls through to item search
 - `/history item name` — shows item loot history with 60-day avg
-- **Autocomplete** on character name
+- **Autocomplete** on character name and item name
 
 ## /reload
 
@@ -66,6 +66,7 @@
 - `/loot add` — character autocomplete
 - `/fte add` — character autocomplete
 - `/history character` — character autocomplete
+- `/history item` — item autocomplete (full items catalog)
 
 ## Permissions
 

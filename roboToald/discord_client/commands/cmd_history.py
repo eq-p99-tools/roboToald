@@ -202,7 +202,7 @@ async def character(
 @history.sub_command(description="Item loot history and 60-day average")
 async def item(
     inter: disnake.ApplicationCommandInteraction,
-    name: str = disnake.ext.commands.Param(description="Item name"),
+    name: str = disnake.ext.commands.Param(description="Item name", autocomplete=True),
 ):
     guild_id = inter.guild.id
     await inter.response.defer(ephemeral=True)
@@ -266,3 +266,14 @@ async def _ac_character(inter: disnake.ApplicationCommandInteraction, query: str
         if query:
             q = q.filter(sa.func.lower(Character.name).startswith(query))
         return {c.name: c.name for c in q.limit(25).all()}
+
+
+@item.autocomplete("name")
+async def _ac_item(inter: disnake.ApplicationCommandInteraction, query: str):
+    query = query.strip().lower()
+    guild_id = inter.guild.id
+    with get_raid_session(guild_id) as session:
+        q = session.query(Item).filter(sa.func.length(Item.name) > 0).order_by(Item.name)
+        if query:
+            q = q.filter(sa.func.lower(Item.name).contains(query))
+        return {i.name: i.name for i in q.limit(25).all()}
