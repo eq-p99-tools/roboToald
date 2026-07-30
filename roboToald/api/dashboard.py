@@ -151,8 +151,21 @@ def _histogram_client_versions(connections: list[dict]) -> list[dict[str, int | 
 # -- Auth routes --------------------------------------------------------------
 
 
+def _build_discord_authorize_url(state: str, *, force_consent: bool = False) -> str:
+    params = {
+        "client_id": config.DISCORD_OAUTH_CLIENT_ID,
+        "redirect_uri": _oauth_redirect_uri(),
+        "response_type": "code",
+        "scope": "identify",
+        "state": state,
+    }
+    if not force_consent:
+        params["prompt"] = "none"
+    return f"{DISCORD_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+
+
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: str = ""):
+async def login_page(request: Request, error: str = "", consent: str = ""):
     if not _dashboard_enabled():
         return HTMLResponse(
             "<h1>Dashboard disabled</h1>"
@@ -164,16 +177,7 @@ async def login_page(request: Request, error: str = ""):
         return RedirectResponse("/admin", status_code=303)
 
     state = secrets.token_urlsafe(32)
-    params = urllib.parse.urlencode(
-        {
-            "client_id": config.DISCORD_OAUTH_CLIENT_ID,
-            "redirect_uri": _oauth_redirect_uri(),
-            "response_type": "code",
-            "scope": "identify",
-            "state": state,
-        }
-    )
-    authorize_url = f"{DISCORD_AUTHORIZE_URL}?{params}"
+    authorize_url = _build_discord_authorize_url(state, force_consent=(consent == "1"))
     response = templates.TemplateResponse(
         request,
         "login.html",
@@ -195,6 +199,8 @@ async def login_page(request: Request, error: str = ""):
 
 @router.get("/callback")
 async def oauth_callback(request: Request, code: str = "", error: str = "", state: str = ""):
+    if error in ("consent_required", "login_required"):
+        return RedirectResponse("/admin/login?consent=1", status_code=303)
     if error or not code:
         return RedirectResponse("/admin/login?error=Discord+auth+cancelled", status_code=303)
 
