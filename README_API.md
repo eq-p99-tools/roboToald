@@ -209,13 +209,17 @@ The server processes the request in this order:
 
 2. **Access key lookup.** Look up `password` in `SSOAccessKey` table. If not found, log an audit entry and reject with 401.
 
-3. **Client version check.** If the guild has `min_client_version` set, compare `X-Client-Version` header (defaults to `0.0.0` if absent) using semver-ish parsing (dot-separated integers; pre-release suffix sorts below release). If below minimum, reject with 422 and the `client_update_message` (or a default message).
+3. **SSO enabled check.** If the access key's guild has `enable_sso = false` in `batphone.ini`, log an audit entry (`SSO disabled`) and reject with 401.
 
-4. **Client settings validation.** If `client_settings` is present, check guild policies:
+4. **Revocation check.** If the user's access is revoked, log an audit entry and reject with 401.
+
+5. **Client version check.** If the guild has `min_client_version` set, compare `X-Client-Version` header (defaults to `0.0.0` if absent) using semver-ish parsing (dot-separated integers; pre-release suffix sorts below release). If below minimum, reject with 422 and the `client_update_message` (or a default message).
+
+6. **Client settings validation.** If `client_settings` is present, check guild policies:
    - If `require_log` is set and `log_enabled` is `false`: reject with 422.
    - If `block_rustle` is set and `rustle_present` is `true` (and user lacks exempt roles): reject with 422.
 
-5. **Username resolution.** Resolve `username` to an account by trying each method in order:
+7. **Username resolution.** Resolve `username` to an account by trying each method in order:
    1. Direct account name (`SSOAccount.real_user`, case-insensitive)
    2. Character name (`SSOAccountCharacter.name`, case-insensitive)
    3. Alias (`SSOAccountAlias.alias`)
@@ -223,9 +227,9 @@ The server processes the request in this order:
    5. Dynamic tag -- parse zone prefix and class suffix, query for characters of the matching class whose `bind_location` or `park_location` is in the zone key set, joined to accounts with `last_login` older than the inactivity threshold. Sort by the same login-age + level key. If no matches, raise 410.
    - If no method resolves, reject with 400.
 
-6. **RBAC check.** Verify the Discord user has access to the resolved account (see RBAC Model above). If not, log an audit entry and reject with 401.
+8. **RBAC check.** Verify the Discord user has access to the resolved account (see RBAC Model above). If not, log an audit entry and reject with 401.
 
-7. **Success.** Update `last_login` and `last_login_by` on the account. Notify all WebSocket clients for the guild (triggers delta pushes). Log a success audit entry. Return the real credentials.
+9. **Success.** Update `last_login` and `last_login_by` on the account. Notify all WebSocket clients for the guild (triggers delta pushes). Log a success audit entry. Return the real credentials.
 
 ### Tag Sort Algorithm
 
@@ -323,8 +327,10 @@ Must be the first message, sent within 15 seconds of connection. Must be valid J
 2. Check `type` is `"auth"` and `access_key` is present. If not, close with 4002.
 3. Look up access key. If invalid, close with 4003.
 4. Wait for Discord client to be ready (up to 30 seconds). If still not ready, close with 4004.
-5. Check `min_client_version`. If below minimum, close with 4010.
-6. Validate `client_settings` against guild policies. If rejected, close with 4011.
+5. Check access revocation. If revoked, close with 4003.
+6. Check `enable_sso` for the access key's guild. If disabled, close with 4003 (`Authentication failed`).
+7. Check `min_client_version`. If below minimum, close with 4010.
+8. Validate `client_settings` against guild policies. If rejected, close with 4011.
 
 Before closing, the server sends an error message: `{"type": "error", "detail": "<reason>"}`.
 
@@ -417,7 +423,7 @@ RBAC is checked: the message is silently ignored if the user doesn't have access
 
 #### Login Auth
 
-Performs the same credential lookup as `POST /auth` but over the existing WebSocket connection, avoiding a new TCP/TLS handshake per login. The access key, rate limiting, revocation, client version, and client settings are already validated at WebSocket connection time. The server only performs account resolution, RBAC check, and audit logging.
+Performs the same credential lookup as `POST /auth` but over the existing WebSocket connection, avoiding a new TCP/TLS handshake per login. The access key, rate limiting, revocation, client version, and client settings are already validated at WebSocket connection time. Each `login_auth` request also re-checks that `enable_sso` is still true for the guild. The server then performs account resolution, RBAC check, and audit logging.
 
 ```json
 {

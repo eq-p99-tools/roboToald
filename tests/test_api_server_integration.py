@@ -60,12 +60,15 @@ def test_auth_invalid_access_key(client, monkeypatch):
 
 
 def test_auth_success(client, monkeypatch):
+    from roboToald import config
+
     key = MagicMock()
     key.guild_id = 1
     key.discord_user_id = 99
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a: False)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_sso": True})
 
     def fake_perform(**kwargs):
         return LoginAuthResult(success=True, real_user="realuser", real_pass="realpass")
@@ -76,6 +79,7 @@ def test_auth_success(client, monkeypatch):
     data = r.json()
     assert data["real_user"] == "realuser"
     assert data["real_pass"] == "realpass"
+    config.GUILD_SETTINGS.pop(1, None)
 
 
 def test_auth_min_client_version_422(client, monkeypatch):
@@ -90,7 +94,7 @@ def test_auth_min_client_version_422(client, monkeypatch):
     monkeypatch.setitem(
         config.GUILD_SETTINGS,
         777,
-        {"min_client_version": "2.0.0", "client_update_message": "Please update"},
+        {"min_client_version": "2.0.0", "client_update_message": "Please update", "enable_sso": True},
     )
     try:
         r = client.post(
@@ -174,6 +178,8 @@ def test_auth_rate_limited_returns_401(client, monkeypatch):
 
 
 def test_auth_revoked_returns_401(client, monkeypatch):
+    from roboToald import config
+
     key = MagicMock()
     key.guild_id = 1
     key.discord_user_id = 2
@@ -181,17 +187,22 @@ def test_auth_revoked_returns_401(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: True)
     monkeypatch.setattr("roboToald.api.server.sso_model.create_audit_log", lambda **kw: None)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_sso": True})
     r = client.post("/auth", json={"username": "u", "password": "k"})
     assert r.status_code == 401
+    config.GUILD_SETTINGS.pop(1, None)
 
 
 def test_auth_tag_empty_returns_410(client, monkeypatch):
+    from roboToald import config
+
     key = MagicMock()
     key.guild_id = 1
     key.discord_user_id = 3
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_sso": True})
 
     def fail_tag(**kwargs):
         return LoginAuthResult(success=False, error_detail="tag empty", error_status=410)
@@ -199,15 +210,19 @@ def test_auth_tag_empty_returns_410(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server._perform_login_auth", fail_tag)
     r = client.post("/auth", json={"username": "t", "password": "k"})
     assert r.status_code == 410
+    config.GUILD_SETTINGS.pop(1, None)
 
 
 def test_auth_character_not_found_returns_400(client, monkeypatch):
+    from roboToald import config
+
     key = MagicMock()
     key.guild_id = 1
     key.discord_user_id = 4
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_sso": True})
 
     def not_found(**kwargs):
         return LoginAuthResult(success=False, error_detail="Character not found", error_status=400)
@@ -215,6 +230,7 @@ def test_auth_character_not_found_returns_400(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server._perform_login_auth", not_found)
     r = client.post("/auth", json={"username": "nope", "password": "k"})
     assert r.status_code == 400
+    config.GUILD_SETTINGS.pop(1, None)
 
 
 def test_auth_client_settings_rejected_422(client, monkeypatch):
@@ -226,7 +242,7 @@ def test_auth_client_settings_rejected_422(client, monkeypatch):
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
-    monkeypatch.setitem(config.GUILD_SETTINGS, 660, {"require_log": True})
+    monkeypatch.setitem(config.GUILD_SETTINGS, 660, {"require_log": True, "enable_sso": True})
     try:
         r = client.post(
             "/auth",
@@ -238,12 +254,44 @@ def test_auth_client_settings_rejected_422(client, monkeypatch):
         config.GUILD_SETTINGS.pop(660, None)
 
 
+def test_auth_rejected_when_enable_sso_false(client, monkeypatch):
+    from roboToald import config
+
+    key = MagicMock()
+    key.guild_id = 503
+    key.discord_user_id = 99
+    perform_called = {"value": False}
+    monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
+    monkeypatch.setattr("roboToald.api.server.sso_model.get_access_key_by_key", lambda k: key)
+    monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 503, {"enable_sso": False})
+    audit: list[dict] = []
+    monkeypatch.setattr("roboToald.api.server.sso_model.create_audit_log", lambda **kw: audit.append(kw))
+
+    def fake_perform(**kwargs):
+        perform_called["value"] = True
+        return LoginAuthResult(success=True, real_user="realuser", real_pass="realpass")
+
+    monkeypatch.setattr("roboToald.api.server._perform_login_auth", fake_perform)
+    try:
+        r = client.post("/auth", json={"username": "tagname", "password": "goodkey"})
+        assert r.status_code == 401
+        assert r.json()["detail"] == "Authentication failed"
+        assert perform_called["value"] is False
+        assert audit and audit[0]["details"] == "SSO disabled"
+    finally:
+        config.GUILD_SETTINGS.pop(503, None)
+
+
 def test_auth_success_with_real_sso_and_discord_roles(client, monkeypatch, sso_session):
+    from roboToald import config
     from roboToald.db.models import sso as sso
 
     GUILD_ID = 424242
     ROLE_ID = 91001
     DISCORD_UID = 88001
+
+    monkeypatch.setitem(config.GUILD_SETTINGS, GUILD_ID, {"enable_sso": True})
 
     sso.create_account_group(GUILD_ID, "team", role_id=ROLE_ID)
     sso.create_account(GUILD_ID, "mainuser", "secretpw", group="team")
@@ -273,3 +321,4 @@ def test_auth_success_with_real_sso_and_discord_roles(client, monkeypatch, sso_s
         assert data["real_pass"] == "secretpw"
     finally:
         del client.app.state.discord_client
+        config.GUILD_SETTINGS.pop(GUILD_ID, None)

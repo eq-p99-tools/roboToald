@@ -19,6 +19,10 @@ def _make_key(guild_id: int = 1, discord_user_id: int = 99):
 
 
 def _patch_ws_auth_ok(monkeypatch, guild_id: int = 1, discord_user_id: int = 99):
+    from roboToald import config
+
+    existing = config.GUILD_SETTINGS.get(guild_id, {})
+    monkeypatch.setitem(config.GUILD_SETTINGS, guild_id, {**existing, "enable_sso": True})
     monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
     monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
     k = _make_key(guild_id, discord_user_id)
@@ -98,6 +102,47 @@ def test_ws_auth_revoked(client, monkeypatch):
         assert "revoked" in msg["detail"].lower()
 
 
+def test_ws_auth_rejected_when_enable_sso_false(client, monkeypatch):
+    from roboToald import config
+
+    monkeypatch.setattr("roboToald.api.server.sso_model.is_ip_rate_limited", lambda *a, **k: False)
+    k = _make_key(guild_id=501, discord_user_id=99)
+    monkeypatch.setattr(
+        "roboToald.api.server.sso_model.get_access_key_by_key", lambda access: k if access == "good" else None
+    )
+    monkeypatch.setattr("roboToald.api.server.sso_model.is_user_access_revoked", lambda *a, **k: False)
+    audit: list[dict] = []
+    monkeypatch.setattr("roboToald.api.server.sso_model.create_audit_log", lambda **kw: audit.append(kw))
+    monkeypatch.setitem(config.GUILD_SETTINGS, 501, {"enable_sso": False})
+    try:
+        with client.websocket_connect("/ws/accounts") as ws:
+            ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "authentication failed" in msg["detail"].lower()
+    finally:
+        config.GUILD_SETTINGS.pop(501, None)
+    assert audit and audit[0]["details"] == "SSO disabled (WebSocket)"
+
+
+def test_ws_login_auth_blocked_when_enable_sso_false_mid_session(client, monkeypatch):
+    from roboToald import config
+
+    _patch_ws_auth_ok(monkeypatch, guild_id=502)
+
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        assert ws.receive_json()["type"] == "full_state"
+        monkeypatch.setitem(config.GUILD_SETTINGS, 502, {"enable_sso": False})
+        ws.send_json({"type": "login_auth", "request_id": "req-disabled", "username": "tagname"})
+        resp = ws.receive_json()
+        assert resp["type"] == "login_auth_response"
+        assert resp["request_id"] == "req-disabled"
+        assert resp["status"] == 401
+        assert resp["error"] == "Authentication failed"
+    config.GUILD_SETTINGS.pop(502, None)
+
+
 def test_ws_auth_min_client_version_rejected(client, monkeypatch):
     from roboToald import config
 
@@ -105,7 +150,7 @@ def test_ws_auth_min_client_version_rejected(client, monkeypatch):
     monkeypatch.setitem(
         config.GUILD_SETTINGS,
         888,
-        {"min_client_version": "2.0.0", "client_update_message": "Please update your client"},
+        {"min_client_version": "2.0.0", "client_update_message": "Please update your client", "enable_sso": True},
     )
     try:
         with client.websocket_connect("/ws/accounts") as ws:
@@ -121,7 +166,7 @@ def test_ws_auth_client_settings_rejected(client, monkeypatch):
     from roboToald import config
 
     _patch_ws_auth_ok(monkeypatch, guild_id=889)
-    monkeypatch.setitem(config.GUILD_SETTINGS, 889, {"require_log": True})
+    monkeypatch.setitem(config.GUILD_SETTINGS, 889, {"require_log": True, "enable_sso": True})
     try:
         with client.websocket_connect("/ws/accounts") as ws:
             ws.send_json(

@@ -64,7 +64,7 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `enable_batphone` | bool | `false` | Enable `/batphone` |
 | `enable_raidtarget` | bool | `false` | Enable `/raidtarget` |
 | `enable_raid` | bool | `false` | Enable raid/event commands and handlers; requires `[raid.<id>]` and `[eqdkp.<id>]` with `url` and `api_key` |
-| `enable_sso` | bool | `false` | Enable `/sso`, `/sso_admin`, and `/sso_owner` |
+| `enable_sso` | bool | `false` | Enable SSO for this guild: `/sso`, `/sso_admin`, `/sso_owner`, the admin dashboard, and API login (`POST /auth`, `WS /ws/accounts`, `login_auth`). Requires roboToald restart/reload to take effect. |
 | `enable_ds` | bool | `false` | Enable `/ds` |
 | `sso_admin_roles` | comma-separated ints | `""` | Discord role IDs that can use `/sso_admin` |
 | `ds_tod_channel` | int | `0` | Channel for DS time-of-death and timer messages |

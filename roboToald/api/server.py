@@ -350,6 +350,11 @@ class LoginAuthResult:
     error_status: int = 401
 
 
+def _is_sso_enabled_for_guild(guild_id: int) -> bool:
+    """True when SSO login is enabled for this guild (``enable_sso`` in ``batphone.ini``)."""
+    return bool(config.GUILD_SETTINGS.get(guild_id, {}).get("enable_sso"))
+
+
 def _perform_login_auth(
     username: str,
     guild_id: int,
@@ -368,6 +373,23 @@ def _perform_login_auth(
 
     *auth_source* is ``"http"`` or ``"websocket"`` for server logs.
     """
+    if not _is_sso_enabled_for_guild(guild_id):
+        sso_model.create_audit_log(
+            username=username,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=None,
+            guild_id=guild_id,
+            details="SSO disabled",
+            client_version=client_ver,
+        )
+        return LoginAuthResult(
+            success=False,
+            error_detail="Authentication failed",
+            error_status=401,
+        )
+
     try:
         account = sso_model.find_account_by_username(username, guild_id, inactive_only=True)
     except sso_model.SSOTagTemporarilyEmptyError:
@@ -538,6 +560,20 @@ async def authenticate(auth_data: AuthRequest, request: Request):
     discord_user_id = access_key.discord_user_id
     guild_id = access_key.guild_id
 
+    if not _is_sso_enabled_for_guild(guild_id):
+        logger.warning(f"Authentication failed: SSO disabled for guild {guild_id}")
+        sso_model.create_audit_log(
+            username=auth_data.username,
+            ip_address=client_ip,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=None,
+            guild_id=guild_id,
+            details="SSO disabled",
+            client_version=client_ver,
+        )
+        raise_auth_failed()
+
     if sso_model.is_user_access_revoked(guild_id, discord_user_id):
         logger.warning(f"Authentication failed: Access revoked for user {discord_user_id}")
         sso_model.create_audit_log(
@@ -704,6 +740,23 @@ async def websocket_accounts(websocket: WebSocket):
     if await asyncio.to_thread(sso_model.is_user_access_revoked, guild_id, discord_user_id):
         logger.warning("WebSocket rejected: access revoked | %s", session_ctx)
         await _ws_close(websocket, 4003, "Access revoked")
+        return
+
+    # --- Check SSO enabled for guild ---
+    if not _is_sso_enabled_for_guild(guild_id):
+        logger.warning("WebSocket rejected: SSO disabled | %s", session_ctx)
+        await asyncio.to_thread(
+            sso_model.create_audit_log,
+            username="ws_auth",
+            ip_address=client_host,
+            success=False,
+            discord_user_id=discord_user_id,
+            account_id=None,
+            guild_id=guild_id,
+            details="SSO disabled (WebSocket)",
+            client_version=ws_client_ver,
+        )
+        await _ws_close(websocket, 4003, "Authentication failed")
         return
 
     # --- Check client version against guild minimum ---

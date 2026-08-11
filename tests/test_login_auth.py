@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from roboToald.api.server import LoginAuthResult, _perform_login_auth
 from roboToald.db.models import sso as sso_model
 
@@ -12,6 +14,13 @@ from roboToald.db.models import sso as sso_model
 GUILD_ID = 101
 DISCORD_UID = 555
 CLIENT_IP = "198.51.100.1"
+
+
+@pytest.fixture(autouse=True)
+def enable_sso_for_guild(monkeypatch):
+    from roboToald import config
+
+    monkeypatch.setitem(config.GUILD_SETTINGS, GUILD_ID, {"enable_sso": True})
 
 
 def _account(
@@ -77,6 +86,27 @@ def test_perform_login_auth_rbac_denied(monkeypatch):
     assert r.success is False
     assert r.error_status == 401
     assert audit and audit[0]["details"] == "Access denied"
+
+
+def test_perform_login_auth_rejected_when_enable_sso_false(monkeypatch):
+    from roboToald import config
+
+    monkeypatch.setitem(config.GUILD_SETTINGS, GUILD_ID, {"enable_sso": False})
+    audit: list[dict] = []
+    monkeypatch.setattr("roboToald.api.server.sso_model.create_audit_log", lambda **kw: audit.append(kw))
+    r = _perform_login_auth(
+        "realuser",
+        GUILD_ID,
+        DISCORD_UID,
+        CLIENT_IP,
+        "2.0.0",
+        None,
+        auth_source="http",
+    )
+    assert r.success is False
+    assert r.error_status == 401
+    assert r.error_detail == "Authentication failed"
+    assert audit and audit[0]["details"] == "SSO disabled"
 
 
 def test_perform_login_auth_success_via_account_name(monkeypatch):
