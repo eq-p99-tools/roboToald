@@ -48,6 +48,8 @@ async def on_ready():
     logger.info("Loaded timers from DB.")
     await commands.cmd_ds.restore_spawn_overrides()
     logger.info("Restored DS spawn overrides from timers.")
+    await commands.cmd_ds.reconcile_ds_active_roles()
+    logger.info("Reconciled DS active roles.")
     await commands.cmd_ds.schedule_messages()
     logger.info("Scheduled DS messages.")
     install_discord_dm_handler(DISCORD_CLIENT, config.ERROR_DM_USER_ID)

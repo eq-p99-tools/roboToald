@@ -87,6 +87,16 @@ async def rectify_ds_active_role(guild: disnake.Guild) -> None:
             )
 
 
+async def reconcile_ds_active_roles() -> None:
+    """Rectify ds_active_role membership for all DS-enabled guilds (e.g. on startup)."""
+    for guild_id in DS_GUILDS:
+        guild = base.DISCORD_CLIENT.get_guild(guild_id)
+        if guild is None:
+            logger.warning("DS guild %s not available for active role reconcile", guild_id)
+            continue
+        await rectify_ds_active_role(guild)
+
+
 async def restore_spawn_overrides():
     """Derive SPAWN_OVERRIDE from persisted DS Spawn timers on startup."""
     for guild_id in DS_GUILDS:
