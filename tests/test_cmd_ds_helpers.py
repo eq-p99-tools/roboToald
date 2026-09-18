@@ -126,6 +126,28 @@ async def test_rectify_ds_active_role_noop_when_threshold_zero(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reconcile_ds_active_roles_runs_per_ds_guild(monkeypatch):
+    guild_a = MagicMock()
+    guild_a.id = 10
+    guild_b = MagicMock()
+    guild_b.id = 20
+    monkeypatch.setattr(cmd_ds, "DS_GUILDS", [10, 20, 30])
+    monkeypatch.setattr(
+        cmd_ds.base.DISCORD_CLIENT,
+        "get_guild",
+        lambda gid: {10: guild_a, 20: guild_b}.get(gid),
+    )
+    called = []
+
+    async def fake_rectify(guild):
+        called.append(guild.id)
+
+    monkeypatch.setattr(cmd_ds, "rectify_ds_active_role", fake_rectify)
+    await cmd_ds.reconcile_ds_active_roles()
+    assert called == [10, 20]
+
+
+@pytest.mark.asyncio
 async def test_rectify_ds_active_role_adds_and_removes(monkeypatch):
     guild = MagicMock()
     guild.id = 42
