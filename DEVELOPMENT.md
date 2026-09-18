@@ -71,6 +71,9 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `tod_channel_id` | int | `0` | Text channel where the login proxy relays FTE lines and `!tod` raid death messages from EQ logs |
 | `ds_schedule_channel` | int | `0` | Channel for DS late-shift availability messages |
 | `ds_admin_role` | int | `0` | Role that can use `/ds adjust` and `/ds set_spawn` |
+| `ds_active_role` | int | `0` | Role auto-granted/removed from rolling `points_earned` after `/ds tod`. `0` disables. Bot needs **Manage Roles** and a higher role than this one. |
+| `ds_active_role_threshold` | int | `0` | Minimum SKP earned in the rolling window to hold `ds_active_role`. Feature is off unless this is `> 0` and `ds_active_role` is set. Uses earned ledger only (urn spends do not count; negative adjusts do). |
+| `ds_active_role_days` | int | `14` | Rolling window length in days for `ds_active_role` eligibility |
 | `wakeup_channels` | `text:voice,...` | *(none)* | Pairs of text:voice channel IDs for wakeup triggers |
 | `wakeup_exclusions` | comma-separated | `""` | Skip wakeup if message contains any of these strings |
 | `raidtargets_endpoint` | url | *(none)* | JSON endpoint for raid target data |

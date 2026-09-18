@@ -211,3 +211,40 @@ def test_get_points_earned_recently_filters_window(points_session):
     ids = {r.user_id for r in rows}
     assert 31 in ids
     assert 30 not in ids
+
+
+@freeze_time("2024-04-15T12:00:00")
+def test_get_rolling_points_earned_sums_window_only(points_session):
+    old = datetime.datetime(2024, 3, 1, 10, 0, 0)
+    recent = datetime.datetime(2024, 4, 10, 10, 0, 0)
+    points_session.add_all(
+        [
+            # Outside window — ignored for rolling sum
+            points_model.PointsEarned(user_id=40, guild_id=80, points=1000, time=old),
+            # Inside window
+            points_model.PointsEarned(user_id=40, guild_id=80, points=100, time=recent),
+            points_model.PointsEarned(user_id=40, guild_id=80, points=50, time=recent),
+            # Negative adjust counts
+            points_model.PointsEarned(user_id=41, guild_id=80, points=200, time=recent),
+            points_model.PointsEarned(user_id=41, guild_id=80, points=-50, time=recent),
+            # Other guild ignored
+            points_model.PointsEarned(user_id=40, guild_id=81, points=999, time=recent),
+            # Spends must not affect rolling earned
+            points_model.PointsSpent(user_id=40, guild_id=80, points=9999, time=recent),
+        ]
+    )
+    points_session.commit()
+
+    rolling = points_model.get_rolling_points_earned(80, days=14)
+    assert rolling[40] == 150
+    assert rolling[41] == 150
+    assert 42 not in rolling
+
+
+@freeze_time("2024-04-15T12:00:00")
+def test_get_rolling_points_earned_respects_days(points_session):
+    t = datetime.datetime(2024, 4, 10, 10, 0, 0)
+    points_session.add(points_model.PointsEarned(user_id=50, guild_id=90, points=10, time=t))
+    points_session.commit()
+    assert points_model.get_rolling_points_earned(90, days=14)[50] == 10
+    assert points_model.get_rolling_points_earned(90, days=1) == {}

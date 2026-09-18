@@ -218,6 +218,23 @@ def get_points_earned_recently(guild_id: int, days: int = 14) -> List[sqlalchemy
     return earned
 
 
+def get_rolling_points_earned(guild_id: int, days: int = 14) -> dict[int, int]:
+    """Sum points_earned in the last ``days`` per user (spends are not included).
+
+    Negative adjustments in the window reduce the total. Users with no rows in the
+    window are omitted (treat missing as 0 when checking eligibility).
+    """
+    with base.get_session() as session:
+        start = datetime.datetime.now() - datetime.timedelta(days=days)
+        earned = session.query(PointsEarned.user_id, sqlalchemy.func.sum(PointsEarned.points).label("points"))
+        earned = earned.group_by(PointsEarned.user_id)
+        earned = earned.filter_by(guild_id=guild_id)
+        earned = earned.filter(PointsEarned.time >= start)
+        earned = earned.filter(PointsEarned.user_id != 0)
+        rows = earned.all()
+    return {int(row.user_id): int(row.points) for row in rows}
+
+
 def get_points_earned_by_member(user_id: int, guild_id: int) -> list[PointsEarned]:
     with base.get_session() as session:
         earned = session.query(PointsEarned).filter_by(user_id=user_id, guild_id=guild_id).all()
