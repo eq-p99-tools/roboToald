@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -96,3 +97,71 @@ def test_cmd_ds_close_event_writes_stop_row(points_session, monkeypatch):
     assert rows[1].event == constants.Event.OUT
     assert rows[1].start_id == start.id
     assert rows[1].active is False
+
+
+@pytest.mark.asyncio
+async def test_rectify_ds_active_role_noop_when_disabled(monkeypatch):
+    guild = MagicMock()
+    guild.id = 1
+    monkeypatch.setitem(
+        config.GUILD_SETTINGS,
+        1,
+        {"ds_active_role": 0, "ds_active_role_threshold": 100, "ds_active_role_days": 14},
+    )
+    await cmd_ds.rectify_ds_active_role(guild)
+    guild.get_role.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_rectify_ds_active_role_noop_when_threshold_zero(monkeypatch):
+    guild = MagicMock()
+    guild.id = 1
+    monkeypatch.setitem(
+        config.GUILD_SETTINGS,
+        1,
+        {"ds_active_role": 55, "ds_active_role_threshold": 0, "ds_active_role_days": 14},
+    )
+    await cmd_ds.rectify_ds_active_role(guild)
+    guild.get_role.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_rectify_ds_active_role_adds_and_removes(monkeypatch):
+    guild = MagicMock()
+    guild.id = 42
+    role = MagicMock()
+    role.id = 55
+
+    above = MagicMock()
+    above.id = 1
+    above.roles = []
+    above.add_roles = AsyncMock()
+    above.remove_roles = AsyncMock()
+
+    below = MagicMock()
+    below.id = 2
+    below.roles = [role]
+    below.add_roles = AsyncMock()
+    below.remove_roles = AsyncMock()
+
+    role.members = [below]
+    guild.get_role.return_value = role
+    guild.get_member.side_effect = lambda uid: {1: above, 2: below}.get(uid)
+
+    monkeypatch.setitem(
+        config.GUILD_SETTINGS,
+        42,
+        {"ds_active_role": 55, "ds_active_role_threshold": 100, "ds_active_role_days": 14},
+    )
+    monkeypatch.setattr(
+        cmd_ds.points_model,
+        "get_rolling_points_earned",
+        lambda guild_id, days=14: {1: 150, 2: 20},
+    )
+
+    await cmd_ds.rectify_ds_active_role(guild)
+
+    above.add_roles.assert_awaited_once()
+    above.remove_roles.assert_not_called()
+    below.remove_roles.assert_awaited_once()
+    below.add_roles.assert_not_called()

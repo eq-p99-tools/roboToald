@@ -82,6 +82,12 @@ ds_tod_channel = <channel_id>
 tod_channel_id = 0
 ds_schedule_channel = <channel_id>
 ds_admin_role = <role_id>
+# Optional: auto add/remove a role from 14-day rolling points_earned after /ds tod.
+# Off unless ds_active_role is set and ds_active_role_threshold > 0.
+# Bot needs Manage Roles and a higher role than ds_active_role.
+#ds_active_role = <role_id>
+#ds_active_role_threshold = 500
+#ds_active_role_days = 14
 enable_sso = true
 sso_admin_roles = <role_id1>, <role_id2>
 # Raid (batphone-bot) features:

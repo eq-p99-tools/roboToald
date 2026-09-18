@@ -35,6 +35,58 @@ def get_effective_pop_time(guild_id: int) -> datetime.datetime:
     return points_model.get_last_pop_time()
 
 
+async def rectify_ds_active_role(guild: disnake.Guild) -> None:
+    """Silently add/remove ds_active_role based on rolling points_earned.
+
+    Enabled only when ``ds_active_role`` is set and ``ds_active_role_threshold`` > 0.
+    Uses earned ledger only (urn spends in points_spent do not count). Failures are
+    logged and never raised to the caller.
+    """
+    settings = config.GUILD_SETTINGS.get(guild.id, {})
+    role_id = settings.get("ds_active_role") or 0
+    threshold = settings.get("ds_active_role_threshold") or 0
+    days = settings.get("ds_active_role_days") or 14
+    if role_id <= 0 or threshold <= 0:
+        return
+
+    role = guild.get_role(role_id)
+    if role is None:
+        logger.warning("ds_active_role %s not found in guild %s", role_id, guild.id)
+        return
+
+    try:
+        rolling = points_model.get_rolling_points_earned(guild.id, days=days)
+    except Exception:
+        logger.exception("Failed to load rolling points for guild %s", guild.id)
+        return
+
+    candidate_ids = set(rolling.keys()) | {member.id for member in role.members}
+    for user_id in candidate_ids:
+        member = guild.get_member(user_id)
+        if member is None:
+            continue
+        earned = rolling.get(user_id, 0)
+        has_role = role in member.roles
+        try:
+            if earned >= threshold and not has_role:
+                await member.add_roles(role, reason="DS active role: rolling SKP threshold met")
+            elif earned < threshold and has_role:
+                await member.remove_roles(role, reason="DS active role: rolling SKP below threshold")
+        except disnake.Forbidden:
+            logger.warning(
+                "Missing permission to manage ds_active_role %s for member %s in guild %s",
+                role_id,
+                user_id,
+                guild.id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to update ds_active_role for member %s in guild %s",
+                user_id,
+                guild.id,
+            )
+
+
 async def restore_spawn_overrides():
     """Derive SPAWN_OVERRIDE from persisted DS Spawn timers on startup."""
     for guild_id in DS_GUILDS:
@@ -431,6 +483,8 @@ async def tod(
     points_model.start_event(pop_event)
 
     await utils.send_and_split(inter, message)
+
+    await rectify_ds_active_role(inter.guild)
 
     # Restart the ToD Timer
     timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get("ds_tod_channel")

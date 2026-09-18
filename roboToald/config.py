@@ -117,6 +117,12 @@ for guild in TEST_GUILDS:
         "tod_channel_id": CONF.getint(f"guild.{guild}", "tod_channel_id", fallback=0),
         "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),
         "ds_admin_role": CONF.getint(f"guild.{guild}", "ds_admin_role", fallback=0),
+        # Auto-grant/remove a role from rolling points_earned (not balance).
+        # Enabled only when ds_active_role != 0 and ds_active_role_threshold > 0.
+        # Requires the bot to have Manage Roles and a higher role than ds_active_role.
+        "ds_active_role": CONF.getint(f"guild.{guild}", "ds_active_role", fallback=0),
+        "ds_active_role_threshold": CONF.getint(f"guild.{guild}", "ds_active_role_threshold", fallback=0),
+        "ds_active_role_days": CONF.getint(f"guild.{guild}", "ds_active_role_days", fallback=14),
         "wakeup_channels": CONF.get(f"guild.{guild}", "wakeup_channels", fallback=None),
         "wakeup_exclusions": CONF.get(f"guild.{guild}", "wakeup_exclusions", fallback=None),
         "min_client_version": CONF.get(f"guild.{guild}", "min_client_version", fallback=None),

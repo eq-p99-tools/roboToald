@@ -96,6 +96,8 @@ Records points spent by members (urn purchases).
 
 **Balance** = sum of `PointsEarned.points` - sum of `PointsSpent.points` for a given user and guild.
 
+**Active role (optional):** After `/ds tod`, guilds with `ds_active_role` and `ds_active_role_threshold` > 0 grant/remove that role from a rolling sum of `PointsEarned` over `ds_active_role_days` (default 14). `PointsSpent` is not included.
+
 ## Points Calculation
 
 Points are earned based on camp time between a member's `IN` and `OUT` events, calculated against the time since the last `POP` event. Key configuration values (from `batphone.ini [ds]`):
