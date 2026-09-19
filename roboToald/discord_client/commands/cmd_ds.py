@@ -114,6 +114,12 @@ async def restore_spawn_overrides():
             break
 
 
+def is_ds_tod_channel(guild_id: int, channel_id: int) -> bool:
+    """True if ``channel_id`` may run ``/ds tod`` (any channel when unset)."""
+    tod_channel_id = config.GUILD_SETTINGS.get(guild_id, {}).get("ds_tod_channel") or 0
+    return not tod_channel_id or channel_id == tod_channel_id
+
+
 @base.DISCORD_CLIENT.slash_command(description="DS Camp Time Auditing", guild_ids=DS_GUILDS)
 async def ds(inter: disnake.ApplicationCommandInteraction):
     pass
@@ -429,6 +435,14 @@ async def tod(
     inter: disnake.ApplicationCommandInteraction,
     is_quake: bool = commands.Param(default=False, description="Grant quake bonus to active members?"),
 ):
+    if not is_ds_tod_channel(inter.guild_id, inter.channel_id):
+        tod_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get("ds_tod_channel")
+        await inter.send(
+            f"This command can only be used in <#{tod_channel_id}>.",
+            ephemeral=True,
+        )
+        return
+
     now_time = datetime.datetime.now()
     stop_time = now_time
     recent_ds = None
@@ -571,7 +585,7 @@ async def adjust(
     await inter.send(message, allowed_mentions=disnake.AllowedMentions(users=False))
 
 
-@ds.sub_command(description="[Admin] Override the next DS spawn time.")
+@ds.sub_command(description="Override the next DS spawn time.")
 async def set_spawn(
     inter: disnake.ApplicationCommandInteraction,
     hours: int = commands.Param(default=0, ge=0, description="Hours until next spawn."),
