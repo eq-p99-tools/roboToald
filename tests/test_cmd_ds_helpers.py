@@ -147,6 +147,17 @@ async def test_reconcile_ds_active_roles_runs_per_ds_guild(monkeypatch):
     assert called == [10, 20]
 
 
+def test_is_ds_tod_channel_allows_any_when_unset(monkeypatch):
+    monkeypatch.setitem(config.GUILD_SETTINGS, 99, {"ds_tod_channel": 0})
+    assert cmd_ds.is_ds_tod_channel(99, 12345) is True
+
+
+def test_is_ds_tod_channel_requires_configured_channel(monkeypatch):
+    monkeypatch.setitem(config.GUILD_SETTINGS, 99, {"ds_tod_channel": 555})
+    assert cmd_ds.is_ds_tod_channel(99, 555) is True
+    assert cmd_ds.is_ds_tod_channel(99, 556) is False
+
+
 @pytest.mark.asyncio
 async def test_rectify_ds_active_role_adds_and_removes(monkeypatch):
     guild = MagicMock()
