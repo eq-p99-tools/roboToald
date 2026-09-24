@@ -121,8 +121,8 @@ def is_ds_tod_channel(guild_id: int, channel_id: int) -> bool:
 
 
 # Ask for quake confirmation when expected spawn is still this far away (default;
-# override per guild with ds_tod_quake_confirm_hours).
-TOD_QUAKE_CONFIRM_HOURS_DEFAULT = 1.0
+# override per guild with ds_tod_quake_confirm_minutes).
+TOD_QUAKE_CONFIRM_MINUTES_DEFAULT = 60
 
 
 def time_until_expected_spawn(guild_id: int, now: datetime.datetime | None = None) -> datetime.timedelta:
@@ -137,14 +137,14 @@ def time_until_expected_spawn(guild_id: int, now: datetime.datetime | None = Non
 
 def quake_confirm_threshold(guild_id: int) -> datetime.timedelta:
     """How early a ToD must be before we prompt for quake confirmation."""
-    hours = config.GUILD_SETTINGS.get(guild_id, {}).get("ds_tod_quake_confirm_hours")
-    if hours is None:
-        hours = TOD_QUAKE_CONFIRM_HOURS_DEFAULT
+    minutes = config.GUILD_SETTINGS.get(guild_id, {}).get("ds_tod_quake_confirm_minutes")
+    if minutes is None:
+        minutes = TOD_QUAKE_CONFIRM_MINUTES_DEFAULT
     try:
-        hours = float(hours)
+        minutes = int(minutes)
     except (TypeError, ValueError):
-        hours = TOD_QUAKE_CONFIRM_HOURS_DEFAULT
-    return datetime.timedelta(hours=max(0.0, hours))
+        minutes = TOD_QUAKE_CONFIRM_MINUTES_DEFAULT
+    return datetime.timedelta(minutes=max(0, minutes))
 
 
 def should_confirm_quake(guild_id: int, is_quake: bool, now: datetime.datetime | None = None) -> bool:

@@ -83,8 +83,8 @@ tod_channel_id = 0
 ds_schedule_channel = <channel_id>
 # Role for /ds adjust and /ds set_spawn (0 = anyone). Only DS privilege gate.
 ds_admin_role = <role_id>
-# Prompt for quake on /ds tod when spawn is still more than this many hours away (0 = never).
-#ds_tod_quake_confirm_hours = 1
+# Prompt for quake on /ds tod when spawn is still more than this many minutes away (0 = never).
+#ds_tod_quake_confirm_minutes = 60
 # Optional: auto add/remove a role from 14-day rolling points_earned after /ds tod and on startup.
 # Off unless ds_active_role is set and ds_active_role_threshold > 0.
 # Bot needs Manage Roles and a higher role than ds_active_role.
