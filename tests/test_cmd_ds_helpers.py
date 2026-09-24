@@ -158,6 +158,49 @@ def test_is_ds_tod_channel_requires_configured_channel(monkeypatch):
     assert cmd_ds.is_ds_tod_channel(99, 556) is False
 
 
+def test_time_until_expected_spawn(monkeypatch):
+    pop = datetime.datetime(2024, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 6, 1, 14, 0, 0, tzinfo=datetime.timezone.utc)
+    monkeypatch.setattr(cmd_ds, "get_effective_pop_time", lambda _gid: pop)
+    remaining = cmd_ds.time_until_expected_spawn(1, now=now)
+    assert remaining == datetime.timedelta(hours=22)
+
+
+def test_should_confirm_quake_when_early_and_not_marked(monkeypatch):
+    pop = datetime.datetime(2024, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 6, 1, 14, 0, 0, tzinfo=datetime.timezone.utc)  # 22h left
+    monkeypatch.setattr(cmd_ds, "get_effective_pop_time", lambda _gid: pop)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"ds_tod_quake_confirm_minutes": 60})
+    assert cmd_ds.should_confirm_quake(1, is_quake=False, now=now) is True
+    assert cmd_ds.should_confirm_quake(1, is_quake=True, now=now) is False
+
+
+def test_should_confirm_quake_skips_when_near_spawn(monkeypatch):
+    pop = datetime.datetime(2024, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 6, 2, 11, 30, 0, tzinfo=datetime.timezone.utc)  # 30m left
+    monkeypatch.setattr(cmd_ds, "get_effective_pop_time", lambda _gid: pop)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"ds_tod_quake_confirm_minutes": 60})
+    assert cmd_ds.should_confirm_quake(1, is_quake=False, now=now) is False
+
+
+def test_should_confirm_quake_respects_config_threshold(monkeypatch):
+    pop = datetime.datetime(2024, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 6, 2, 10, 0, 0, tzinfo=datetime.timezone.utc)  # 2h left
+    monkeypatch.setattr(cmd_ds, "get_effective_pop_time", lambda _gid: pop)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"ds_tod_quake_confirm_minutes": 180})
+    assert cmd_ds.should_confirm_quake(1, is_quake=False, now=now) is False
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"ds_tod_quake_confirm_minutes": 60})
+    assert cmd_ds.should_confirm_quake(1, is_quake=False, now=now) is True
+
+
+def test_should_confirm_quake_disabled_when_minutes_zero(monkeypatch):
+    pop = datetime.datetime(2024, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2024, 6, 1, 14, 0, 0, tzinfo=datetime.timezone.utc)  # 22h left
+    monkeypatch.setattr(cmd_ds, "get_effective_pop_time", lambda _gid: pop)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"ds_tod_quake_confirm_minutes": 0})
+    assert cmd_ds.should_confirm_quake(1, is_quake=False, now=now) is False
+
+
 @pytest.mark.asyncio
 async def test_rectify_ds_active_role_adds_and_removes(monkeypatch):
     guild = MagicMock()

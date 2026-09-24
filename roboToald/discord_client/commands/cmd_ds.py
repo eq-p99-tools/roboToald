@@ -120,6 +120,204 @@ def is_ds_tod_channel(guild_id: int, channel_id: int) -> bool:
     return not tod_channel_id or channel_id == tod_channel_id
 
 
+# Ask for quake confirmation when expected spawn is still this far away (default;
+# override per guild with ds_tod_quake_confirm_minutes).
+TOD_QUAKE_CONFIRM_MINUTES_DEFAULT = 60
+
+
+def time_until_expected_spawn(guild_id: int, now: datetime.datetime | None = None) -> datetime.timedelta:
+    """Remaining time until the next expected DS spawn (24h after effective pop)."""
+    if now is None:
+        now = datetime.datetime.now().astimezone()
+    elif now.tzinfo is None:
+        now = now.astimezone()
+    expected_spawn = get_effective_pop_time(guild_id) + datetime.timedelta(hours=24)
+    return expected_spawn - now
+
+
+def quake_confirm_threshold(guild_id: int) -> datetime.timedelta:
+    """How early a ToD must be before we prompt for quake confirmation."""
+    minutes = config.GUILD_SETTINGS.get(guild_id, {}).get("ds_tod_quake_confirm_minutes")
+    if minutes is None:
+        minutes = TOD_QUAKE_CONFIRM_MINUTES_DEFAULT
+    try:
+        minutes = int(minutes)
+    except (TypeError, ValueError):
+        minutes = TOD_QUAKE_CONFIRM_MINUTES_DEFAULT
+    return datetime.timedelta(minutes=max(0, minutes))
+
+
+def should_confirm_quake(guild_id: int, is_quake: bool, now: datetime.datetime | None = None) -> bool:
+    """True when ToD looks early and the caller did not already mark it a quake."""
+    if is_quake:
+        return False
+    threshold = quake_confirm_threshold(guild_id)
+    if threshold <= datetime.timedelta(0):
+        return False
+    return time_until_expected_spawn(guild_id, now) > threshold
+
+
+def recent_pop_minutes(now: datetime.datetime | None = None) -> float | None:
+    """Minutes since last POP if within the 5-minute duplicate window, else None."""
+    if now is None:
+        now = datetime.datetime.now()
+    time_since_pop = now.astimezone() - points_model.get_last_pop_time()
+    if time_since_pop < datetime.timedelta(minutes=5):
+        return abs(round(time_since_pop.total_seconds() / 60, 1))
+    return None
+
+
+class TodQuakeConfirmView(disnake.ui.View):
+    """Ephemeral Yes/No prompt when /ds tod is run more than an hour before spawn."""
+
+    def __init__(self, *, invoker_id: int, timeout_seconds: float = 120.0):
+        super().__init__(timeout=timeout_seconds)
+        self.invoker_id = invoker_id
+        self._resolved = False
+        self.message: disnake.Message | None = None
+
+    async def interaction_check(self, inter: disnake.MessageInteraction) -> bool:
+        if inter.user.id != self.invoker_id:
+            await inter.response.send_message(
+                "This confirmation is for someone else. Run `/ds tod` yourself.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def on_timeout(self) -> None:
+        if self._resolved or self.message is None:
+            return
+        for child in self.children:
+            if isinstance(child, disnake.ui.Button):
+                child.disabled = True
+        try:
+            await self.message.edit(
+                content="⌛ ToD cancelled (confirmation timed out). Re-run `/ds tod` if DS is down.",
+                view=self,
+            )
+        except Exception:
+            pass
+
+    def _disable_all(self) -> None:
+        for child in self.children:
+            if isinstance(child, disnake.ui.Button):
+                child.disabled = True
+
+    async def _resolve(self, inter: disnake.MessageInteraction, is_quake: bool) -> None:
+        self._resolved = True
+        self.stop()
+        self._disable_all()
+        label = "quake" if is_quake else "not a quake"
+        await inter.response.edit_message(content=f"Recording ToD ({label})…", view=self)
+        await _execute_ds_tod(inter, is_quake=is_quake, via_channel=True)
+
+    @disnake.ui.button(label="Yes, quake", style=disnake.ButtonStyle.danger)
+    async def confirm_quake(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
+        await self._resolve(inter, is_quake=True)
+
+    @disnake.ui.button(label="No, not a quake", style=disnake.ButtonStyle.secondary)
+    async def decline_quake(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
+        await self._resolve(inter, is_quake=False)
+
+
+async def _publish_tod_result(inter, message: str, *, via_channel: bool) -> None:
+    allowed = disnake.AllowedMentions(users=False)
+    if via_channel:
+        chunks = utils.split_message(message) if len(message) >= 2000 else [message]
+        for chunk in chunks:
+            await inter.channel.send(content=chunk, allowed_mentions=allowed)
+    else:
+        await utils.send_and_split(inter, message)
+
+
+async def _execute_ds_tod(inter, is_quake: bool, *, via_channel: bool = False) -> None:
+    """Record ToD, award points, restart spawn timer. Shared by /ds tod and confirm buttons."""
+    now_time = datetime.datetime.now()
+    stop_time = now_time
+
+    recent = recent_pop_minutes(now_time)
+    if recent is not None:
+        message = (
+            f"Someone just ran the ToD command {recent} "
+            f"minutes ago. Please try again after 5 minutes."
+        )
+        if via_channel:
+            await inter.followup.send(message, ephemeral=True)
+        else:
+            await inter.send(message, ephemeral=True)
+        return
+
+    message = "DS ToD recorded. Stopped camp time for the following members:\n"
+
+    active_events = points_model.get_active_events(inter.guild_id)
+    active_members = 0
+    for event in active_events:
+        close_event(event, stop_time)
+        message += f"<@{event.user_id}>\n"
+        active_members += 1
+
+    if active_members < 1:
+        message = "DS ToD recorded. No members active.\n"
+
+    all_points_for_session = calculate_points_for_session(guild_id=inter.guild_id, stop_time=stop_time)
+
+    if all_points_for_session:
+        message += "\nPoints earned in this session:\n"
+
+    summed_points = sum_points_by_member(all_points_for_session)
+    for member, session_points in summed_points.items():
+        points_earned = points_model.PointsEarned(member, inter.guild_id, session_points[0], stop_time)
+        points_earned.store()
+        message += f"<@{member}>: {session_points[0]}\n"
+
+    if is_quake and active_members > 0:
+        message += f"\nQuake Bonus of {config.QUAKE_BONUS} granted to active members: "
+        for event in active_events:
+            bonus_points = points_model.PointsEarned(
+                user_id=event.user_id,
+                guild_id=inter.guild_id,
+                points=config.QUAKE_BONUS,
+                time=stop_time,
+                notes="Automatic Quake Bonus",
+                adjustor=inter.user.id,
+            )
+            bonus_points.store()
+            message += f"<@{event.user_id}>, "
+        message = message[:-2] + ".\n"
+
+    SPAWN_OVERRIDE.pop(inter.guild_id, None)
+    pop_event = points_model.PointsAudit(
+        user_id=0, guild_id=inter.guild_id, event=constants.Event.POP, time=stop_time, active=False
+    )
+    points_model.start_event(pop_event)
+
+    await _publish_tod_result(inter, message, via_channel=via_channel)
+
+    await rectify_ds_active_role(inter.guild)
+
+    timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get("ds_tod_channel")
+    if not timer_channel_id:
+        return
+    timers = timer_model.get_timers_for_channel(timer_channel_id)
+    timer_channel = inter.guild.get_channel(timer_channel_id)
+    if timers:
+        for timer in timers:
+            await cmd_timer._stop(timer.id, timer_channel.send)
+
+    await cmd_timer._start(
+        timer_channel.send,
+        timer_channel,
+        base.DISCORD_CLIENT.user.id,
+        inter.guild_id,
+        name="DS Spawn",
+        hours=24,
+        minutes=1,
+        delay_minutes=-1,
+        repeating=True,
+    )
+
+
 @base.DISCORD_CLIENT.slash_command(description="DS Camp Time Auditing", guild_ids=DS_GUILDS)
 async def ds(inter: disnake.ApplicationCommandInteraction):
     pass
@@ -443,94 +641,40 @@ async def tod(
         )
         return
 
-    now_time = datetime.datetime.now()
-    stop_time = now_time
-    recent_ds = None
-    time_since_pop = now_time.astimezone() - points_model.get_last_pop_time()
-    if time_since_pop < datetime.timedelta(minutes=5):
-        recent_ds = abs(round(time_since_pop.total_seconds() / 60, 1))
-
-    if recent_ds:
-        # There's already a POP recorded within 5 min, likely duplicate
-        message = (
-            f"Someone just ran the ToD command {recent_ds} "
+    recent = recent_pop_minutes()
+    if recent is not None:
+        await inter.send(
+            f"Someone just ran the ToD command {recent} "
             f"minutes ago. Please try again after 5 minutes. "
-            f"Deleting this interaction."
+            f"Deleting this interaction.",
+            ephemeral=True,
         )
-        await inter.send(message, ephemeral=True)
         return
 
-    message = "DS ToD recorded. Stopped camp time for the following members:\n"
-
-    active_events = points_model.get_active_events(inter.guild_id)
-    active_members = 0
-    for event in active_events:
-        close_event(event, stop_time)
-        message += f"<@{event.user_id}>\n"
-        active_members += 1
-
-    if active_members < 1:
-        message = "DS ToD recorded. No members active.\n"
-
-    all_points_for_session = calculate_points_for_session(guild_id=inter.guild_id, stop_time=stop_time)
-
-    if all_points_for_session:
-        message += "\nPoints earned in this session:\n"
-
-    summed_points = sum_points_by_member(all_points_for_session)
-    for member, session_points in summed_points.items():
-        points_earned = points_model.PointsEarned(member, inter.guild_id, session_points[0], stop_time)
-        points_earned.store()
-        message += f"<@{member}>: {session_points[0]}\n"
-
-    # Grant adjustment to active members for quake bonus
-    if is_quake and active_members > 0:
-        message += f"\nQuake Bonus of {config.QUAKE_BONUS} granted to active members: "
-        for event in active_events:
-            bonus_points = points_model.PointsEarned(
-                user_id=event.user_id,
-                guild_id=inter.guild_id,
-                points=config.QUAKE_BONUS,
-                time=stop_time,
-                notes="Automatic Quake Bonus",
-                adjustor=inter.user.id,
-            )
-            bonus_points.store()
-            message += f"<@{event.user_id}>, "
-        message = message[:-2] + ".\n"
-
-    # Record the POP event and clear any spawn override
-    SPAWN_OVERRIDE.pop(inter.guild_id, None)
-    pop_event = points_model.PointsAudit(
-        user_id=0, guild_id=inter.guild_id, event=constants.Event.POP, time=stop_time, active=False
-    )
-    points_model.start_event(pop_event)
-
-    await utils.send_and_split(inter, message)
-
-    await rectify_ds_active_role(inter.guild)
-
-    # Restart the ToD Timer
-    timer_channel_id = config.GUILD_SETTINGS.get(inter.guild_id, {}).get("ds_tod_channel")
-    if not timer_channel_id:
+    if should_confirm_quake(inter.guild_id, is_quake):
+        remaining = time_until_expected_spawn(inter.guild_id)
+        total_minutes = max(0, int(remaining.total_seconds() // 60))
+        hours, minutes = divmod(total_minutes, 60)
+        if hours and minutes:
+            remaining_str = f"{hours}h {minutes}m"
+        elif hours:
+            remaining_str = f"{hours}h"
+        else:
+            remaining_str = f"{minutes}m"
+        view = TodQuakeConfirmView(invoker_id=inter.user.id)
+        await inter.send(
+            f"Expected spawn is still about **{remaining_str}** away — this is often a quake.\n"
+            f"Was this a quake? (Grants the {config.QUAKE_BONUS} SKP quake bonus to active campers.)",
+            view=view,
+            ephemeral=True,
+        )
+        try:
+            view.message = await inter.original_message()
+        except Exception:
+            view.message = None
         return
-    timers = timer_model.get_timers_for_channel(timer_channel_id)
-    timer_channel = inter.guild.get_channel(timer_channel_id)
-    if timers:
-        for timer in timers:
-            await cmd_timer._stop(timer.id, timer_channel.send)
 
-    await cmd_timer._start(
-        timer_channel.send,
-        timer_channel,
-        base.DISCORD_CLIENT.user.id,
-        inter.guild_id,
-        name="DS Spawn",
-        hours=24,
-        minutes=1,
-        delay_minutes=-1,
-        repeating=True,
-    )
+    await _execute_ds_tod(inter, is_quake=is_quake)
 
 
 @ds.sub_command(description="Player has won an urn with SKP.")

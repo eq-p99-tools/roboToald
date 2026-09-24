@@ -117,6 +117,9 @@ for guild in TEST_GUILDS:
         "tod_channel_id": CONF.getint(f"guild.{guild}", "tod_channel_id", fallback=0),
         "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),
         "ds_admin_role": CONF.getint(f"guild.{guild}", "ds_admin_role", fallback=0),
+        # Prompt for quake confirmation on /ds tod when expected spawn is still
+        # more than this many minutes away (0 = never prompt).
+        "ds_tod_quake_confirm_minutes": CONF.getint(f"guild.{guild}", "ds_tod_quake_confirm_minutes", fallback=60),
         # Auto-grant/remove a role from rolling points_earned (not balance).
         # Enabled only when ds_active_role != 0 and ds_active_role_threshold > 0.
         # Requires the bot to have Manage Roles and a higher role than ds_active_role.
