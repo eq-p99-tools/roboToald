@@ -120,8 +120,9 @@ def is_ds_tod_channel(guild_id: int, channel_id: int) -> bool:
     return not tod_channel_id or channel_id == tod_channel_id
 
 
-# Ask for quake confirmation when expected spawn is still this far away.
-TOD_QUAKE_CONFIRM_THRESHOLD = datetime.timedelta(hours=1)
+# Ask for quake confirmation when expected spawn is still this far away (default;
+# override per guild with ds_tod_quake_confirm_hours).
+TOD_QUAKE_CONFIRM_HOURS_DEFAULT = 1.0
 
 
 def time_until_expected_spawn(guild_id: int, now: datetime.datetime | None = None) -> datetime.timedelta:
@@ -134,11 +135,26 @@ def time_until_expected_spawn(guild_id: int, now: datetime.datetime | None = Non
     return expected_spawn - now
 
 
+def quake_confirm_threshold(guild_id: int) -> datetime.timedelta:
+    """How early a ToD must be before we prompt for quake confirmation."""
+    hours = config.GUILD_SETTINGS.get(guild_id, {}).get("ds_tod_quake_confirm_hours")
+    if hours is None:
+        hours = TOD_QUAKE_CONFIRM_HOURS_DEFAULT
+    try:
+        hours = float(hours)
+    except (TypeError, ValueError):
+        hours = TOD_QUAKE_CONFIRM_HOURS_DEFAULT
+    return datetime.timedelta(hours=max(0.0, hours))
+
+
 def should_confirm_quake(guild_id: int, is_quake: bool, now: datetime.datetime | None = None) -> bool:
     """True when ToD looks early and the caller did not already mark it a quake."""
     if is_quake:
         return False
-    return time_until_expected_spawn(guild_id, now) > TOD_QUAKE_CONFIRM_THRESHOLD
+    threshold = quake_confirm_threshold(guild_id)
+    if threshold <= datetime.timedelta(0):
+        return False
+    return time_until_expected_spawn(guild_id, now) > threshold
 
 
 def recent_pop_minutes(now: datetime.datetime | None = None) -> float | None:
