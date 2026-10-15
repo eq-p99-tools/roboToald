@@ -90,7 +90,8 @@ Proxy config `sso_api` (rstrip `/`):
 
 ### TLS **[proxy-required]**
 - Default: verify with **certifi** CA bundle.
-- `sso_verify_tls=false` disables verify (emergency).
+- `sso_ca_bundle` selects the trust store: unset/`true` → certifi; `system` (or `false`) → platform default store; any other value → path to a custom CA bundle file.
+- `sso_verify_tls=false` disables verify entirely (emergency; overrides `sso_ca_bundle`).
 - Plain `ws://` allowed (no SSL context).
 
 ### Timeouts / reconnect **[proxy-required]**
@@ -514,7 +515,7 @@ and USER_API_TOKEN set
 1. **Account keys MUST be lowercase** (or otherwise match `username.lower()`). Reference stores `real_user` lowercased. Mixed-case keys will not SSO-gate.
 2. **Dynamic tags drop after the first `delta`:** proxy `_apply_delta` calls `_rebuild_cache(tree)` without re-passing zone/class lists, so dynamic-tag names vanish from `ALL_CACHED_NAMES` until reconnect/`full_state`. Static `tags` / aliases / characters survive. Treat as open proxy bug; backends that need reliable dynamic-tag login SHOULD also expose those names as real `tags` or accept reconnect-only dynamic tags.
 3. Before `full_state` or after disconnect: cache empty → no SSO rewrite (passthrough).
-4. `login_auth` timeout (default 10s): proxy forwards original packet after logging failure (may still rewrite if partial — see `server.py`; on error_detail it still may forward without splice).
+4. `login_auth` failure or timeout (`sso_timeout`, default 10s): proxy logs the error and forwards the **original, unmodified** Login packet. It splices credentials only when the response carries both `real_user` and non-empty `encrypted_credentials`; there is no partial rewrite.
 
 ---
 
