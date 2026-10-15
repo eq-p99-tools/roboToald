@@ -2,6 +2,8 @@
 
 > **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
+**Implementing a compatible SSO backend?** Use the normative agent spec: [`docs/backend-protocol.md`](docs/backend-protocol.md) (wire shapes, MUST/SHOULD, crypto test vector, verification). Canonical schema: [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json). Prefer that doc over this narrative when they disagree.
+
 The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net) client. It provides authentication for shared EQ accounts and real-time account data streaming.
 
 **The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, login authentication, and real-time delta pushes. `POST /auth` remains available as a fallback HTTP endpoint; newer clients perform login authentication over the WebSocket via `login_auth` messages. The only other public HTTP route is `GET /` (health check). Account listing, heartbeats, and location updates are WebSocket-only.
