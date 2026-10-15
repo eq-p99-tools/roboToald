@@ -1,8 +1,9 @@
 """Validate the WebSocket protocol schema against fixtures and live message shapes.
 
-The schema at ``schemas/ws-protocol.schema.json`` is the canonical contract for the
-WebSocket channel shared with the ``p99-login-proxy`` client (which vendors a copy).
-These tests keep the server honest two ways:
+The schema at ``schemas/ws-protocol.schema.json`` is the normative machine-readable
+wire contract for the WebSocket channel spoken by ``p99-login-proxy``. The proxy does
+not vendor or validate the schema at runtime; this test suite and
+``docs/backend-protocol.md`` (additive implementer guide) keep the contract honest:
 
 * every fixture under ``schemas/fixtures/`` must validate against the schema, and
 * messages built from the real server helpers (``build_account_tree`` /

@@ -79,10 +79,10 @@
 
 ### C1. Invalid keys trigger rate limit
 
-1. Note the current rate limit settings (20 attempts / 30 minutes)
-2. Send 20+ `POST /auth` requests with a completely wrong access key (e.g. `{"username": "anything", "password": "BadKey123"}`)
-3. After 20 failures, the next request (even with a *valid* key) should return 401
-4. Verify in the database: `SELECT COUNT(*) FROM sso_audit_log WHERE ip_address = '<your_ip>' AND success = 0 AND rate_limit != 0` -- should be >= 20
+1. Note the current rate limit settings (`rate_limit_max_attempts` / `rate_limit_window_minutes` in `[sso]`; config fallbacks are **10** / **30** unless overridden)
+2. Send that many + 1 `POST /auth` requests with a completely wrong access key (e.g. `{"username": "anything", "password": "BadKey123"}`)
+3. After the threshold is reached, the next request (even with a *valid* key) should return 401
+4. Verify in the database: `SELECT COUNT(*) FROM sso_audit_log WHERE ip_address = '<your_ip>' AND success = 0 AND rate_limit != 0` -- should be >= threshold
 
 ### C2. Rate limit clear works
 
@@ -141,7 +141,7 @@
 
 1. Send `POST /auth` with header `X-Forwarded-For: 1.2.3.4`
 2. Check audit log -- `ip_address` should be `1.2.3.4` (if your IP is in `forwarded_allow_ips`) or your real IP (if not trusted)
-3. **Important:** verify that rate limiting uses the same IP. Send 20 failures with `X-Forwarded-For: 5.6.7.8`, then confirm that requests from your real IP (without the header) are NOT rate-limited -- only `5.6.7.8` should be blocked
+3. **Important:** verify that rate limiting uses the same IP. Send threshold+ failures with `X-Forwarded-For: 5.6.7.8`, then confirm that requests from your real IP (without the header) are NOT rate-limited -- only `5.6.7.8` should be blocked
 
 ---
 
