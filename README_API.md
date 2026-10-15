@@ -2,7 +2,10 @@
 
 > **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-**Implementing a compatible SSO backend?** Use the normative agent spec: [`docs/backend-protocol.md`](docs/backend-protocol.md) (wire shapes, MUST/SHOULD, crypto test vector, verification). Canonical schema: [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json). Prefer that doc over this narrative when they disagree.
+**Implementing a compatible SSO backend?**  
+- **Wire shapes (normative):** [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json) + [`schemas/fixtures/`](schemas/fixtures/)  
+- **Implementer guide (additive):** [`docs/backend-protocol.md`](docs/backend-protocol.md) — flows, crypto, RBAC, checklists; must not diverge from the schema  
+Prefer schema + guide over this narrative when they disagree.
 
 The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net) client. It provides authentication for shared EQ accounts and real-time account data streaming.
 
@@ -207,7 +210,7 @@ X-Client-Version: 1.2.0       (optional, compared against guild min_client_versi
 
 The server processes the request in this order:
 
-1. **Rate limit check.** Count failed attempts from client IP (from `request.client.host` -- note: `/auth` does not read `X-Forwarded-For`, unlike other endpoints) in the last 30 minutes. If >= 20, reject with 401.
+1. **Rate limit check.** Count failed attempts from client IP via `_get_client_ip` (prefers first `X-Forwarded-For` hop when present, else `request.client.host`) within `rate_limit_window_minutes` (default **30**). If count >= `rate_limit_max_attempts` (config fallback **10**), reject with 401.
 
 2. **Access key lookup.** Look up `password` in `SSOAccessKey` table. If not found, log an audit entry and reject with 401.
 
@@ -281,7 +284,7 @@ WebSocket endpoint for real-time account data. This is the primary interface for
 
 ### WebSocket message schema
 
-The wire contract for every message below is pinned by a JSON Schema (draft 2020-12) at [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json), with one canonical example per message type under [`schemas/fixtures/`](schemas/fixtures/). This schema is **canonical**: the `p99-login-proxy` client vendors a byte-identical copy and validates against it, and `tests/test_ws_protocol_schema.py` validates both the fixtures and live server output (`build_account_tree` / `compute_diff`) against it. Bulk payloads (`account_tree`, `changes`) are loosely typed and unknown extra fields are permitted, so additive server changes stay backward compatible; when you change a message shape, update the schema and fixtures in the same commit.
+The wire contract for every message below is pinned by a JSON Schema (draft 2020-12) at [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json), with one canonical example per message type under [`schemas/fixtures/`](schemas/fixtures/). That schema is the **normative machine-readable contract**. The additive implementer guide is [`docs/backend-protocol.md`](docs/backend-protocol.md). `tests/test_ws_protocol_schema.py` validates fixtures and live server output (`build_account_tree` / `compute_diff`) against the schema. The login proxy does **not** vendor or validate the schema at runtime; it speaks the shapes described here. Bulk payloads (`account_tree`, `changes`) are loosely typed and unknown extra fields are permitted, so additive server changes stay backward compatible; when you change a message shape, update the schema, fixtures, and `docs/backend-protocol.md` in the same commit.
 
 ### Connection Protocol
 
@@ -712,9 +715,9 @@ Returns `"status": "warning"` if the Discord client hasn't been injected yet.
 
 Rate limiting is based on failed authentication attempts per IP address:
 
-- **Threshold:** 20 failed attempts
-- **Window:** 30 minutes (rolling)
-- **Counting:** Only counts failures where `rate_limit != False` and `account_id IS NOT NULL` (plus legacy rows where `username = 'list_accounts'` from the removed HTTP list endpoint, if any remain in the window)
+- **Threshold:** `rate_limit_max_attempts` (config fallback **10**; see `batphone.ini` `[sso]`)
+- **Window:** `rate_limit_window_minutes` (config fallback **30**, rolling)
+- **Counting:** Failed audit rows for the IP where `success` is false and `rate_limit != False` (`count_failed_attempts` — no `account_id` filter)
 - **Response:** Same `401 Unauthorized` as any other auth failure (no `429` status code, to avoid information leakage)
 - **Clearing:** An admin can clear the rate limit for an IP via `/sso_admin reset_rate_limit`, which sets `rate_limit = False` on all failed audit entries for that IP
 

@@ -356,7 +356,7 @@ Records every API authentication attempt for security monitoring.
 | `rate_limit` | Boolean | default `True` | Set to `False` when admin clears rate limit |
 | `details` | String(255) | nullable | Failure reason or success details |
 
-Rate limiting counts failed attempts where `rate_limit != False` and `account_id IS NOT NULL` (or `username = 'list_accounts'`), within a rolling 30-minute window, threshold of 20.
+Rate limiting counts failed attempts for an IP where `success` is false and `rate_limit != False` (`count_failed_attempts`), within `rate_limit_window_minutes` (fallback 30). Threshold is `rate_limit_max_attempts` (config fallback 10). See [`docs/backend-protocol.md`](../docs/backend-protocol.md) and [`README_API.md`](../README_API.md).
 
 ## RBAC Access Model
 

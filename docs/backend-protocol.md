@@ -1,7 +1,22 @@
 # SSO Proxy Backend Protocol (Agent Implementer Spec)
 
-Normative wire contract for a backend compatible with **P99 Login Proxy** (`p99-login-proxy`).  
-Reference implementation: **robotoald** (`roboToald/api/server.py`, `roboToald/api/websocket.py`).
+## Relationship to the JSON Schema (read first)
+
+**Additive — this guide does not replace the schema.**
+
+| Artifact | Role |
+|---|---|
+| [`schemas/ws-protocol.schema.json`](../schemas/ws-protocol.schema.json) + [`schemas/fixtures/`](../schemas/fixtures/) | **Normative machine-readable wire contract** for WS message envelopes (`type`, required fields, consts). |
+| **This document** | **Agent/human implementer guide**: flows, MUST/SHOULD, DES crypto, RBAC/resolution, proxy gating quirks, checklists, HTTP fallback. |
+
+Rules:
+- Message shapes in this guide **MUST NOT diverge** from the schema + fixtures.
+- When extending the wire, update **schema + fixtures + this guide in the same change**.
+- Behaviors the schema cannot express (timeouts, crypto, RBAC, SSO name-set gating) are specified here and in working code.
+- Do **not** delete or bypass the schema.
+
+Reference implementation: **robotoald** (`roboToald/api/server.py`, `roboToald/api/websocket.py`).  
+Client: **p99-login-proxy**.
 
 Language: **MUST** / **SHOULD** / **MAY**.  
 Labels: **[proxy-required]** = current proxy breaks or skips SSO without it. **[reference]** = robotoald behavior; not strictly required for a minimal compatible backend unless marked proxy-required.
@@ -17,13 +32,13 @@ Implement an HTTP + WebSocket API such that an unmodified P99 Login Proxy can: a
 - Speaking SOE/EQ UDP login protocol (proxy ↔ EQEmu only).
 - Discord admin UX, dashboard cookies, slash commands (**[reference]** management plane).
 - Matching robotoald’s Discord RBAC storage model exactly — only the **wire outcomes** matter for proxy compatibility.
+- Replacing `schemas/ws-protocol.schema.json` with prose.
 
 ### Canonical sources of truth (in order)
-1. This document (implementer contract).
-2. `schemas/ws-protocol.schema.json` + `schemas/fixtures/{inbound,outbound}/` — message envelope schema.
-3. Proxy client: `p99_sso_login_proxy/ws_client.py`, `server.py` (SSO gate), `login_protocol.py` (DES).
-4. Reference server: `roboToald/api/server.py`, `websocket.py`, `db/models/sso.py`.
-5. `README_API.md` — narrative only; **do not trust over code** (known stale claims exist).
+1. **`schemas/ws-protocol.schema.json` + `schemas/fixtures/`** — normative WS wire shapes.
+2. **This guide** — implementer semantics; must stay aligned with (1).
+3. Working code when (1)/(2) are silent: proxy `ws_client.py` / `server.py` / `login_protocol.py`; server `api/server.py` / `api/websocket.py` / `db/models/sso.py`.
+4. `README_API.md` / other narrative docs — secondary; prefer (1)–(3) on conflict.
 
 ### Ordered implementation checklist
 1. `GET /` health JSON.
@@ -125,17 +140,17 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 | `type` | Dir | Required fields (schema) |
 |---|---|---|
 | `auth` | C→S | `type`, `access_key`, `client_version` |
-| `full_state` | S→C | `type` only in schema; see §4.2 for proxy-required fields |
+| `full_state` | S→C | `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_tag_classes` |
 | `delta` | S→C | `type`, `changes` |
 | `login_auth` | C→S | `type`, `request_id`, `username` |
 | `login_auth_response` | S→C | `type`, `request_id` (+ success or error fields) |
 | `heartbeat` | C→S | `type`, `character_name` |
-| `update_location` | C→S | `type`, `character_name` |
+| `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `items`, legacy `keys`) |
 | `fte` | C→S | `type`, `mob`, `player`, `character_name`, `eq_log_time` |
 | `mob_death` | C→S | `type`, `mob`, `eq_log_time`, `character_name` |
-| `ping` | S→C (also C→S) | `type` |
+| `ping` | either | `type` |
 | `pong` | either | `type` |
-| `error` | S→C | `type` |
+| `error` | S→C | `type`, `detail` |
 
 ---
 
@@ -163,7 +178,7 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 
 ### 5.2 `full_state` (S→C) **[proxy-required]**
 
-Schema requires only `type`. For proxy compatibility you **MUST** send:
+Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_tag_classes`. Example:
 
 ```json
 {
@@ -360,7 +375,7 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
 }
 ```
 
-- Schema lists `items` only. **[reference]** also accepts legacy top-level `keys`; merge with `items` winning.
+- Schema allows optional `items` and legacy `keys`. **[reference]** merges them with `items` winning on conflict.
 - Proxy heartbeat interval: **20s** if log mtime within **30s**.
 - Missing/inaccessible `character_name`: **MUST** ignore (no error, no close). Proxy may send local-only character names.
 
@@ -581,14 +596,13 @@ These are hard facts about ambiguity — resolve before inventing behavior:
 | ID | Fact |
 |---|---|
 | Q1 | No protocol version field. Compatibility is additive JSON + `client_version` / `min_client_version` only. |
-| Q2 | Schema `full_state` requires only `type`; proxy needs `account_tree` (+ dynamic lists for dynamic tags). Contract = proxy behavior, not schema required[]. |
-| Q3 | `owned`/`shared` not field-diffed by `compute_diff`; ownership flips may not push until other fields change or reconnect. |
-| Q4 | Proxy drops dynamic tags from name cache after first `delta` (§8). Backend cannot fix alone without also publishing static tags or changing proxy. |
-| Q5 | Proxy does **not** vendor/validate `ws-protocol.schema.json` at runtime (contrary to some README claims). |
-| Q6 | Rate-limit threshold: config default **10**; some docs say 20; `is_ip_rate_limited` default arg is 20 but callers pass config. |
-| Q7 | HTTP XFF trust depends on deployment (`forwarded_allow_ips` / reverse proxy). Code always prefers XFF when header present. |
-| Q8 | Guild multi-tenancy, Discord readiness (4004), and audit retention are reference architecture — a single-tenant backend MAY stub (e.g. never send 4004) if it still speaks the wire. |
-| Q9 | Encoding of non-ASCII passwords/usernames in DES plaintext is unspecified beyond Python default `.encode()` (UTF-8). Stick to ASCII for EQ accounts. |
+| Q2 | `owned`/`shared` not field-diffed by `compute_diff`; ownership flips may not push until other fields change or reconnect. |
+| Q3 | Proxy drops dynamic tags from name cache after first `delta` (§8). Backend cannot fix alone without also publishing static tags or changing proxy. |
+| Q4 | Proxy does **not** vendor or validate `ws-protocol.schema.json` at runtime; schema is enforced in this repo’s tests. |
+| Q5 | Rate-limit: `config.py` fallback is **10**/30m; `is_ip_rate_limited` default args are 20/30; callers pass config. Deployments may override via `batphone.ini`. |
+| Q6 | HTTP XFF trust depends on deployment (`forwarded_allow_ips` / reverse proxy). `_get_client_ip` prefers XFF when the header is present. |
+| Q7 | Guild multi-tenancy, Discord readiness (4004), and audit retention are reference architecture — a single-tenant backend MAY stub (e.g. never send 4004) if it still speaks the wire. |
+| Q8 | Encoding of non-ASCII passwords/usernames in DES plaintext is unspecified beyond Python default `.encode()` (UTF-8). Stick to ASCII for EQ accounts. |
 
 ---
 
@@ -596,8 +610,10 @@ These are hard facts about ambiguity — resolve before inventing behavior:
 
 | Topic | Path |
 |---|---|
-| Schema | `schemas/ws-protocol.schema.json` |
+| Schema (normative wire) | `schemas/ws-protocol.schema.json` |
 | Fixtures | `schemas/fixtures/` |
+| Schema index | `schemas/README.md` |
+| This guide | `docs/backend-protocol.md` |
 | WS + HTTP | `roboToald/api/server.py` |
 | Deltas / tree | `roboToald/api/websocket.py` |
 | Resolution / items map | `roboToald/db/models/sso.py` |
