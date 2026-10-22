@@ -13,16 +13,16 @@ from roboToald.raidtargets import rt_data
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_CHARS = 1900
-BAR_WIDTH = 16
+BAR_WIDTH = 8
 _FORBIDDEN_WARN_AT: dict[int, float] = {}
 
 
 def progress_bar(fraction: float, width: int = BAR_WIDTH) -> str:
-    """Filled portion is time already elapsed; empty portion is time left."""
+    """Green is time already elapsed; white is time left. Emoji, not a code span, so it stays visible on a dark channel."""
     fraction = max(0.0, min(1.0, fraction))
     filled = int(round(fraction * width))
     filled = max(0, min(width, filled))
-    return "█" * filled + "░" * (width - filled)
+    return "🟩" * filled + "⬜" * (width - filled)
 
 
 def format_remaining(seconds: float) -> str:
@@ -42,31 +42,22 @@ def format_remaining(seconds: float) -> str:
 def _label(target: rt_data.RaidTarget, window: rt_data.RaidWindow) -> str:
     name = target.short_name or target.name
     tag = f" [{window.extrapolation_count}]" if window.extrapolation_count else ""
-    zone = f" · {target.zone}" if target.zone else ""
-    return f"**{name}**{tag}{zone}"
+    return f"**{name}**{tag}"
 
 
-def _now_block(target: rt_data.RaidTarget, window: rt_data.RaidWindow, now_utc: int) -> str:
+def _now_line(target: rt_data.RaidTarget, window: rt_data.RaidWindow, now_utc: int) -> str:
     span = window.end - window.start
     elapsed = (now_utc - window.start) / span if span > 0 else 1.0
     left = window.end - now_utc
-    bar = progress_bar(elapsed)
-    return "\n".join(
-        [
-            _label(target, window),
-            f"`{bar}` **{format_remaining(left)}** left · closes <t:{window.end}:R> (<t:{window.end}:t>)",
-            f"<t:{window.start}:f> → <t:{window.end}:f>",
-        ]
-    )
+    return f"{_label(target, window)}  {progress_bar(elapsed)}  **{format_remaining(left)}** · <t:{window.end}:t>"
 
 
-def _upcoming_block(target: rt_data.RaidTarget, window: rt_data.RaidWindow) -> str:
-    return "\n".join(
-        [
-            _label(target, window),
-            f"opens <t:{window.start}:R> · <t:{window.start}:f> → <t:{window.end}:t>",
-        ]
-    )
+def _soon_line(target: rt_data.RaidTarget, window: rt_data.RaidWindow) -> str:
+    return f"{_label(target, window)}  <t:{window.start}:R> · <t:{window.start}:t>–<t:{window.end}:t>"
+
+
+def _later_line(target: rt_data.RaidTarget, window: rt_data.RaidWindow) -> str:
+    return f"{_label(target, window)}  <t:{window.start}:R> · <t:{window.start}:d>"
 
 
 def render_board(
@@ -97,19 +88,18 @@ def render_board(
 
     blocks: list[str] = []
     if now_bucket:
-        blocks.append("__**In window NOW**__")
-        blocks.extend(_now_block(target, window, now_utc) for _end, target, window in now_bucket)
+        blocks.append("**NOW**")
+        blocks.extend(_now_line(target, window, now_utc) for _end, target, window in now_bucket)
     if soon_bucket:
-        hours = max(1, soon_threshold // 3600)
-        blocks.append(f"__**SOON**__ · under {hours}h")
-        blocks.extend(_upcoming_block(target, window) for _start, target, window in soon_bucket)
+        blocks.append("**SOON**")
+        blocks.extend(_soon_line(target, window) for _start, target, window in soon_bucket)
     if later_bucket:
-        blocks.append("__**LATER**__")
-        blocks.extend(_upcoming_block(target, window) for _start, target, window in later_bucket)
+        blocks.append("**LATER**")
+        blocks.extend(_later_line(target, window) for _start, target, window in later_bucket)
 
-    footer = f"-# Updated <t:{now_utc}:R> · [N] = missed respawns · █ elapsed, ░ left"
+    footer = "-# [N] missed respawns · 🟩 elapsed ⬜ left"
     if tod_channel_id:
-        footer += f" · ToDs: <#{tod_channel_id}>"
+        footer += f" · <#{tod_channel_id}>"
     if not blocks:
         return ["No raid targets with known windows.\n" + footer]
 
