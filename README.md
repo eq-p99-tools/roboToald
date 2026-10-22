@@ -101,7 +101,7 @@ Subscribe to raid target windows and get DM notifications when a window opens or
 
 When `raidtargets_source = local` for the guild, the bot also owns the window math (seeded P99 catalog + ToDs/quakes in SQLite):
 
-- `/raidtarget tod` -- record a time of death (Eastern time, or `now`).
+- `/tod` -- record a time of death (Eastern time, or `now`). `/raidtarget tod` does the same thing.
 - `/raidtarget undo` -- undo the latest ToD for a target.
 - `/raidtarget quake` -- record a server earthquake (wipes non-immune ToDs).
 - `/raidtarget sync_defaults` -- insert/update catalog from shipped defaults (Manage Server).

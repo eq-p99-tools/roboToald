@@ -301,12 +301,11 @@ def _require_local_source(inter: disnake.ApplicationCommandInteraction) -> bool:
     return config.get_raidtargets_source(inter.guild_id) == "local"
 
 
-@raidtarget.sub_command(description="Record a time of death for a raid target", name="tod")
-async def tod_cmd(
+async def record_tod_interaction(
     inter: disnake.ApplicationCommandInteraction,
-    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
-    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
-):
+    target: str,
+    time_str: str,
+) -> None:
     if not _require_local_source(inter):
         await inter.send("This server uses an external raid-target feed.", ephemeral=True)
         return
@@ -341,6 +340,28 @@ async def tod_cmd(
         )
         return
     await inter.send(f"ToD recorded: **{result.target_name}** at <t:{result.tod_utc}:F>")
+
+
+@base.DISCORD_CLIENT.slash_command(
+    name="tod",
+    description="Record a raid-target time of death",
+    guild_ids=RAIDTARGET_GUILDS,
+)
+async def tod(
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
+    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
+):
+    await record_tod_interaction(inter, target, time_str)
+
+
+@raidtarget.sub_command(description="Record a time of death for a raid target", name="tod")
+async def tod_cmd(
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
+    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
+):
+    await record_tod_interaction(inter, target, time_str)
 
 
 @raidtarget.sub_command(description="Undo the latest ToD for a raid target", name="undo")
