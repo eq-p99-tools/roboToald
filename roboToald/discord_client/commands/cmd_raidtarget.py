@@ -382,8 +382,12 @@ async def undo_cmd(
     await inter.send(f"Undid latest ToD; restored **{target}** to <t:{prev.tod_utc}:F>")
 
 
-@raidtarget.sub_command(description="Record a server earthquake time", name="quake")
-async def quake_cmd(
+@base.DISCORD_CLIENT.slash_command(
+    name="quake",
+    description="Record a server earthquake time",
+    guild_ids=RAIDTARGET_GUILDS,
+)
+async def quake(
     inter: disnake.ApplicationCommandInteraction,
     time_str: str = commands.Param(
         default="now",

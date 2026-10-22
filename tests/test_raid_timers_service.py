@@ -94,6 +94,26 @@ async def test_local_source_loads_names(raid_timers_session, monkeypatch):
     assert "King Tranix" not in names  # hidden
 
 
+def test_quake_command_is_top_level():
+    from roboToald.discord_client.commands import cmd_raidtarget
+
+    assert cmd_raidtarget.quake.qualified_name == "quake"
+
+
+@pytest.mark.asyncio
+async def test_quake_command_records(raid_timers_session, monkeypatch, fake_inter):
+    from roboToald.discord_client.commands import cmd_raidtarget
+
+    rt_service.seed_guild_if_empty(GUILD)
+    monkeypatch.setattr(cmd_raidtarget.base, "is_user_authorized", lambda **kwargs: True)
+    monkeypatch.setattr(cmd_raidtarget.config, "get_raidtargets_source", lambda gid: "local")
+    now = 1_700_000_000
+    monkeypatch.setattr(cmd_raidtarget.time, "time", lambda: now)
+    await cmd_raidtarget.quake(fake_inter, "now")
+    assert rt_service.last_quake(GUILD) == now
+    fake_inter.send.assert_awaited()
+
+
 @pytest.mark.asyncio
 async def test_tod_command_records(raid_timers_session, monkeypatch, fake_inter):
     from roboToald.discord_client.commands import cmd_raidtarget
