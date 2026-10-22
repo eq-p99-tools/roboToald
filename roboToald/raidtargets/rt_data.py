@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections
 import datetime
 import enum
@@ -117,6 +118,22 @@ class RaidTargets:
             cached = cls._cache.get(guild_id)
             if cached and cached["time"] > (time.time() - RAIDTARGETS_CACHE_SECONDS):
                 return
+
+        if config.get_raidtargets_source(guild_id) == "local":
+            try:
+                from roboToald.raidtargets import rt_service
+
+                feed = await asyncio.to_thread(rt_service.build_feed_for_guild, guild_id)
+                targets = json.loads(json.dumps(feed), cls=JSONDecoder)
+            except Exception:
+                logger.exception("Local raid targets build failed for guild=%s", guild_id)
+                targets = []
+            cls._cache[guild_id] = {
+                "time": time.time(),
+                "targets": targets if isinstance(targets, list) else [],
+                "names": [t.name for t in targets] if isinstance(targets, list) else [],
+            }
+            return
 
         endpoint = config.get_raidtargets_endpoint(guild_id)
         if not endpoint:

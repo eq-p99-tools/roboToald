@@ -204,9 +204,11 @@ app = FastAPI(title="RoboToald API", description="API for RoboToald SSO services
 # Mount the admin dashboard router
 from roboToald.api.dashboard import router as dashboard_router  # noqa: E402
 from roboToald.api.dashboard_manage import router as dashboard_manage_router  # noqa: E402
+from roboToald.api.raid_timers_api import router as raid_timers_router  # noqa: E402
 
 app.include_router(dashboard_router)
 app.include_router(dashboard_manage_router)
+app.include_router(raid_timers_router)
 
 FAVICON_PATH = Path(__file__).with_name("static") / "favicon.svg"
 
@@ -1001,6 +1003,23 @@ async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
         character_name,
         mob,
     )
+    if config.get_raidtargets_source(conn.guild_id) == "local":
+        from roboToald.raidtargets import rt_service
+
+        tod_utc = int(_est_now_with_log_minute_second(parsed_log).timestamp())
+        try:
+            await asyncio.to_thread(
+                rt_service.record_tod,
+                conn.guild_id,
+                mob,
+                tod_utc,
+                "log_death",
+                character_name,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record local ToD for guild=%s mob=%s", conn.guild_id, mob
+            )
     tod_timestamp = _format_tod_for_discord(parsed_log)
     _send_to_tod_channel(conn.guild_id, f"!tod {mob}, {tod_timestamp}")
     _schedule_auto_attendance(conn.guild_id, mob)

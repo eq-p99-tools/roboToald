@@ -78,6 +78,18 @@ member_role = 77777
 enable_raidtarget = true
 enable_batphone = true
 enable_ds = true
+
+# Raid timers: window source and Discord board (see DEVELOPMENT.md)
+# raidtargets_source = local          # local = compute from DB; endpoint = fetch URL (default)
+# raidtargets_endpoint = https://timers.example.com/targets-v2.json
+# raidtargets_authkey = <shared-secret>   # sent as AuthorizationKey when source=endpoint
+# raidtargets_soon_threshold = 172800
+# raid_timers_channel_id = <channel_id>   # Discord channel for the NOW/SOON/LATER board
+# raidtargets_feed_key = <shared-secret>  # AuthorizationKey for GET /raidtargets/<guild_id>/targets-v2.json
+# Optional log stream (SSE). Empty URL means the reader does not start.
+# log_stream_url = https://logs.example/v1/streams/myguild
+# log_stream_key = <bearer-token>
+# guild_chat_channel_id = 0                 # archive guild chat; 0 = commands only. Not the batphone or ToD channel.
 ds_tod_channel = <channel_id>
 # FTE / !tod relay from P99 Login Proxy EQ logs (0 = disabled)
 tod_channel_id = 0
