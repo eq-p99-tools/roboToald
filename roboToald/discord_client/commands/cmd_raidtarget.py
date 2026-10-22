@@ -355,15 +355,6 @@ async def tod(
     await record_tod_interaction(inter, target, time_str)
 
 
-@raidtarget.sub_command(description="Record a time of death for a raid target", name="tod")
-async def tod_cmd(
-    inter: disnake.ApplicationCommandInteraction,
-    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
-    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
-):
-    await record_tod_interaction(inter, target, time_str)
-
-
 @raidtarget.sub_command(description="Undo the latest ToD for a raid target", name="undo")
 async def undo_cmd(
     inter: disnake.ApplicationCommandInteraction,
