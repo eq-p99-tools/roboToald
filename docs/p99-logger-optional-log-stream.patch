@@ -1,0 +1,1062 @@
+From 79a70f6e48c266ea7e3b8ba731d0fc8b6f20d7c3 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 22 Oct 2026 07:06:13 +0000
+Subject: [PATCH] Add an optional SSE log stream without changing the JSONL
+ dump
+
+The new stream object serves new chat records from a separate spool.
+Omitting it leaves stdout and the output file on the previous path.
+---
+ Cargo.lock    |  35 +++
+ Cargo.toml    |   1 +
+ README.md     |  42 ++-
+ src/main.rs   | 119 ++++++++-
+ src/stream.rs | 716 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 905 insertions(+), 8 deletions(-)
+ create mode 100644 src/stream.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index a8f6b86..657f48f 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -81,6 +81,16 @@ dependencies = [
+  "windows-link",
+ ]
+ 
++[[package]]
++name = "chrono-tz"
++version = "0.10.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
++dependencies = [
++ "chrono",
++ "phf",
++]
++
+ [[package]]
+ name = "cipher"
+ version = "0.4.4"
+@@ -374,6 +384,7 @@ version = "0.1.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
++ "chrono-tz",
+  "eq-network",
+  "hex",
+  "serde",
+@@ -382,6 +393,24 @@ dependencies = [
+  "zeroize",
+ ]
+ 
++[[package]]
++name = "phf"
++version = "0.12.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
++dependencies = [
++ "phf_shared",
++]
++
++[[package]]
++name = "phf_shared"
++version = "0.12.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
++dependencies = [
++ "siphasher",
++]
++
+ [[package]]
+ name = "pin-project-lite"
+ version = "0.2.17"
+@@ -520,6 +549,12 @@ dependencies = [
+  "libc",
+ ]
+ 
++[[package]]
++name = "siphasher"
++version = "1.0.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
++
+ [[package]]
+ name = "slab"
+ version = "0.4.12"
+diff --git a/Cargo.toml b/Cargo.toml
+index bd4de9d..433740d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -13,6 +13,7 @@ path = "src/main.rs"
+ [dependencies]
+ anyhow = "1"
+ chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
++chrono-tz = "0.10"
+ hex = "0.4"
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+diff --git a/README.md b/README.md
+index d17b2dd..2b055d4 100644
+--- a/README.md
++++ b/README.md
+@@ -68,9 +68,12 @@ The repeated `Server` in Quarm's name is intentional: the TAKP login service
+ appends ` Server` to the registered world name. Use the complete server-list name.
+ 
+ The optional fields are `protocol` (default `project1999`), `host`, `port`,
+-`assets`, `output`, `health`, `channels`, `include_raw` (default `false`), and
+-`reconnect_seconds` (default `30`). `host` and `port` override the selected
+-protocol's endpoint. With no `output`, JSONL is written only to standard output.
++`assets`, `output`, `health`, `channels`, `include_raw` (default `false`),
++`reconnect_seconds` (default `30`), and `stream`. `host` and `port` override the
++selected protocol's endpoint. With no `output`, JSONL is written only to
++standard output. Omitting `stream` leaves the process exactly as a JSONL logger:
++nothing listens, and no second file is written.
++
+ For P99, omitting `assets` uses the inventory compiled into the binary; set it
+ to a readable path to override that inventory. Quarm's implemented handshake
+ does not use this inventory. The example supplies the fixed `output` and
+@@ -153,6 +156,39 @@ SIGTERM closes the active session. Docker's `unless-stopped` policy restarts a
+ process that exits. The JSONL file is append-only and needs an external
+ retention policy.
+ 
++## Optional log stream
++
++Set `stream` to also serve new records to roboToald over server-sent events.
++The JSONL file named by `output` is still written first, with the same bytes as
++before. The stream does not read or rewrite that file. It appends a separate
++spool and only starts when this object is present.
++
++```json
++"stream": {
++  "listen": "0.0.0.0:8090",
++  "stream_id": "myguild",
++  "token": "choose-a-long-secret",
++  "spool": "/data/stream.jsonl"
++}
++```
++
++`GET /v1/streams/myguild` with `Authorization: Bearer <token>` returns
++`text/event-stream`. No `Last-Event-ID` follows only records that arrive after
++the connection. A numeric `Last-Event-ID` replays later spool rows, then
++follows. The token is never written to the JSONL dump or logged.
++
++Guild chat is sent as an EQ log line whose clock is the record's UTC receive
++time converted to US Eastern, for example
++`[Fri Mar 06 10:13:03 2026] Toald tells the guild, '!tod Lord Nagafen'`. Other
++channels are sent too, but not in that guild form. `decode_error` rows stay in
++the JSONL dump and are left out of the stream.
++
++Publish the listen port yourself when another host must connect. Compose does
++not publish it unless you add that mapping. A read-only container can listen;
++the spool path has to be on the writable data volume, next to `chat.jsonl`.
++Keep the spool as long as you keep the dump. Do not truncate it: sequence
++numbers are not reused.
++
+ EverQuest may temporarily deny a new world entry when the previous session did
+ not exit cleanly. The collector treats that response as a connection failure
+ and keeps retrying; it does not reuse the rejected session's keys.
+diff --git a/src/main.rs b/src/main.rs
+index 67b4842..92179d8 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,5 @@
++mod stream;
++
+ use anyhow::{ensure, Context, Result};
+ use eq_network::{
+     assets::Assets,
+@@ -44,6 +46,18 @@ struct Config {
+     channels: Option<HashSet<chat::ChannelName>>,
+     #[serde(default = "default_reconnect")]
+     reconnect_seconds: u64,
++    /// Optional SSE follower. Absent means the process only writes the JSONL dump.
++    #[serde(default)]
++    stream: Option<StreamConfig>,
++}
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct StreamConfig {
++    listen: String,
++    stream_id: String,
++    token: Zeroizing<String>,
++    spool: PathBuf,
+ }
+ 
+ impl Config {
+@@ -104,6 +118,7 @@ mod config_tests {
+         assert_eq!(config.reconnect_seconds, 30);
+         assert_eq!(config.output, None);
+         assert_eq!(config.health, None);
++        assert!(config.stream.is_none());
+         assert!(!config.include_raw);
+         assert_eq!(config.channels, None);
+     }
+@@ -192,22 +207,79 @@ mod config_tests {
+         assert!(config.client_config().logs(&event(4)));
+         assert!(!config.client_config().logs(&event(8)));
+     }
++
++    #[test]
++    fn jsonl_dump_bytes_stay_the_same_when_streaming() {
++        use eq_network::chat;
++        use eq_network::client::RecordEvent;
++
++        let dir = std::env::temp_dir().join(format!("p99-jsonl-{}", std::process::id()));
++        let _ = fs::remove_dir_all(&dir);
++        fs::create_dir_all(&dir).unwrap();
++        let output = dir.join("chat.jsonl");
++        let spool = dir.join("stream.jsonl");
++        let config: Config = serde_json::from_str(&format!(
++            r#"{{
++                "user": "EXAMPLE_LOGIN_ACCOUNT",
++                "pass": "EXAMPLE_PASSWORD",
++                "server": "Project 1999: Green (Velious, PvE)",
++                "character": "Toald",
++                "output": "{}",
++                "stream": {{
++                    "listen": "127.0.0.1:0",
++                    "stream_id": "myguild",
++                    "token": "secret",
++                    "spool": "{}"
++                }}
++            }}"#,
++            output.display().to_string().replace('\\', "\\\\"),
++            spool.display().to_string().replace('\\', "\\\\")
++        ))
++        .unwrap();
++        let hub = stream::StreamHub::open(&spool, "chat.jsonl").unwrap();
++        let mut log = ChatLog::new(&config, Some(hub)).unwrap();
++        let mut body = vec![0_u8; 148];
++        body[64..69].copy_from_slice(b"Toald");
++        body.extend_from_slice(b"!tod Lord Nagafen\0");
++        let event = chat::parse(0x1004, &body, false).unwrap().unwrap();
++        let record = Record::new(
++            "Green",
++            "Toald",
++            "ecommons",
++            "sess",
++            1,
++            RecordEvent::Chat(event),
++        )
++        .with_timestamp("2026-03-06T15:13:03Z");
++        log.emit(&record).unwrap();
++
++        let dumped = fs::read(&output).unwrap();
++        let mut expected = serde_json::to_vec(&record).unwrap();
++        expected.push(b'\n');
++        assert_eq!(dumped, expected);
++        assert!(!String::from_utf8_lossy(&dumped).contains("\"seq\""));
++        assert!(fs::read_to_string(&spool).unwrap().contains("\"seq\":1"));
++        let _ = fs::remove_dir_all(&dir);
++    }
+ }
+ 
+ /// The CLI adapter writes the library's flat records to stdout and an optional file.
++///
++/// `stream` is a separate spool. It is not consulted while the JSONL bytes are produced.
+ struct ChatLog {
+     file: Option<fs::File>,
++    stream: Option<Arc<stream::StreamHub>>,
+ }
+ 
+ impl ChatLog {
+-    fn new(config: &Config) -> Result<Self> {
++    fn new(config: &Config, hub: Option<Arc<stream::StreamHub>>) -> Result<Self> {
+         let file = config
+             .output
+             .as_ref()
+             .map(|path| fs::OpenOptions::new().create(true).append(true).open(path))
+             .transpose()
+             .context("open JSONL output")?;
+-        Ok(Self { file })
++        Ok(Self { file, stream: hub })
+     }
+ 
+     fn emit(&mut self, record: &Record) -> Result<()> {
+@@ -217,6 +289,11 @@ impl ChatLog {
+             file.write_all(&bytes)?;
+         }
+         io::stdout().lock().write_all(&bytes)?;
++        if let Some(hub) = &self.stream {
++            if let Some(line) = stream::eq_line(record) {
++                hub.append(&record.character, &line)?;
++            }
++        }
+         Ok(())
+     }
+ }
+@@ -366,8 +443,36 @@ fn main() -> Result<()> {
+     options.reconnect = zone_duration.is_none() && !world_only;
+     options.world_only = world_only;
+     options.zone_duration = zone_duration;
+-    let mut log = ChatLog::new(&config)?;
+-    client.run(
++    let stream_server = match &config.stream {
++        Some(stream_config) => {
++            stream::validate(
++                &stream_config.listen,
++                &stream_config.stream_id,
++                stream_config.token.as_str(),
++                &stream_config.spool,
++            )?;
++            let file_name = config
++                .output
++                .as_ref()
++                .and_then(|path| path.file_name())
++                .and_then(|name| name.to_str())
++                .unwrap_or("stdout");
++            let hub = stream::StreamHub::open(&stream_config.spool, file_name)?;
++            let (_addr, handle) = stream::serve(
++                &stream_config.listen,
++                stream_config.stream_id.clone(),
++                stream_config.token.as_str().to_owned(),
++                Arc::clone(&hub),
++            )?;
++            Some((hub, handle))
++        }
++        None => None,
++    };
++    let mut log = ChatLog::new(
++        &config,
++        stream_server.as_ref().map(|(hub, _)| Arc::clone(hub)),
++    )?;
++    let run_result = client.run(
+         &CancellationToken::from(stop),
+         options,
+         |event| match event {
+@@ -392,5 +497,9 @@ fn main() -> Result<()> {
+             }
+             _ => Ok(()),
+         },
+-    )
++    );
++    if let Some((_, handle)) = stream_server {
++        handle.shutdown();
++    }
++    run_result
+ }
+diff --git a/src/stream.rs b/src/stream.rs
+new file mode 100644
+index 0000000..902ca76
+--- /dev/null
++++ b/src/stream.rs
+@@ -0,0 +1,716 @@
++//! Optional SSE follower of new chat records.
++//!
++//! The JSONL dump is written by the caller and is not read or rewritten here.
++//! This module appends a separate spool and serves it only when configured.
++
++use anyhow::{bail, Context, Result};
++use chrono::{DateTime, Datelike, Timelike, Utc};
++use chrono_tz::America::New_York;
++use eq_network::chat::ChannelName;
++use eq_network::client::{Record, RecordEvent};
++use serde::{Deserialize, Serialize};
++use std::fs::{self, File, OpenOptions};
++use std::io::{self, BufRead, BufReader, Read, Write};
++use std::net::{SocketAddr, TcpListener, TcpStream};
++use std::path::{Path, PathBuf};
++use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
++use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
++use std::sync::{Arc, Mutex};
++use std::thread::{self, JoinHandle};
++use std::time::{Duration, Instant};
++
++const MAX_LINE_BYTES: usize = 8192;
++const HEADER_LIMIT: usize = 8192;
++const PING_INTERVAL: Duration = Duration::from_secs(15);
++
++#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
++struct SpoolEvent {
++    seq: u64,
++    file: String,
++    character: String,
++    line: String,
++}
++
++struct Inner {
++    spool_path: PathBuf,
++    spool: File,
++    file_name: String,
++    next_seq: u64,
++    first_seq: Option<u64>,
++    subscribers: Vec<SyncSender<String>>,
++}
++
++/// Durable sequence plus the fan-out used by live HTTP clients.
++pub struct StreamHub {
++    inner: Mutex<Inner>,
++}
++
++pub struct ServerHandle {
++    stop: Arc<AtomicBool>,
++    join: Option<JoinHandle<()>>,
++    inflight: Arc<AtomicUsize>,
++}
++
++enum Resume {
++    /// No `Last-Event-ID`: follow only lines appended after this connection.
++    Live,
++    /// Replay `seq` greater than this value, then follow.
++    After(u64),
++    /// The cursor cannot be used. Send `reset`, then follow live.
++    Reset,
++}
++
++struct Follow {
++    reset: Option<String>,
++    backlog: Vec<String>,
++    live: Receiver<String>,
++}
++
++impl StreamHub {
++    /// Open or create `spool`. Existing lines set the next sequence number.
++    ///
++    /// # Errors
++    ///
++    /// Returns an error when the spool cannot be read, repaired, or appended.
++    pub fn open(spool: &Path, file_name: &str) -> Result<Arc<Self>> {
++        if let Some(parent) = spool.parent() {
++            if !parent.as_os_str().is_empty() && !parent.exists() {
++                bail!("spool directory does not exist: {}", parent.display());
++            }
++        }
++        repair_trailing_partial(spool)?;
++        let (next_seq, first_seq) = load_spool(spool)?;
++        let file = OpenOptions::new()
++            .create(true)
++            .append(true)
++            .open(spool)
++            .with_context(|| format!("open stream spool {}", spool.display()))?;
++        Ok(Arc::new(Self {
++            inner: Mutex::new(Inner {
++                spool_path: spool.to_path_buf(),
++                spool: file,
++                file_name: file_name.to_owned(),
++                next_seq,
++                first_seq,
++                subscribers: Vec::new(),
++            }),
++        }))
++    }
++
++    /// Append one synthesized log line and flush it before assigning `seq`.
++    ///
++    /// # Errors
++    ///
++    /// Returns an error when the spool write or flush fails. The sequence does
++    /// not advance in that case.
++    pub fn append(&self, character: &str, line: &str) -> Result<u64> {
++        let mut inner = self.inner.lock().expect("stream spool lock");
++        let seq = inner.next_seq;
++        let event = SpoolEvent {
++            seq,
++            file: inner.file_name.clone(),
++            character: character.to_owned(),
++            line: line.to_owned(),
++        };
++        let mut bytes = serde_json::to_vec(&event)?;
++        bytes.push(b'\n');
++        inner
++            .spool
++            .write_all(&bytes)
++            .context("write stream spool")?;
++        inner.spool.flush().context("flush stream spool")?;
++        inner.next_seq = seq.saturating_add(1);
++        if inner.first_seq.is_none() {
++            inner.first_seq = Some(seq);
++        }
++        let sse = line_event(&event);
++        inner
++            .subscribers
++            .retain(|sender| sender.try_send(sse.clone()).is_ok());
++        Ok(seq)
++    }
++
++    fn follow(&self, resume: Resume) -> Result<Follow> {
++        let mut inner = self.inner.lock().expect("stream spool lock");
++        let (tx, rx) = mpsc::sync_channel(64);
++        inner.subscribers.push(tx);
++        let last = inner.next_seq.saturating_sub(1);
++        let first = inner.first_seq;
++        let path = inner.spool_path.clone();
++        let (reset, backlog) = match resume {
++            Resume::Live => (None, Vec::new()),
++            Resume::Reset => (Some(reset_event(last, "unknown_cursor")), Vec::new()),
++            Resume::After(cursor) => {
++                if cursor > last {
++                    (Some(reset_event(last, "unknown_cursor")), Vec::new())
++                } else if first.is_some_and(|oldest| cursor + 1 < oldest) {
++                    let oldest = first.expect("oldest seq");
++                    let from = oldest.saturating_sub(1);
++                    (Some(reset_event(from, "expired")), read_after(&path, from)?)
++                } else {
++                    (None, read_after(&path, cursor)?)
++                }
++            }
++        };
++        Ok(Follow {
++            reset,
++            backlog,
++            live: rx,
++        })
++    }
++}
++
++impl ServerHandle {
++    /// Stop accepting clients and wait for in-flight streams to notice.
++    pub fn shutdown(mut self) {
++        self.stop.store(true, Ordering::Relaxed);
++        if let Some(join) = self.join.take() {
++            let _ = join.join();
++        }
++        let deadline = Instant::now() + Duration::from_secs(3);
++        while self.inflight.load(Ordering::Relaxed) > 0 && Instant::now() < deadline {
++            thread::sleep(Duration::from_millis(20));
++        }
++    }
++}
++
++impl Drop for ServerHandle {
++    fn drop(&mut self) {
++        self.stop.store(true, Ordering::Relaxed);
++        if let Some(join) = self.join.take() {
++            let _ = join.join();
++        }
++    }
++}
++
++/// Check the optional listener settings before opening a socket.
++///
++/// # Errors
++///
++/// Returns an error when the bind address, stream id, token, or spool path is unusable.
++pub fn validate(listen: &str, stream_id: &str, token: &str, spool: &Path) -> Result<()> {
++    listen
++        .parse::<SocketAddr>()
++        .context("parse stream listen address")?;
++    if !valid_stream_id(stream_id) {
++        bail!("stream_id must be 1-64 characters of letters, digits, '.', '_' or '-'");
++    }
++    if token.is_empty() {
++        bail!("stream token must not be empty");
++    }
++    if spool.as_os_str().is_empty() {
++        bail!("stream spool path must not be empty");
++    }
++    if spool
++        .file_name()
++        .and_then(|name| name.to_str())
++        .is_none_or(|name| name.contains(':') || name.contains('/') || name.contains('\\'))
++    {
++        bail!("stream spool file name must not contain ':', '/' or '\\'");
++    }
++    Ok(())
++}
++
++/// Bind the listener and serve `GET /v1/streams/{stream_id}` until `shutdown`.
++///
++/// # Errors
++///
++/// Returns an error when the address cannot be bound.
++pub fn serve(
++    listen: &str,
++    stream_id: String,
++    token: String,
++    hub: Arc<StreamHub>,
++) -> Result<(SocketAddr, ServerHandle)> {
++    let listener =
++        TcpListener::bind(listen).with_context(|| format!("bind log stream {listen}"))?;
++    listener.set_nonblocking(true)?;
++    let addr = listener
++        .local_addr()
++        .context("read stream listen address")?;
++    let stop = Arc::new(AtomicBool::new(false));
++    let inflight = Arc::new(AtomicUsize::new(0));
++    let stop_flag = Arc::clone(&stop);
++    let inflight_flag = Arc::clone(&inflight);
++    let join = thread::Builder::new()
++        .name("log-stream".into())
++        .spawn(move || accept_loop(listener, stream_id, token, hub, stop_flag, inflight_flag))
++        .context("spawn log stream")?;
++    eprintln!("log stream listening on {addr}");
++    Ok((
++        addr,
++        ServerHandle {
++            stop,
++            join: Some(join),
++            inflight,
++        },
++    ))
++}
++
++/// Build the EQ-style line for one decoded record.
++///
++/// Guild chat uses the form the reader looks for. Other channels are still
++/// streamed, but they do not use that form. Decode failures and empty or
++/// oversized text return `None` so they stay in the JSONL dump only.
++pub fn eq_line(record: &Record) -> Option<String> {
++    let RecordEvent::Chat(chat) = &record.event else {
++        return None;
++    };
++    let text = one_line(chat.message.as_ref()?.text.as_str());
++    if text.is_empty() {
++        return None;
++    }
++    let stamp = eastern_stamp(&record.timestamp)?;
++    let sender = one_line(chat.sender.as_deref().unwrap_or(""));
++    let line = if chat.channel_name == ChannelName::Guild {
++        if sender.is_empty() {
++            format!("[{stamp}] You say to your guild, '{text}'")
++        } else {
++            format!("[{stamp}] {sender} tells the guild, '{text}'")
++        }
++    } else if sender.is_empty() {
++        format!("[{stamp}] You say, '{text}'")
++    } else {
++        format!("[{stamp}] {sender} says, '{text}'")
++    };
++    if line.len() > MAX_LINE_BYTES {
++        return None;
++    }
++    Some(line)
++}
++
++/// Render a UTC RFC3339 timestamp as an EQ log stamp in US Eastern.
++fn eastern_stamp(timestamp: &str) -> Option<String> {
++    let utc: DateTime<Utc> = DateTime::parse_from_rfc3339(timestamp)
++        .ok()?
++        .with_timezone(&Utc);
++    let local = utc.with_timezone(&New_York);
++    let weekday = match local.weekday().num_days_from_monday() {
++        0 => "Mon",
++        1 => "Tue",
++        2 => "Wed",
++        3 => "Thu",
++        4 => "Fri",
++        5 => "Sat",
++        _ => "Sun",
++    };
++    let month = match local.month() {
++        1 => "Jan",
++        2 => "Feb",
++        3 => "Mar",
++        4 => "Apr",
++        5 => "May",
++        6 => "Jun",
++        7 => "Jul",
++        8 => "Aug",
++        9 => "Sep",
++        10 => "Oct",
++        11 => "Nov",
++        _ => "Dec",
++    };
++    Some(format!(
++        "{weekday} {month} {:02} {:02}:{:02}:{:02} {}",
++        local.day(),
++        local.hour(),
++        local.minute(),
++        local.second(),
++        local.year()
++    ))
++}
++
++fn one_line(value: &str) -> String {
++    value
++        .chars()
++        .map(|ch| if ch.is_control() { ' ' } else { ch })
++        .collect()
++}
++
++fn valid_stream_id(id: &str) -> bool {
++    !id.is_empty()
++        && id.len() <= 64
++        && id
++            .bytes()
++            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
++}
++
++fn line_event(event: &SpoolEvent) -> String {
++    let data = serde_json::to_string(event).unwrap_or_else(|_| "{}".to_owned());
++    format!("id: {}\nevent: line\ndata: {data}\n\n", event.seq)
++}
++
++fn reset_event(seq: u64, reason: &str) -> String {
++    let data = serde_json::json!({ "seq": seq, "reason": reason });
++    format!("id: {seq}\nevent: reset\ndata: {data}\n\n")
++}
++
++fn repair_trailing_partial(path: &Path) -> Result<()> {
++    if !path.exists() {
++        return Ok(());
++    }
++    let bytes = fs::read(path).with_context(|| format!("read stream spool {}", path.display()))?;
++    if bytes.is_empty() || bytes.last() == Some(&b'\n') {
++        return Ok(());
++    }
++    let end = bytes
++        .iter()
++        .rposition(|byte| *byte == b'\n')
++        .map_or(0, |index| index + 1);
++    let file = OpenOptions::new()
++        .write(true)
++        .open(path)
++        .with_context(|| format!("repair stream spool {}", path.display()))?;
++    file.set_len(end as u64)
++        .context("truncate partial stream spool line")?;
++    Ok(())
++}
++
++fn load_spool(path: &Path) -> Result<(u64, Option<u64>)> {
++    if !path.exists() {
++        return Ok((1, None));
++    }
++    let file = File::open(path).with_context(|| format!("read stream spool {}", path.display()))?;
++    let mut next = 1_u64;
++    let mut first = None;
++    for line in BufReader::new(file).lines() {
++        let line = line.context("read stream spool line")?;
++        if line.is_empty() {
++            continue;
++        }
++        let event: SpoolEvent = serde_json::from_str(&line).context("parse stream spool line")?;
++        if event.seq == 0 || event.seq != next {
++            bail!(
++                "stream spool sequence must increase by 1 starting at {next}, found {}",
++                event.seq
++            );
++        }
++        if first.is_none() {
++            first = Some(event.seq);
++        }
++        next = event.seq.saturating_add(1);
++    }
++    Ok((next, first))
++}
++
++fn read_after(path: &Path, cursor: u64) -> Result<Vec<String>> {
++    if !path.exists() {
++        return Ok(Vec::new());
++    }
++    let file = File::open(path).context("replay stream spool")?;
++    let mut events = Vec::new();
++    for line in BufReader::new(file).lines() {
++        let line = line.context("read stream spool line")?;
++        if line.is_empty() {
++            continue;
++        }
++        let event: SpoolEvent = serde_json::from_str(&line).context("parse stream spool line")?;
++        if event.seq > cursor {
++            events.push(line_event(&event));
++        }
++    }
++    Ok(events)
++}
++
++fn accept_loop(
++    listener: TcpListener,
++    stream_id: String,
++    token: String,
++    hub: Arc<StreamHub>,
++    stop: Arc<AtomicBool>,
++    inflight: Arc<AtomicUsize>,
++) {
++    while !stop.load(Ordering::Relaxed) {
++        match listener.accept() {
++            Ok((socket, _)) => {
++                let stream_id = stream_id.clone();
++                let token = token.clone();
++                let hub = Arc::clone(&hub);
++                let stop = Arc::clone(&stop);
++                let inflight = Arc::clone(&inflight);
++                inflight.fetch_add(1, Ordering::Relaxed);
++                thread::spawn(move || {
++                    if let Err(error) = handle_client(socket, &stream_id, &token, &hub, &stop) {
++                        eprintln!("log stream client ended: {error}");
++                    }
++                    inflight.fetch_sub(1, Ordering::Relaxed);
++                });
++            }
++            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
++                thread::sleep(Duration::from_millis(50));
++            }
++            Err(error) => {
++                eprintln!("log stream accept failed: {error}");
++                break;
++            }
++        }
++    }
++}
++
++fn handle_client(
++    mut socket: TcpStream,
++    stream_id: &str,
++    token: &str,
++    hub: &StreamHub,
++    stop: &AtomicBool,
++) -> io::Result<()> {
++    socket.set_nodelay(true)?;
++    let raw = read_headers(&mut socket)?;
++    let request = parse_request(&raw);
++    if request.method != "GET" || request.path != format!("/v1/streams/{stream_id}") {
++        return write_plain(&mut socket, "404 Not Found", "not found\n");
++    }
++    if !tokens_match(request.authorization.as_deref().unwrap_or(""), token) {
++        return write_plain(&mut socket, "401 Unauthorized", "unauthorized\n");
++    }
++    let resume = match request.last_event_id.as_deref() {
++        None => Resume::Live,
++        Some(value) => match value.parse::<u64>() {
++            Ok(cursor) => Resume::After(cursor),
++            Err(_) => Resume::Reset,
++        },
++    };
++    let follow = hub.follow(resume).map_err(io::Error::other)?;
++    socket.set_write_timeout(Some(Duration::from_secs(5)))?;
++    write!(
++        socket,
++        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache, no-transform\r\nX-Accel-Buffering: no\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n\r\n"
++    )?;
++    if let Some(reset) = &follow.reset {
++        write_chunk(&mut socket, reset)?;
++    }
++    for event in &follow.backlog {
++        write_chunk(&mut socket, event)?;
++    }
++    let mut since_ping = Instant::now();
++    loop {
++        if stop.load(Ordering::Relaxed) {
++            break;
++        }
++        match follow.live.recv_timeout(Duration::from_secs(1)) {
++            Ok(event) => {
++                write_chunk(&mut socket, &event)?;
++                since_ping = Instant::now();
++            }
++            Err(RecvTimeoutError::Timeout) => {
++                if since_ping.elapsed() >= PING_INTERVAL {
++                    write_chunk(&mut socket, ": ping\n\n")?;
++                    since_ping = Instant::now();
++                }
++            }
++            Err(RecvTimeoutError::Disconnected) => break,
++        }
++    }
++    let _ = write!(socket, "0\r\n\r\n");
++    let _ = socket.flush();
++    Ok(())
++}
++
++struct Request {
++    method: String,
++    path: String,
++    authorization: Option<String>,
++    last_event_id: Option<String>,
++}
++
++fn read_headers(socket: &mut TcpStream) -> io::Result<String> {
++    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
++    let mut buf = Vec::new();
++    let mut tmp = [0_u8; 512];
++    while !buf.windows(4).any(|window| window == b"\r\n\r\n") {
++        if buf.len() > HEADER_LIMIT {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "request headers too large",
++            ));
++        }
++        let read = socket.read(&mut tmp)?;
++        if read == 0 {
++            break;
++        }
++        buf.extend_from_slice(&tmp[..read]);
++    }
++    String::from_utf8(buf).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
++}
++
++fn parse_request(raw: &str) -> Request {
++    let mut lines = raw.split("\r\n");
++    let mut request = Request {
++        method: String::new(),
++        path: String::new(),
++        authorization: None,
++        last_event_id: None,
++    };
++    if let Some(start) = lines.next() {
++        let mut parts = start.split_whitespace();
++        request.method = parts.next().unwrap_or("").to_owned();
++        request.path = parts.next().unwrap_or("").to_owned();
++    }
++    for line in lines {
++        let Some((name, value)) = line.split_once(':') else {
++            continue;
++        };
++        let value = value.trim();
++        if name.eq_ignore_ascii_case("authorization") {
++            request.authorization = value.strip_prefix("Bearer ").map(str::to_owned);
++        } else if name.eq_ignore_ascii_case("last-event-id") {
++            request.last_event_id = Some(value.to_owned());
++        }
++    }
++    request
++}
++
++fn tokens_match(presented: &str, expected: &str) -> bool {
++    let presented = presented.as_bytes();
++    let expected = expected.as_bytes();
++    let mut diff = presented.len() ^ expected.len();
++    for index in 0..presented.len().max(expected.len()) {
++        let left = presented.get(index).copied().unwrap_or(0);
++        let right = expected.get(index).copied().unwrap_or(0);
++        diff |= usize::from(left ^ right);
++    }
++    diff == 0
++}
++
++fn write_plain(socket: &mut TcpStream, status: &str, body: &str) -> io::Result<()> {
++    write!(
++        socket,
++        "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
++        body.len()
++    )?;
++    socket.flush()
++}
++
++fn write_chunk(socket: &mut TcpStream, data: &str) -> io::Result<()> {
++    write!(socket, "{:x}\r\n{data}\r\n", data.len())?;
++    socket.flush()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use eq_network::chat;
++    use eq_network::client::RecordEvent;
++    use std::time::Duration;
++
++    fn guild_record(sender: &str, text: &str, channel: u32, timestamp: &str) -> Record {
++        let mut body = vec![0_u8; 148];
++        body[64..64 + sender.len()].copy_from_slice(sender.as_bytes());
++        body[132..136].copy_from_slice(&channel.to_le_bytes());
++        body.extend_from_slice(text.as_bytes());
++        body.push(0);
++        let event = chat::parse(0x1004, &body, false).unwrap().unwrap();
++        Record::new(
++            "Green",
++            "Toald",
++            "ecommons",
++            "sess",
++            1,
++            RecordEvent::Chat(event),
++        )
++        .with_timestamp(timestamp)
++    }
++
++    #[test]
++    fn guild_line_uses_eastern_stamp_and_other_channels_do_not_match_it() {
++        let record = guild_record("Toald", "!tod Lord Nagafen", 0, "2026-03-06T15:13:03Z");
++        let line = eq_line(&record).unwrap();
++        assert_eq!(
++            line,
++            "[Fri Mar 06 10:13:03 2026] Toald tells the guild, '!tod Lord Nagafen'"
++        );
++
++        let summer = guild_record("Toald", "!bp naggy", 0, "2026-07-16T16:00:00Z");
++        assert_eq!(
++            eq_line(&summer).unwrap(),
++            "[Thu Jul 16 12:00:00 2026] Toald tells the guild, '!bp naggy'"
++        );
++
++        let say = guild_record("Toald", "hello", 8, "2026-03-06T15:13:03Z");
++        let say_line = eq_line(&say).unwrap();
++        assert!(!say_line.contains("tells the guild"));
++        assert!(say_line.contains("says, 'hello'"));
++    }
++
++    #[test]
++    fn live_stream_does_not_replay_and_resume_does() {
++        let dir = std::env::temp_dir().join(format!("p99-stream-{}", std::process::id()));
++        let _ = fs::remove_dir_all(&dir);
++        fs::create_dir_all(&dir).unwrap();
++        let spool = dir.join("stream.jsonl");
++        let hub = StreamHub::open(&spool, "chat.jsonl").unwrap();
++        let record = guild_record("Toald", "!tod Lord Nagafen", 0, "2026-03-06T15:13:03Z");
++        let line = eq_line(&record).unwrap();
++        hub.append("Toald", &line).unwrap();
++
++        let (addr, server) = serve(
++            "127.0.0.1:0",
++            "myguild".into(),
++            "secret".into(),
++            Arc::clone(&hub),
++        )
++        .unwrap();
++
++        let mut live = request(addr, "secret", None);
++        let live_headers = read_for(&mut live, Duration::from_secs(2));
++        assert!(live_headers.contains("200 OK"));
++        hub.append("Toald", &line).unwrap();
++        let live_body = read_for(&mut live, Duration::from_secs(2));
++        assert!(!live_body.contains("\"seq\":1"));
++        assert!(live_body.contains("\"seq\":2"));
++        assert!(live_body.contains("event: line"));
++
++        let mut resume = request(addr, "secret", Some("1"));
++        let resume_body = read_for(&mut resume, Duration::from_secs(2));
++        assert!(resume_body.contains("\"seq\":2"));
++        assert!(!resume_body.contains("\"seq\":1"));
++
++        let mut denied = request(addr, "nope", None);
++        let denied_body = read_for(&mut denied, Duration::from_secs(1));
++        assert!(denied_body.contains("401"));
++        assert!(denied_body.contains("unauthorized"));
++        assert!(!denied_body.contains("event: line"));
++
++        server.shutdown();
++        let _ = fs::remove_dir_all(&dir);
++    }
++
++    fn request(addr: SocketAddr, token: &str, last_event_id: Option<&str>) -> TcpStream {
++        let mut socket = TcpStream::connect(addr).unwrap();
++        socket
++            .set_read_timeout(Some(Duration::from_secs(2)))
++            .unwrap();
++        let cursor = last_event_id
++            .map(|id| format!("Last-Event-ID: {id}\r\n"))
++            .unwrap_or_default();
++        write!(
++            socket,
++            "GET /v1/streams/myguild HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n{cursor}Accept: text/event-stream\r\n\r\n"
++        )
++        .unwrap();
++        socket
++    }
++
++    fn read_for(socket: &mut TcpStream, budget: Duration) -> String {
++        let deadline = Instant::now() + budget;
++        let mut buf = Vec::new();
++        let mut tmp = [0_u8; 1024];
++        while Instant::now() < deadline {
++            match socket.read(&mut tmp) {
++                Ok(0) => break,
++                Ok(n) => buf.extend_from_slice(&tmp[..n]),
++                Err(error)
++                    if error.kind() == io::ErrorKind::WouldBlock
++                        || error.kind() == io::ErrorKind::TimedOut =>
++                {
++                    if buf.windows(10).any(|window| window == b"event: line")
++                        || buf.windows(3).any(|window| window == b"401")
++                    {
++                        break;
++                    }
++                    thread::sleep(Duration::from_millis(20));
++                }
++                Err(_) => break,
++            }
++        }
++        String::from_utf8_lossy(&buf).into_owned()
++    }
++}
+-- 
+2.43.0
+
