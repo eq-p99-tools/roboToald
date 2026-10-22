@@ -99,6 +99,15 @@ Subscribe to raid target windows and get DM notifications when a window opens or
 - `/raidtarget unsubscribe` -- unsubscribe.
 - `/raidtarget subscriptions` -- list your subscriptions.
 
+When `raidtargets_source = local` for the guild, the bot also owns the window math (seeded P99 catalog + ToDs/quakes in SQLite):
+
+- `/raidtarget tod` -- record a time of death (Eastern time, or `now`).
+- `/raidtarget undo` -- undo the latest ToD for a target.
+- `/raidtarget quake` -- record a server earthquake (wipes non-immune ToDs).
+- `/raidtarget sync_defaults` -- insert/update catalog from shipped defaults (Manage Server).
+
+Set `raid_timers_channel_id` to post an edit-in-place NOW/SOON/LATER board (works with local or endpoint source). Publish the JSON feed at `GET /raidtargets/<guild_id>/targets-v2.json` with header `AuthorizationKey: <raidtargets_feed_key>` when source is local.
+
 Subscriptions persist until you unsubscribe or lose the guild member role.
 
 ## Command Reference

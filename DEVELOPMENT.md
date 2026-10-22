@@ -77,9 +77,12 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `ds_active_role_days` | int | `14` | Rolling window length in days for `ds_active_role` eligibility |
 | `wakeup_channels` | `text:voice,...` | *(none)* | Pairs of text:voice channel IDs for wakeup triggers |
 | `wakeup_exclusions` | comma-separated | `""` | Skip wakeup if message contains any of these strings |
-| `raidtargets_endpoint` | url | *(none)* | JSON endpoint for raid target data |
-| `raidtargets_authkey` | string | *(none)* | Auth key for raid targets endpoint |
+| `raidtargets_endpoint` | url | *(none)* | JSON endpoint for raid target data (when `raidtargets_source=endpoint`) |
+| `raidtargets_authkey` | string | *(none)* | Auth key sent as `AuthorizationKey` to the external endpoint |
 | `raidtargets_soon_threshold` | int | `172800` | Seconds before a raid window opens to consider it "soon" |
+| `raidtargets_source` | string | `endpoint` | `local` = compute windows from the bot DB; anything else fetches `raidtargets_endpoint` |
+| `raid_timers_channel_id` | int | `0` | Discord channel for the edit-in-place NOW/SOON/LATER timers board (`0` = disabled) |
+| `raidtargets_feed_key` | string | *(none)* | Shared secret for `GET /raidtargets/<guild_id>/targets-v2.json` (required to publish the feed when source is `local`) |
 | `min_client_version` | string | *(none)* | Minimum P99 Login Proxy version; older clients are rejected |
 | `client_update_message` | string | *(auto)* | Custom message shown when client is too old |
 | `require_log` | bool | `false` | Require `Log=TRUE` in eqclient.ini |
@@ -194,7 +197,13 @@ roboToald/
     │       ├── cmd_raidtarget.py       # /raidtarget
     │       └── cmd_random.py           # /random
     ├── raidtargets/
-    │   └── rt_data.py                  # Raid target JSON parsing
+    │   ├── rt_data.py                  # Raid target JSON fetch/parse + cache
+    │   ├── rt_windows.py               # Pure ToD→window math (PHP port)
+    │   ├── rt_service.py               # Per-guild catalog, ToDs, quakes, feed
+    │   ├── rt_board.py                 # Discord NOW/SOON/LATER board
+    │   └── data/p99_targets_default.json
+    ├── api/
+    │   └── raid_timers_api.py          # GET /raidtargets/{guild}/targets-v2.json
     ├── alert_services/
     │   └── squadcast.py                # SquadCast webhook integration
     ├── wakeup/
@@ -216,6 +225,7 @@ Schema documentation with Mermaid ER diagrams:
 - [Alert Schema](erd/alert_schema.md) -- BatPhone alerts
 - [Timer Schema](erd/timer_schema.md) -- countdown timers
 - [Subscription Schema](erd/subscription_schema.md) -- raid-window subscriptions
+- [Raid Timers Schema](erd/raid_timers_schema.md) -- local raid-target catalog, ToDs, quakes, board message IDs
 
 ## API
 

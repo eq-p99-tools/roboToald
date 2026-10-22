@@ -8,6 +8,7 @@ import disnake
 from disnake.ext import commands
 
 from roboToald import config
+from roboToald.db.models import raid_timers as _raid_timers  # noqa: F401 — register models on Base
 from roboToald.db.models import subscription as sub_model
 from roboToald.discord_client import base
 from roboToald.raidtargets import rt_data
@@ -290,6 +291,126 @@ async def announce_subscriptions():
     await asyncio.gather(*messages)
     if messages:
         logger.info("Sent %s subscription notifications.", len(messages))
+
+
+def _clear_raidtarget_cache(guild_id: int) -> None:
+    rt_data.RaidTargets._cache.pop(guild_id, None)
+
+
+def _require_local_source(inter: disnake.ApplicationCommandInteraction) -> bool:
+    return config.get_raidtargets_source(inter.guild_id) == "local"
+
+
+@raidtarget.sub_command(description="Record a time of death for a raid target", name="tod")
+async def tod_cmd(
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
+    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
+):
+    if not _require_local_source(inter):
+        await inter.send("This server uses an external raid-target feed.", ephemeral=True)
+        return
+    if not base.is_user_authorized(
+        guild=inter.guild, user_id=inter.user.id, role_id=config.get_member_role(inter.guild_id)
+    ):
+        await inter.send("You are not authorized.", ephemeral=True)
+        return
+    from roboToald.raidtargets import rt_service
+
+    try:
+        tod_utc = rt_service.parse_human_time(time_str, int(time.time()))
+    except ValueError as e:
+        await inter.send(f"Could not parse time: {e}", ephemeral=True)
+        return
+    result = await asyncio.to_thread(
+        rt_service.record_tod,
+        inter.guild_id,
+        target,
+        tod_utc,
+        "slash",
+        str(inter.user.id),
+    )
+    _clear_raidtarget_cache(inter.guild_id)
+    if result.status == "unknown_target":
+        await inter.send(f"`{target}` is not a known raid target.", ephemeral=True)
+        return
+    if result.status == "duplicate":
+        await inter.send(
+            f"Duplicate ToD ignored for **{result.target_name}** (already <t:{result.tod_utc}:F>).",
+            ephemeral=True,
+        )
+        return
+    await inter.send(f"ToD recorded: **{result.target_name}** at <t:{result.tod_utc}:F>")
+
+
+@raidtarget.sub_command(description="Undo the latest ToD for a raid target", name="undo")
+async def undo_cmd(
+    inter: disnake.ApplicationCommandInteraction,
+    target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
+):
+    if not _require_local_source(inter):
+        await inter.send("This server uses an external raid-target feed.", ephemeral=True)
+        return
+    if not base.is_user_authorized(
+        guild=inter.guild, user_id=inter.user.id, role_id=config.get_member_role(inter.guild_id)
+    ):
+        await inter.send("You are not authorized.", ephemeral=True)
+        return
+    from roboToald.raidtargets import rt_service
+
+    prev = await asyncio.to_thread(rt_service.undo_last_tod, inter.guild_id, target)
+    _clear_raidtarget_cache(inter.guild_id)
+    if prev is None:
+        await inter.send(f"Nothing to undo for `{target}`.", ephemeral=True)
+        return
+    await inter.send(f"Undid latest ToD; restored **{target}** to <t:{prev.tod_utc}:F>")
+
+
+@raidtarget.sub_command(description="Record a server earthquake time", name="quake")
+async def quake_cmd(
+    inter: disnake.ApplicationCommandInteraction,
+    time_str: str = commands.Param(default="now", name="time", description="Quake time (ET), or 'now'"),
+):
+    if not _require_local_source(inter):
+        await inter.send("This server uses an external raid-target feed.", ephemeral=True)
+        return
+    if not base.is_user_authorized(
+        guild=inter.guild, user_id=inter.user.id, role_id=config.get_member_role(inter.guild_id)
+    ):
+        await inter.send("You are not authorized.", ephemeral=True)
+        return
+    from roboToald.raidtargets import rt_service
+
+    try:
+        quake_utc = rt_service.parse_human_time(time_str, int(time.time()))
+    except ValueError as e:
+        await inter.send(f"Could not parse time: {e}", ephemeral=True)
+        return
+    result = await asyncio.to_thread(rt_service.record_quake, inter.guild_id, quake_utc, "slash", str(inter.user.id))
+    _clear_raidtarget_cache(inter.guild_id)
+    if result.status == "duplicate":
+        await inter.send(f"Duplicate quake ignored (<t:{result.tod_utc}:F>).", ephemeral=True)
+        return
+    await inter.send(f"Quake recorded at <t:{result.tod_utc}:F>")
+
+
+@raidtarget.sub_command(description="Sync raid-target catalog from shipped defaults", name="sync_defaults")
+async def sync_defaults_cmd(inter: disnake.ApplicationCommandInteraction):
+    if not _require_local_source(inter):
+        await inter.send("This server uses an external raid-target feed.", ephemeral=True)
+        return
+    if not inter.author.guild_permissions.manage_guild:
+        await inter.send("Manage Server permission required.", ephemeral=True)
+        return
+    from roboToald.raidtargets import rt_service
+
+    seeded = await asyncio.to_thread(rt_service.seed_guild_if_empty, inter.guild_id)
+    inserted, updated = await asyncio.to_thread(rt_service.sync_from_defaults, inter.guild_id)
+    _clear_raidtarget_cache(inter.guild_id)
+    await inter.send(
+        f"Catalog sync: seeded={seeded}, inserted={inserted}, updated={updated}.",
+        ephemeral=True,
+    )
 
 
 BUTTON_LISTENERS = {"unsubscribe": unsubscribe_listener, "refresh": legacy_refresh_listener}

@@ -140,6 +140,9 @@ for guild in TEST_GUILDS:
         "raidtargets_soon_threshold": CONF.getint(
             f"guild.{guild}", "raidtargets_soon_threshold", fallback=48 * 60 * 60
         ),
+        "raidtargets_source": CONF.get(f"guild.{guild}", "raidtargets_source", fallback="endpoint"),
+        "raid_timers_channel_id": CONF.getint(f"guild.{guild}", "raid_timers_channel_id", fallback=0),
+        "raidtargets_feed_key": CONF.get(f"guild.{guild}", "raidtargets_feed_key", fallback=None),
     }
     if GUILD_SETTINGS[guild]["wakeup_channels"]:
         for x in GUILD_SETTINGS[guild]["wakeup_channels"].split(","):
@@ -195,6 +198,20 @@ def get_raidtargets_authkey(guild_id: int) -> str | None:
 
 def get_raidtargets_soon_threshold(guild_id: int) -> int:
     return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_soon_threshold", 48 * 60 * 60)
+
+
+def get_raidtargets_source(guild_id: int) -> str:
+    """``local`` uses in-process DB windows; anything else fetches ``raidtargets_endpoint``."""
+    raw = GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_source", "endpoint") or "endpoint"
+    return str(raw).strip().lower()
+
+
+def get_raid_timers_channel_id(guild_id: int) -> int:
+    return GUILD_SETTINGS.get(guild_id, {}).get("raid_timers_channel_id", 0) or 0
+
+
+def get_raidtargets_feed_key(guild_id: int) -> str | None:
+    return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_feed_key")
 
 
 def raid_guild_ids() -> List[int]:
