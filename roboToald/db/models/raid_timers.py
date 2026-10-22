@@ -88,3 +88,13 @@ class RtBoardMessage(base.Base, base.MyBase):
     guild_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
     channel_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     message_ids = sqlalchemy.Column(sqlalchemy.Text, nullable=False, default="")
+
+
+class RtLogCursor(base.Base, base.MyBase):
+    """Last SSE event id applied for a guild log stream."""
+
+    __tablename__ = "rt_log_cursors"
+
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    seq = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    updated_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)

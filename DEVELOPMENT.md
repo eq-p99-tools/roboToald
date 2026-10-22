@@ -83,6 +83,9 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `raidtargets_source` | string | `endpoint` | `local` = compute windows from the bot DB; anything else fetches `raidtargets_endpoint` |
 | `raid_timers_channel_id` | int | `0` | Discord channel for the edit-in-place NOW/SOON/LATER timers board (`0` = disabled) |
 | `raidtargets_feed_key` | string | *(none)* | Shared secret for `GET /raidtargets/<guild_id>/targets-v2.json` (required to publish the feed when source is `local`) |
+| `log_stream_url` | url | *(none)* | SSE URL (`GET`, `text/event-stream`) for this guild's log provider. Empty means the reader does not start |
+| `log_stream_key` | string | *(none)* | Bearer token sent as `Authorization` to `log_stream_url`. Do not log it |
+| `guild_chat_channel_id` | int | `0` | Archives guild-chat lines (not officer). `0` parses `!tod` / `!bp` only. Must not equal `tod_channel_id` or `batphone_channel_id` |
 | `min_client_version` | string | *(none)* | Minimum P99 Login Proxy version; older clients are rejected |
 | `client_update_message` | string | *(auto)* | Custom message shown when client is too old |
 | `require_log` | bool | `false` | Require `Log=TRUE` in eqclient.ini |

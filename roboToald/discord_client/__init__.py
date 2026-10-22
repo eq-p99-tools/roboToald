@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 SUBSCRIPTION_TASK = None
 RAID_TIMERS_BOARD_TASK = None
+LOG_STREAM_TASKS = []
 _BOT_READY = False
 
 
@@ -50,7 +51,7 @@ async def raid_timers_board_task():
 
 @DISCORD_CLIENT.event
 async def on_ready():
-    global SUBSCRIPTION_TASK, RAID_TIMERS_BOARD_TASK, _BOT_READY
+    global SUBSCRIPTION_TASK, RAID_TIMERS_BOARD_TASK, LOG_STREAM_TASKS, _BOT_READY
 
     asyncio_default_executor.install_enlarged_default_executor(
         asyncio.get_running_loop(),
@@ -92,6 +93,10 @@ async def on_ready():
     RAID_TIMERS_BOARD_TASK = asyncio.create_task(raid_timers_board_task())
     asyncio.ensure_future(RAID_TIMERS_BOARD_TASK)
     logger.info("Started Raid Timers Board.")
+
+    from roboToald.raidtargets import rt_log_reader
+
+    LOG_STREAM_TASKS = rt_log_reader.start_log_stream_tasks(DISCORD_CLIENT)
 
 
 @DISCORD_CLIENT.listen("on_button_click")

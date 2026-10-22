@@ -108,6 +108,8 @@ When `raidtargets_source = local` for the guild, the bot also owns the window ma
 
 Set `raid_timers_channel_id` to post an edit-in-place NOW/SOON/LATER board (works with local or endpoint source). Publish the JSON feed at `GET /raidtargets/<guild_id>/targets-v2.json` with header `AuthorizationKey: <raidtargets_feed_key>` when source is local.
 
+Set `log_stream_url` to follow a guild log SSE stream. Guild `!tod` records a local ToD from the log stamp, `!bp` raises the raid batphone, and `guild_chat_channel_id` archives guild chat.
+
 Subscriptions persist until you unsubscribe or lose the guild member role.
 
 ## Command Reference

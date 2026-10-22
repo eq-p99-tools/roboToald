@@ -143,6 +143,9 @@ for guild in TEST_GUILDS:
         "raidtargets_source": CONF.get(f"guild.{guild}", "raidtargets_source", fallback="endpoint"),
         "raid_timers_channel_id": CONF.getint(f"guild.{guild}", "raid_timers_channel_id", fallback=0),
         "raidtargets_feed_key": CONF.get(f"guild.{guild}", "raidtargets_feed_key", fallback=None),
+        "log_stream_url": CONF.get(f"guild.{guild}", "log_stream_url", fallback=None),
+        "log_stream_key": CONF.get(f"guild.{guild}", "log_stream_key", fallback=None),
+        "guild_chat_channel_id": CONF.getint(f"guild.{guild}", "guild_chat_channel_id", fallback=0),
     }
     if GUILD_SETTINGS[guild]["wakeup_channels"]:
         for x in GUILD_SETTINGS[guild]["wakeup_channels"].split(","):
@@ -212,6 +215,26 @@ def get_raid_timers_channel_id(guild_id: int) -> int:
 
 def get_raidtargets_feed_key(guild_id: int) -> str | None:
     return GUILD_SETTINGS.get(guild_id, {}).get("raidtargets_feed_key")
+
+
+def get_log_stream_url(guild_id: int) -> str | None:
+    """SSE URL for this guild's log provider. Empty means the reader stays off."""
+    raw = GUILD_SETTINGS.get(guild_id, {}).get("log_stream_url")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def get_log_stream_key(guild_id: int) -> str:
+    """Bearer token for ``get_log_stream_url``. Never log this value."""
+    raw = GUILD_SETTINGS.get(guild_id, {}).get("log_stream_key")
+    return "" if raw is None else str(raw)
+
+
+def get_guild_chat_channel_id(guild_id: int) -> int:
+    """Discord channel that archives guild chat. ``0`` means commands only."""
+    return GUILD_SETTINGS.get(guild_id, {}).get("guild_chat_channel_id", 0) or 0
 
 
 def raid_guild_ids() -> List[int]:

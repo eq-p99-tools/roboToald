@@ -765,9 +765,15 @@ async def _handle_log_parse(message: disnake.Message):
     await message.channel.send("\n".join(out))
 
 
-async def _handle_batphone(message: disnake.Message):
-    guild_id = message.guild.id
-    content = message.content or ""
+async def apply_batphone(guild: disnake.Guild, content: str, started_by: str, send) -> None:
+    """Pushsafer, 30s debounce, and optional event channels for one batphone.
+
+    ``send`` is the batphone channel's send callable, used when event creation
+    needs to report an error. Callers must not also post ``content`` into that
+    channel: the ``on_message`` listener would run this path a second time.
+    """
+    guild_id = guild.id
+    content = content or ""
     channel_name = re.sub(r"@everyone", "", content)
     channel_name = re.sub(r"!alert", "", channel_name).strip()
     parts = re.split(r"[\r\n]", channel_name)
@@ -810,7 +816,7 @@ async def _handle_batphone(message: disnake.Message):
             await asyncio.to_thread(
                 send_batphone,
                 config.get_pushsafer_setting(guild_id, "title") or "Batphone",
-                str(message.content),
+                str(content),
                 guild_id,
                 opts=opts,
             )
@@ -835,9 +841,9 @@ async def _handle_batphone(message: disnake.Message):
             if children:
                 for child in children:
                     await _perform_create_event(
-                        message.guild,
-                        message.author.display_name,
-                        message.channel.send,
+                        guild,
+                        started_by,
+                        send,
                         session,
                         f"{display_name} - {child.name}",
                         target=tgt,
@@ -848,14 +854,23 @@ async def _handle_batphone(message: disnake.Message):
                     )
             else:
                 await _perform_create_event(
-                    message.guild,
-                    message.author.display_name,
-                    message.channel.send,
+                    guild,
+                    started_by,
+                    send,
                     session,
                     display_name,
                     target=tgt,
                     targets=[tgt] if tgt else [],
                 )
+
+
+async def _handle_batphone(message: disnake.Message):
+    await apply_batphone(
+        message.guild,
+        message.content or "",
+        message.author.display_name,
+        message.channel.send,
+    )
 
 
 # ---------------------------------------------------------------------------
