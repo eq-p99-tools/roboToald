@@ -47,12 +47,22 @@ def test_render_board_buckets_and_tags():
     text = "\n".join(chunks)
     assert "In window NOW" in text
     assert "**Now**" in text
+    assert "█" in text and "░" in text
+    assert "left" in text
     assert "SOON" in text
     assert "[1]" in text
     assert "LATER" in text
     assert "PastMob" not in text
     assert "<#99>" in text
     assert all(len(c) <= rt_board.MAX_MESSAGE_CHARS for c in chunks)
+
+
+def test_progress_bar_and_remaining():
+    assert rt_board.progress_bar(0) == "░" * rt_board.BAR_WIDTH
+    assert rt_board.progress_bar(1) == "█" * rt_board.BAR_WIDTH
+    assert rt_board.progress_bar(0.5).count("█") == rt_board.BAR_WIDTH // 2
+    assert rt_board.format_remaining(90 * 60) == "1h 30m"
+    assert rt_board.format_remaining(2 * 86400 + 3 * 3600) == "2d 3h 0m"
 
 
 def test_render_board_chunks_many_targets():
