@@ -100,6 +100,9 @@ def fail_if_db_called(monkeypatch):
     import roboToald.db.models.sso as sso_model
 
     monkeypatch.setattr(sso_model, "find_account_by_character", _explode)
+    # The dev ini may set raidtargets_source=local. Keep these handler tests
+    # off the raid-timer DB unless a test opts in and stubs record_tod.
+    monkeypatch.setattr(server.config, "get_raidtargets_source", lambda guild_id: "endpoint")
 
 
 _HAS_CHAR_STATE = {1: {"name": "main", "characters": [{"name": "OtherChar"}]}}
@@ -271,3 +274,49 @@ def test_mob_death_drops_when_required_field_missing(
     asyncio.run(server._ws_handle_mob_death(conn, msg))
     assert capture_tod == []
     assert capture_auto_attendance == []
+
+
+@freeze_time("2026-03-06T11:13:03")
+def test_mob_death_records_local_tod_when_source_is_local(
+    reset_dedup, capture_tod, capture_auto_attendance, fail_if_db_called, monkeypatch
+):
+    from roboToald.raidtargets import rt_service
+
+    recorded: list[tuple] = []
+
+    def _capture(*args, **_kwargs):
+        recorded.append(args)
+
+    monkeypatch.setattr(server.config, "get_raidtargets_source", lambda guild_id: "local")
+    monkeypatch.setattr(rt_service, "record_tod", _capture)
+    conn = _make_conn(last_sent_state=_HAS_CHAR_STATE)
+    msg = {
+        "character_name": "LocalOnly",
+        "mob": "King Tormax",
+        "eq_log_time": "Fri Mar 06 11:13:03 2026",
+    }
+    asyncio.run(server._ws_handle_mob_death(conn, msg))
+    parsed = server._parse_eq_log_time(msg["eq_log_time"])
+    assert parsed is not None
+    expected = int(server._est_now_with_log_minute_second(parsed).timestamp())
+    assert recorded == [(1, "King Tormax", expected, "log_death", "LocalOnly")]
+    assert len(capture_tod) == 1
+
+
+@freeze_time("2026-03-06T11:13:03")
+def test_mob_death_does_not_record_tod_when_source_is_endpoint(
+    reset_dedup, capture_tod, capture_auto_attendance, fail_if_db_called, monkeypatch
+):
+    from roboToald.raidtargets import rt_service
+
+    recorded: list[tuple] = []
+    monkeypatch.setattr(rt_service, "record_tod", lambda *args, **_kwargs: recorded.append(args))
+    conn = _make_conn(last_sent_state=_HAS_CHAR_STATE)
+    msg = {
+        "character_name": "LocalOnly",
+        "mob": "King Tormax",
+        "eq_log_time": "Fri Mar 06 11:13:03 2026",
+    }
+    asyncio.run(server._ws_handle_mob_death(conn, msg))
+    assert recorded == []
+    assert len(capture_tod) == 1

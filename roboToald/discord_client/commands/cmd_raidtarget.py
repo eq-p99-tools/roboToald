@@ -350,7 +350,11 @@ async def record_tod_interaction(
 async def tod(
     inter: disnake.ApplicationCommandInteraction,
     target: str = commands.Param(autocomplete=autocomplete_raid_target, description="Raid target"),
-    time_str: str = commands.Param(default="now", name="time", description="ToD time (ET), or 'now'"),
+    time_str: str = commands.Param(
+        default="now",
+        name="time",
+        description="ET: now, HH:MM[:SS], M/D HH:MM[:SS], or EQ log (Fri Mar 06 11:13:03 2026)",
+    ),
 ):
     await record_tod_interaction(inter, target, time_str)
 
@@ -381,7 +385,11 @@ async def undo_cmd(
 @raidtarget.sub_command(description="Record a server earthquake time", name="quake")
 async def quake_cmd(
     inter: disnake.ApplicationCommandInteraction,
-    time_str: str = commands.Param(default="now", name="time", description="Quake time (ET), or 'now'"),
+    time_str: str = commands.Param(
+        default="now",
+        name="time",
+        description="ET: now, HH:MM[:SS], M/D HH:MM[:SS], or an EQ log stamp",
+    ),
 ):
     if not _require_local_source(inter):
         await inter.send("This server uses an external raid-target feed.", ephemeral=True)

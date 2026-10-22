@@ -386,7 +386,7 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
 ```
 
 `eq_log_time`: EQ log bracket form `Wed Jul 15 22:14:05 2026`.  
-**[reference]** skew: reject if \|Δ\| > 24h; else minute+second within 60s around hour. Discord TOD side effects optional for proxy login compatibility.
+**[reference]** skew: reject if \|Δ\| > 24h; else minute+second within 60s around hour. Discord TOD side effects optional for proxy login compatibility. When the guild's `raidtargets_source` is `local`, an accepted `mob_death` is also stored as a raid-timer ToD (`log_death`) using the same Eastern instant as the `!tod` post.
 
 ### 5.7 Keepalive / error
 

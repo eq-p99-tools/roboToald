@@ -23,6 +23,29 @@ ET = ZoneInfo("America/New_York")
 SOURCE_PRIORITY = {"admin": 4, "log_death": 3, "guild_chat": 2, "slash": 1, "discord": 1}
 TOD_DEDUP_SECONDS = 300
 CATALOG_RESOURCE = "p99_targets_default.json"
+_EQ_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+# EQ log bracket time, weekday optional: "Fri Mar 06 11:13:03 2026"
+_EQ_LOG_TIME = re.compile(
+    r"^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s+)?"
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+    r"(\d{1,2})\s+"
+    r"(\d{1,2}):(\d{2}):(\d{2})\s+"
+    r"(\d{4})$",
+    re.IGNORECASE,
+)
 
 
 @dataclasses.dataclass
@@ -359,6 +382,34 @@ def record_quake(
         return RecordResult(status="recorded", tod_utc=int(quake_utc))
 
 
+def parse_eq_log_stamp(text: str) -> datetime | None:
+    """Parse an EQ log timestamp as America/New_York.
+
+    Accepts ``Fri Mar 06 11:13:03 2026`` and the same text wrapped in ``[]``.
+    The weekday is optional and is not checked against the calendar date.
+    Returns None when *text* is not this form.
+    """
+    body = (text or "").strip()
+    if len(body) >= 2 and body[0] == "[" and body[-1] == "]":
+        body = body[1:-1].strip()
+    match = _EQ_LOG_TIME.match(body)
+    if match is None:
+        return None
+    month = _EQ_MONTHS[match.group(1).lower()]
+    try:
+        return datetime(
+            int(match.group(6)),
+            month,
+            int(match.group(2)),
+            int(match.group(3)),
+            int(match.group(4)),
+            int(match.group(5)),
+            tzinfo=ET,
+        )
+    except ValueError:
+        return None
+
+
 def parse_human_time(text: str, now_utc: int) -> int:
     """Parse human time as America/New_York → UTC epoch. Raises ValueError."""
     raw = (text or "").strip().lower()
@@ -366,14 +417,15 @@ def parse_human_time(text: str, now_utc: int) -> int:
     if raw in ("", "now"):
         result = now_et
     else:
-        result = None
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
-            try:
-                naive = datetime.strptime(raw, fmt)
-                result = naive.replace(tzinfo=ET)
-                break
-            except ValueError:
-                pass
+        result = parse_eq_log_stamp(raw)
+        if result is None:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                try:
+                    naive = datetime.strptime(raw, fmt)
+                    result = naive.replace(tzinfo=ET)
+                    break
+                except ValueError:
+                    pass
         if result is None:
             for fmt in ("%m/%d %H:%M:%S", "%m/%d %H:%M"):
                 try:

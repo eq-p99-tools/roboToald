@@ -116,3 +116,40 @@ def test_parse_human_time_now_and_hhmm():
     assert parsed < now
     with pytest.raises(ValueError):
         rt_service.parse_human_time("not-a-time", now)
+
+
+def test_parse_human_time_eq_log_stamp():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    now = 1_700_000_000  # 2023-11-14
+    winter = int(datetime(2023, 1, 15, 17, 0, 0, tzinfo=timezone.utc).timestamp())
+    summer = int(datetime(2023, 7, 16, 16, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert rt_service.parse_human_time("Sun Jan 15 12:00:00 2023", now) == winter  # EST
+    assert rt_service.parse_human_time("[sun jul 16 12:00:00 2023]", now) == summer  # EDT
+    assert winter == int(datetime(2023, 1, 15, 12, 0, 0, tzinfo=et).timestamp())
+    assert summer == int(datetime(2023, 7, 16, 12, 0, 0, tzinfo=et).timestamp())
+    # Unpadded day, weekday ignored when it does not match the date.
+    march = int(datetime(2023, 3, 6, 11, 13, 3, tzinfo=et).timestamp())
+    assert rt_service.parse_human_time("Fri Mar 6 11:13:03 2023", now) == march
+    with pytest.raises(ValueError, match="future"):
+        rt_service.parse_human_time("Fri Mar 06 11:13:03 2026", now)
+    with pytest.raises(ValueError, match="Unrecognized"):
+        rt_service.parse_human_time("Fri Feb 31 11:13:03 2023", now)
+
+
+@pytest.mark.asyncio
+async def test_tod_command_records_eq_log_stamp(raid_timers_session, monkeypatch, fake_inter):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from roboToald.discord_client.commands import cmd_raidtarget
+
+    rt_service.seed_guild_if_empty(GUILD)
+    monkeypatch.setattr(cmd_raidtarget.base, "is_user_authorized", lambda **kwargs: True)
+    monkeypatch.setattr(cmd_raidtarget.config, "get_raidtargets_source", lambda gid: "local")
+    monkeypatch.setattr(cmd_raidtarget.time, "time", lambda: 1_700_000_000)
+    await cmd_raidtarget.record_tod_interaction(fake_inter, "naggy", "Mon Mar 06 11:13:03 2023")
+    expected = int(datetime(2023, 3, 6, 11, 13, 3, tzinfo=ZoneInfo("America/New_York")).timestamp())
+    assert rt_service.current_tods(GUILD)["Lord Nagafen"] == expected
