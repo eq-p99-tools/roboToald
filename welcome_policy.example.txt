@@ -1,0 +1,12 @@
+If you don't have a member tag yet, you're in the right place.
+
+**Before you join camp**
+1. Read #syndicate-rules
+2. Change your Discord nickname to the toon you'll camp with
+3. Click **I Agree** below — that accepts the rules and grants your member tag
+
+**Already from a merge?**
+If you were part of the Kingdom merge or the CA/SS merge and still need converted points, request them in #point-adjustments once you can see it (it unlocks with your tag).
+
+**Camp while waiting on perms?**
+You can still use `/ds start` and `/ds stop` to earn points until your tag is granted.

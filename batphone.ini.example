@@ -71,8 +71,16 @@ audiofile = wakeup.wav
 #spreadsheet_id = <google_spreadsheet_id>
 
 [guild.12345]
-# Member Role is necessary for raidtarget commands to work
+# Member Role is necessary for raidtarget commands to work, and is granted after
+# welcome policy agreement (not the DS active role).
 member_role = 77777
+
+# Custom welcome / policy agree (enabled when both channel + policy file are set):
+#welcome_channel = <channel_id>
+#welcome_policy_file = welcome_policy.txt
+#welcome_dm_on_join = true
+# Bot needs Manage Roles and a higher role than member_role.
+# Lock non-public channels to member_role so agreeing unlocks the server.
 
 # Raidtarget, batphone, DS, and SSO commands default to false, but can be enabled:
 enable_raidtarget = true
