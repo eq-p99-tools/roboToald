@@ -60,6 +60,7 @@ include = ["roboToald*"]
 ]
 "roboToald.words" = ["*.list"]
 "roboToald.api" = ["templates/**/*.html", "static/*.svg"]
+"roboToald.raidtargets" = ["data/*.json"]
 
 [tool.ruff]
 line-length = 120

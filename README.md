@@ -99,6 +99,17 @@ Subscribe to raid target windows and get DM notifications when a window opens or
 - `/raidtarget unsubscribe` -- unsubscribe.
 - `/raidtarget subscriptions` -- list your subscriptions.
 
+When `raidtargets_source = local` for the guild, the bot also owns the window math (seeded P99 catalog + ToDs/quakes in SQLite):
+
+- `/tod` -- record a time of death (Eastern time, `now`, or an EQ log stamp).
+- `/quake` -- record a server earthquake (wipes non-immune ToDs).
+- `/raidtarget undo` -- undo the latest ToD for a target.
+- `/raidtarget sync_defaults` -- insert/update catalog from shipped defaults (Manage Server).
+
+Set `raid_timers_channel_id` to post an edit-in-place NOW/SOON/LATER board (works with local or endpoint source). Publish the JSON feed at `GET /raidtargets/<guild_id>/targets-v2.json` with header `AuthorizationKey: <raidtargets_feed_key>` when source is local.
+
+Set `log_stream_url` to follow a guild log SSE stream. Guild `!tod` records a local ToD from the log stamp, `!bp` raises the raid batphone, and `guild_chat_channel_id` archives guild chat.
+
 Subscriptions persist until you unsubscribe or lose the guild member role.
 
 ## Command Reference
@@ -182,6 +193,14 @@ Subscriptions persist until you unsubscribe or lose the guild member role.
 | `list` | List timers |
 | `show` | Show timer details |
 | `stop` | Stop a timer |
+
+### `/tod`
+
+Record a raid-target time of death. Requires `raidtargets_source = local` and the member role. Time is US Eastern: `now`, `HH:MM[:SS]`, `M/D HH:MM[:SS]`, `YYYY-MM-DD HH:MM[:SS]`, or an EQ log stamp such as `Fri Mar 06 11:13:03 2026` (square brackets optional).
+
+### `/quake`
+
+Record a server earthquake. Same time formats and permissions as `/tod`. Non-immune raid targets lose their current ToD.
 
 ### `/raidtarget`
 

@@ -115,6 +115,44 @@ def sso_session(monkeypatch):
 
 
 @pytest.fixture()
+def raid_timers_session(monkeypatch):
+    """In-memory SQLite with raid-timer schema; patches ``base.get_session`` for tests.
+
+    ``StaticPool`` keeps a single shared ``:memory:`` connection so other threads
+    (``asyncio.to_thread``) see the same schema.
+    """
+    import roboToald.db.models.raid_timers  # noqa: F401 — register models on Base.metadata
+
+    from roboToald.db import base
+    from sqlalchemy.pool import StaticPool
+
+    engine = sqlalchemy.create_engine(
+        "sqlite://",
+        echo=False,
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    base.Base.metadata.create_all(engine)
+    SessionLocal = sqlalchemy.orm.sessionmaker(bind=engine, future=True)
+
+    @contextlib.contextmanager
+    def get_session_patched(autocommit=False):
+        s = SessionLocal()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    monkeypatch.setattr(base, "get_session", get_session_patched)
+    monkeypatch.setattr(base, "get_engine", lambda store={}: engine)
+    session = SessionLocal()
+    yield session
+    session.close()
+    engine.dispose()
+
+
+@pytest.fixture()
 def subscription_session(monkeypatch):
     """In-memory SQLite with subscription schema; patches ``base.get_session`` for tests."""
     import roboToald.db.models.subscription  # noqa: F401 — register Subscription on Base.metadata

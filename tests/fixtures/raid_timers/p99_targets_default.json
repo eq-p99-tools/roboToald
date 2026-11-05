@@ -1,0 +1,1617 @@
+{
+ "version": 1,
+ "source": "Stanvern MySQL dump 2023-11-04 + PHP targets-v2.json special cases",
+ "targets": [
+  {
+   "name": "Phinigel Autropos",
+   "short_name": "Phinny",
+   "aliases": "phinny,phinigel",
+   "era": "Classic",
+   "zone": "Kedge Keep",
+   "hidden": false,
+   "ranges": [
+    [
+     720,
+     720
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "King Tranix",
+   "short_name": "Tranix",
+   "aliases": "tranix",
+   "era": "Classic",
+   "zone": "Nagafen's Lair",
+   "hidden": true,
+   "ranges": [
+    [
+     480,
+     480
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Nagafen",
+   "short_name": "Nagafen",
+   "aliases": "naggy,nagafen",
+   "era": "Classic",
+   "zone": "Nagafen's Lair",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Magi Rokyl",
+   "short_name": "Magi",
+   "aliases": "magi",
+   "era": "Classic",
+   "zone": "Nagafen's Lair",
+   "hidden": true,
+   "ranges": [
+    [
+     480,
+     480
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Zordak Ragefire",
+   "short_name": "Ragefire",
+   "aliases": "zordak,ragefire,rf",
+   "era": "Classic",
+   "zone": "Nagafen's Lair",
+   "hidden": false,
+   "ranges": [
+    [
+     0,
+     4320
+    ],
+    [
+     720,
+     1920
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false,
+   "note": "Seeded from the Stanvern DB (2023-11-04). P99 wiki says 24h +/- 8h (960-1920) and 72h +/- 8h (3840-4800); revisit. https://wiki.project1999.com/Zordak_Ragefire"
+  },
+  {
+   "name": "Verina Tomb",
+   "short_name": "VT",
+   "aliases": "vt,verina",
+   "era": "Classic",
+   "zone": "Neriak Third Gate",
+   "hidden": false,
+   "ranges": [
+    [
+     2880,
+     5760
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lady Vox",
+   "short_name": "",
+   "aliases": "vox",
+   "era": "Classic",
+   "zone": "Permafrost",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "a dracoliche",
+   "short_name": "Draco",
+   "aliases": "dracoliche,draco",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Cazic Thule",
+   "short_name": "CT",
+   "aliases": "cazic,ct",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Dread",
+   "short_name": "",
+   "aliases": "",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Fright",
+   "short_name": "",
+   "aliases": "",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Terror",
+   "short_name": "",
+   "aliases": "",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Wraith of a Shissir",
+   "short_name": "Wraith",
+   "aliases": "wraith,wraith of shissir",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     4320,
+     4320
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Book of Souls",
+   "short_name": "Book",
+   "aliases": "book",
+   "era": "Classic",
+   "zone": "Plane of Hate",
+   "hidden": false,
+   "ranges": [
+    [
+     600,
+     600
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Innoruuk",
+   "short_name": "",
+   "aliases": "inny,inni",
+   "era": "Classic",
+   "zone": "Plane of Hate",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Maestro of Rancor",
+   "short_name": "Maestro",
+   "aliases": "maestro",
+   "era": "Classic",
+   "zone": "Plane of Hate",
+   "hidden": true,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Noble Dojorn",
+   "short_name": "Noble",
+   "aliases": "noble,dojorn",
+   "era": "Classic",
+   "zone": "Plane of Sky",
+   "hidden": false,
+   "ranges": [
+    [
+     10070,
+     10090
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Dartain the Lost",
+   "short_name": "Dartain",
+   "aliases": "dartain",
+   "era": "Classic",
+   "zone": "The Hole",
+   "hidden": true,
+   "ranges": [
+    [
+     2160,
+     2160
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Master Yael",
+   "short_name": "Yael",
+   "aliases": "yael",
+   "era": "Classic",
+   "zone": "The Hole",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Gorenaire",
+   "short_name": "",
+   "aliases": "gore",
+   "era": "Kunark",
+   "zone": "Dreadlands",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vessel Drozlin",
+   "short_name": "VD",
+   "aliases": "vd,vessel",
+   "era": "Kunark",
+   "zone": "East Cabilis",
+   "hidden": false,
+   "ranges": [
+    [
+     2880,
+     10080
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Severilous",
+   "short_name": "EJ Sev",
+   "aliases": "",
+   "era": "Kunark",
+   "zone": "Emerald Jungle",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Venril Sathir",
+   "short_name": "VS",
+   "aliases": "vs,venril",
+   "era": "Kunark",
+   "zone": "Karnor's Castle",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Trakanon",
+   "short_name": "",
+   "aliases": "trak",
+   "era": "Kunark",
+   "zone": "Old Sebilis",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Talendor",
+   "short_name": "",
+   "aliases": "tal",
+   "era": "Kunark",
+   "zone": "Skyfire Mountains",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Faydedar",
+   "short_name": "",
+   "aliases": "fay",
+   "era": "Kunark",
+   "zone": "Timorous Deep",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Gozzrem",
+   "short_name": "",
+   "aliases": "gozz",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - West wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Zlexak",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vulak`Aerr",
+   "short_name": "Vulak",
+   "aliases": "vulak",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Sevalak",
+   "short_name": "",
+   "aliases": "sev",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Dain Frostreaver IV",
+   "short_name": "Dain",
+   "aliases": "dain",
+   "era": "Velious",
+   "zone": "Icewell Keep",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Stormfeather",
+   "short_name": "SF",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Iceclad Ocean",
+   "hidden": false,
+   "ranges": [
+    [
+     1020,
+     1140
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Kelorek`Dar",
+   "short_name": "Kelorek",
+   "aliases": "kelorek",
+   "era": "Velious",
+   "zone": "Cobalt Scar",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vaniki",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Dragon Necropolis",
+   "hidden": false,
+   "ranges": [
+    [
+     7320,
+     7320
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vilefang",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Dragon Necropolis",
+   "hidden": false,
+   "ranges": [
+    [
+     1440,
+     1440
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Zlandicar",
+   "short_name": "",
+   "aliases": "zlandi",
+   "era": "Velious",
+   "zone": "Dragon Necropolis",
+   "hidden": false,
+   "ranges": [
+    [
+     6000,
+     6960
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Lodizal",
+   "short_name": "",
+   "aliases": "lodi",
+   "era": "Velious",
+   "zone": "Iceclad Ocean",
+   "hidden": false,
+   "ranges": [
+    [
+     1020,
+     1140
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Vyemm",
+   "short_name": "Vyemm",
+   "aliases": "vyemm",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Kreizenn",
+   "short_name": "Kreizenn",
+   "aliases": "kreizenn",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Koi`Doken",
+   "short_name": "Koi'Doken",
+   "aliases": "koi'doken,koi",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Feshlak",
+   "short_name": "Feshlak",
+   "aliases": "feshlak,fesh",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lady Nevederia",
+   "short_name": "Lady N",
+   "aliases": "nevederia,lady n,lady nev",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lady Mirenilla",
+   "short_name": "Lady M",
+   "aliases": "mirenilla,lady m",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Jorlleag",
+   "short_name": "",
+   "aliases": "jorl,jorll",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Ikatiar the Venom",
+   "short_name": "Ikatiar",
+   "aliases": "ikatiar,iki,ikki,ikky",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Eashen of the Sky",
+   "short_name": "Eashen",
+   "aliases": "eashen",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Dagarn the Destroyer",
+   "short_name": "Dagarn",
+   "aliases": "dagarn",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Cekenar",
+   "short_name": "",
+   "aliases": "cek",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Aaryonar",
+   "short_name": "",
+   "aliases": "aary",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - North wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Ymmeln",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Tavekalem",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Midayor",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lepethida",
+   "short_name": "",
+   "aliases": "lep,lepe",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Krigara",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Grozzmel",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Essedera",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Dozekar the Cursed",
+   "short_name": "Dozekar",
+   "aliases": "doze,dozekar",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Casalen",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - East wing",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Yelinak",
+   "short_name": "Yelinak",
+   "aliases": "yelinak,yeli",
+   "era": "Velious",
+   "zone": "Skyshrine",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Tunare",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Plane of Growth",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "The Statue of Rallos Zek",
+   "short_name": "Statue",
+   "aliases": "statue",
+   "era": "Velious",
+   "zone": "Kael Drakkel",
+   "hidden": false,
+   "ranges": [
+    [
+     6720,
+     7680
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "King Tormax",
+   "short_name": "Tormax",
+   "aliases": "tormax,kt",
+   "era": "Velious",
+   "zone": "Kael Drakkel",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Derakor the Vindicator",
+   "short_name": "Vindi",
+   "aliases": "derakor,vindi",
+   "era": "Velious",
+   "zone": "Kael Drakkel",
+   "hidden": false,
+   "ranges": [
+    [
+     420,
+     540
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lendiniara the Keeper",
+   "short_name": "LTK",
+   "aliases": "lendiniara,ltk",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - West wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Telkorenar",
+   "short_name": "Telk",
+   "aliases": "telk",
+   "era": "Velious",
+   "zone": "Temple of Veeshan - West wing",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Wuoshi",
+   "short_name": "",
+   "aliases": "woushi",
+   "era": "Velious",
+   "zone": "The Wakening Land",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Lord Doljonijiarnimorinar",
+   "short_name": "Lord Bob",
+   "aliases": "lord bob,bob",
+   "era": "Velious",
+   "zone": "Velketor's Labyrinth",
+   "hidden": false,
+   "ranges": [
+    [
+     3600,
+     5040
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Velketor the Sorcerer",
+   "short_name": "Velk",
+   "aliases": "velketor,velk",
+   "era": "Velious",
+   "zone": "Velketor's Labyrinth",
+   "hidden": false,
+   "ranges": [
+    [
+     3840,
+     4800
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Ayillish",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": true,
+   "ranges": [
+    [
+     480,
+     480
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Guardian Kozzalym",
+   "short_name": "Kozz",
+   "aliases": "kozzalym,guardian kozz,kozz",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     7200,
+     7200
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Harla Dar",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": true,
+   "ranges": [
+    [
+     180,
+     180
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Klandicar",
+   "short_name": "",
+   "aliases": "klandi",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Scout Charisa",
+   "short_name": "Scout",
+   "aliases": "scout,charisa",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     600,
+     600
+    ]
+   ],
+   "window_count": 144,
+   "quake_immune": false
+  },
+  {
+   "name": "Keldor Dek`Torek",
+   "short_name": "KDT",
+   "aliases": "keldor,kdt,shieldfuck",
+   "era": "Velious",
+   "zone": "Kael Drakkel",
+   "hidden": false,
+   "ranges": [
+    [
+     1080,
+     1080
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Narandi the Wretched",
+   "short_name": "Narandi",
+   "aliases": "narandi",
+   "era": "Velious",
+   "zone": "Great Divide",
+   "hidden": false,
+   "ranges": [
+    [
+     4350,
+     4350
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Venril Sathirs remains",
+   "short_name": "VSR",
+   "aliases": "venril sathir remains,vsr",
+   "era": "Kunark",
+   "zone": "Karnor's Castle",
+   "hidden": true,
+   "ranges": [
+    [
+     1320,
+     1560
+    ],
+    [
+     0,
+     1560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vaniki 2",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Dragon Necropolis",
+   "hidden": true,
+   "ranges": [
+    [
+     7320,
+     7320
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Vaniki 3",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Dragon Necropolis",
+   "hidden": true,
+   "ranges": [
+    [
+     7320,
+     7320
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Sontalak",
+   "short_name": "",
+   "aliases": "sont",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "an angry goblin",
+   "short_name": "Angry gob",
+   "aliases": "angry goblin,angry,angry gob",
+   "era": "Velious",
+   "zone": "Temple of Droga",
+   "hidden": false,
+   "ranges": [
+    [
+     4320,
+     4752
+    ]
+   ],
+   "window_count": 3,
+   "quake_immune": false
+  },
+  {
+   "name": "Druushk",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Hoshkar",
+   "short_name": "",
+   "aliases": "hosh",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Nexona",
+   "short_name": "",
+   "aliases": "nex",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Phara Dar",
+   "short_name": "",
+   "aliases": "phara,pd",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Silverwing",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Xygoz",
+   "short_name": "",
+   "aliases": "",
+   "era": "Velious",
+   "zone": "Veeshan's Peak",
+   "hidden": false,
+   "ranges": [
+    [
+     9600,
+     10560
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "The Progenitor",
+   "short_name": "Progenitor",
+   "aliases": "progenitor,prog",
+   "era": "Velious",
+   "zone": "Sleeper's Tomb",
+   "hidden": false,
+   "ranges": [
+    [
+     3600,
+     5040
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "The Final Arbiter",
+   "short_name": "TFA",
+   "aliases": "tfa,final arbiter,arbiter",
+   "era": "Velious",
+   "zone": "Sleeper's Tomb",
+   "hidden": false,
+   "ranges": [
+    [
+     3600,
+     5040
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Master of the Guard",
+   "short_name": "MotG",
+   "aliases": "motg",
+   "era": "Velious",
+   "zone": "Sleeper's Tomb",
+   "hidden": false,
+   "ranges": [
+    [
+     3600,
+     5040
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "a shady goblin",
+   "short_name": "Shady gob",
+   "aliases": "shady goblin,shady,shady gob",
+   "era": "Kunark",
+   "zone": "Warsliks Woods",
+   "hidden": false,
+   "ranges": [
+    [
+     1440,
+     1440
+    ]
+   ],
+   "window_count": 60,
+   "quake_immune": false
+  },
+  {
+   "name": "Nillipuss",
+   "short_name": "",
+   "aliases": "",
+   "era": "Classic",
+   "zone": "Rivervale",
+   "hidden": false,
+   "ranges": [
+    [
+     120,
+     120
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Sir Lucan D`Lere",
+   "short_name": "Lucan",
+   "aliases": "lucan,sir lucan",
+   "era": "Classic",
+   "zone": "West Freeport",
+   "hidden": false,
+   "ranges": [
+    [
+     420,
+     420
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Myga NE PH",
+   "short_name": "Myga NE",
+   "aliases": "myga ne",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     510,
+     510
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Myga ToV PH",
+   "short_name": "Myga ToV",
+   "aliases": "myga tov",
+   "era": "Velious",
+   "zone": "Western Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     510,
+     510
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "a broken golem",
+   "short_name": "brok golem",
+   "aliases": "broken golem,an enraged golem,enraged golem",
+   "era": "Classic",
+   "zone": "Plane of Fear",
+   "hidden": false,
+   "ranges": [
+    [
+     4320,
+     4320
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Bazzt Zzzt",
+   "short_name": "Queen bee",
+   "aliases": "queen bee,bee queen,queen",
+   "era": "Classic",
+   "zone": "Plane of Sky",
+   "hidden": true,
+   "ranges": [
+    [
+     720,
+     720
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "Tolapumj",
+   "short_name": "Tola",
+   "aliases": "tola",
+   "era": "Kunark",
+   "zone": "Old Sebilis",
+   "hidden": false,
+   "ranges": [
+    [
+     165,
+     165
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "sebilite protector",
+   "short_name": "Prot",
+   "aliases": "prot",
+   "era": "Kunark",
+   "zone": "Old Sebilis",
+   "hidden": false,
+   "ranges": [
+    [
+     165,
+     165
+    ]
+   ],
+   "window_count": null,
+   "quake_immune": false
+  },
+  {
+   "name": "an ancient cyclops",
+   "short_name": "Cyclops",
+   "aliases": "cyclops,ancient cyclops",
+   "era": "Classic",
+   "zone": "Ocean of Tears",
+   "hidden": false,
+   "ranges": [
+    [
+     72,
+     72
+    ]
+   ],
+   "window_count": 7300,
+   "quake_immune": true,
+   "note": "Not in 2023 dump; 72 min inferred from PHP comment (7300 * 72 minutes = 365 days). Zone assumed; confirm."
+  },
+  {
+   "name": "Ring 8",
+   "short_name": "Ring 8",
+   "aliases": "ring 8,ring8,gloradin",
+   "era": "Velious",
+   "zone": "Eastern Wastes",
+   "hidden": false,
+   "ranges": [
+    [
+     1440,
+     1440
+    ]
+   ],
+   "window_count": 60,
+   "quake_immune": true,
+   "note": "Gloradin Coldheart 24h cycle; anchored to quake/hard restart (set ToD to quake time). Not in 2023 dump. https://wiki.project1999.com/Ring_8_Player_Agreement"
+  }
+ ]
+}

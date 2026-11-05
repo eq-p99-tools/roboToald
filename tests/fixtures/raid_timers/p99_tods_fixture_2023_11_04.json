@@ -1,0 +1,398 @@
+{
+ "source": "stanvern MySQL dump 2023-11-04 (ET naive datetimes)",
+ "lastquake": "2023-10-30 22:45:11",
+ "tods": [
+  {
+   "name": "a dracoliche",
+   "tod_et": "2023-10-30 23:20:00"
+  },
+  {
+   "name": "Cazic Thule",
+   "tod_et": "2023-10-29 19:14:35"
+  },
+  {
+   "name": "Dartain the Lost",
+   "tod_et": "2021-12-22 18:05:48"
+  },
+  {
+   "name": "Dread",
+   "tod_et": "2023-11-02 22:26:13"
+  },
+  {
+   "name": "Faydedar",
+   "tod_et": "2023-09-17 18:01:00"
+  },
+  {
+   "name": "Fright",
+   "tod_et": "2023-11-02 20:31:47"
+  },
+  {
+   "name": "Gorenaire",
+   "tod_et": "2023-10-31 01:01:32"
+  },
+  {
+   "name": "Innoruuk",
+   "tod_et": "2023-09-20 18:10:00"
+  },
+  {
+   "name": "King Tranix",
+   "tod_et": "2022-05-24 23:46:52"
+  },
+  {
+   "name": "Lady Vox",
+   "tod_et": "2023-10-31 01:10:00"
+  },
+  {
+   "name": "Lord Nagafen",
+   "tod_et": "2023-10-31 15:50:40"
+  },
+  {
+   "name": "Maestro of Rancor",
+   "tod_et": "2022-01-05 23:18:28"
+  },
+  {
+   "name": "Master Yael",
+   "tod_et": "2023-10-08 18:35:45"
+  },
+  {
+   "name": "Noble Dojorn",
+   "tod_et": "2023-07-21 12:31:08"
+  },
+  {
+   "name": "Severilous",
+   "tod_et": "2023-10-29 08:53:45"
+  },
+  {
+   "name": "Talendor",
+   "tod_et": "2023-09-19 10:04:00"
+  },
+  {
+   "name": "Terror",
+   "tod_et": "2023-11-03 02:26:13"
+  },
+  {
+   "name": "Trakanon",
+   "tod_et": "2023-11-03 02:36:11"
+  },
+  {
+   "name": "Venril Sathir",
+   "tod_et": "2023-11-03 04:40:00"
+  },
+  {
+   "name": "Verina Tomb",
+   "tod_et": "2023-10-15 23:42:34"
+  },
+  {
+   "name": "Vessel Drozlin",
+   "tod_et": "2023-10-21 08:54:54"
+  },
+  {
+   "name": "Wraith of a Shissir",
+   "tod_et": "2023-08-10 00:54:02"
+  },
+  {
+   "name": "Zordak Ragefire",
+   "tod_et": "2023-10-30 10:05:09"
+  },
+  {
+   "name": "Phinigel Autropos",
+   "tod_et": "2023-10-19 10:28:48"
+  },
+  {
+   "name": "Magi Rokyl",
+   "tod_et": "2022-02-22 09:05:00"
+  },
+  {
+   "name": "Book of Souls",
+   "tod_et": "2023-07-31 22:41:08"
+  },
+  {
+   "name": "Kelorek`Dar",
+   "tod_et": "2023-10-29 23:38:00"
+  },
+  {
+   "name": "Vaniki",
+   "tod_et": "2023-10-15 20:57:00"
+  },
+  {
+   "name": "Vilefang",
+   "tod_et": "2023-11-03 23:07:09"
+  },
+  {
+   "name": "Zlandicar",
+   "tod_et": "2023-11-04 07:18:18"
+  },
+  {
+   "name": "Lodizal",
+   "tod_et": "2023-11-03 18:27:57"
+  },
+  {
+   "name": "Stormfeather",
+   "tod_et": "2023-11-03 19:14:26"
+  },
+  {
+   "name": "Dain Frostreaver IV",
+   "tod_et": "2023-10-30 23:16:52"
+  },
+  {
+   "name": "Derakor the Vindicator",
+   "tod_et": "2023-11-03 19:36:23"
+  },
+  {
+   "name": "King Tormax",
+   "tod_et": "2023-10-30 22:59:39"
+  },
+  {
+   "name": "The Statue of Rallos Zek",
+   "tod_et": "2023-10-30 23:06:40"
+  },
+  {
+   "name": "Tunare",
+   "tod_et": "2023-10-30 18:34:44"
+  },
+  {
+   "name": "Lord Yelinak",
+   "tod_et": "2023-10-30 09:24:41"
+  },
+  {
+   "name": "Casalen",
+   "tod_et": "2023-11-03 17:35:55"
+  },
+  {
+   "name": "Dozekar the Cursed",
+   "tod_et": "2023-10-30 23:02:14"
+  },
+  {
+   "name": "Essedera",
+   "tod_et": "2023-11-03 01:56:25"
+  },
+  {
+   "name": "Grozzmel",
+   "tod_et": "2023-11-03 17:44:53"
+  },
+  {
+   "name": "Krigara",
+   "tod_et": "2023-11-03 17:48:40"
+  },
+  {
+   "name": "Lepethida",
+   "tod_et": "2023-11-03 09:38:02"
+  },
+  {
+   "name": "Midayor",
+   "tod_et": "2023-11-03 17:59:41"
+  },
+  {
+   "name": "Tavekalem",
+   "tod_et": "2023-10-31 18:32:16"
+  },
+  {
+   "name": "Ymmeln",
+   "tod_et": "2023-10-31 19:01:15"
+  },
+  {
+   "name": "Aaryonar",
+   "tod_et": "2023-10-31 01:45:15"
+  },
+  {
+   "name": "Cekenar",
+   "tod_et": "2023-10-31 12:19:16"
+  },
+  {
+   "name": "Dagarn the Destroyer",
+   "tod_et": "2023-10-31 04:03:54"
+  },
+  {
+   "name": "Eashen of the Sky",
+   "tod_et": "2023-10-30 23:56:42"
+  },
+  {
+   "name": "Ikatiar the Venom",
+   "tod_et": "2023-10-30 23:27:58"
+  },
+  {
+   "name": "Jorlleag",
+   "tod_et": "2023-10-31 10:41:54"
+  },
+  {
+   "name": "Lady Mirenilla",
+   "tod_et": "2023-10-31 03:00:14"
+  },
+  {
+   "name": "Lady Nevederia",
+   "tod_et": "2023-10-31 11:05:47"
+  },
+  {
+   "name": "Lord Feshlak",
+   "tod_et": "2023-10-31 03:29:00"
+  },
+  {
+   "name": "Lord Koi`Doken",
+   "tod_et": "2023-10-31 02:49:19"
+  },
+  {
+   "name": "Lord Kreizenn",
+   "tod_et": "2023-10-31 04:38:05"
+  },
+  {
+   "name": "Lord Vyemm",
+   "tod_et": "2023-10-31 02:10:18"
+  },
+  {
+   "name": "Sevalak",
+   "tod_et": "2023-10-31 12:14:38"
+  },
+  {
+   "name": "Vulak`Aerr",
+   "tod_et": "2023-10-31 12:58:23"
+  },
+  {
+   "name": "Zlexak",
+   "tod_et": "2023-10-31 10:01:53"
+  },
+  {
+   "name": "Gozzrem",
+   "tod_et": "2023-10-29 16:07:31"
+  },
+  {
+   "name": "Lendiniara the Keeper",
+   "tod_et": "2023-10-30 13:14:32"
+  },
+  {
+   "name": "Telkorenar",
+   "tod_et": "2023-10-31 19:30:17"
+  },
+  {
+   "name": "Wuoshi",
+   "tod_et": "2023-10-12 15:04:41"
+  },
+  {
+   "name": "Lord Doljonijiarnimorinar",
+   "tod_et": "2023-08-17 09:36:24"
+  },
+  {
+   "name": "Velketor the Sorcerer",
+   "tod_et": "2023-11-03 16:40:35"
+  },
+  {
+   "name": "Ayillish",
+   "tod_et": "2022-05-26 12:26:46"
+  },
+  {
+   "name": "Guardian Kozzalym",
+   "tod_et": "2023-10-30 21:35:11"
+  },
+  {
+   "name": "Harla Dar",
+   "tod_et": "2021-01-01 00:00:00"
+  },
+  {
+   "name": "Klandicar",
+   "tod_et": "2023-10-24 11:53:17"
+  },
+  {
+   "name": "Scout Charisa",
+   "tod_et": "2023-11-03 20:01:25"
+  },
+  {
+   "name": "Keldor Dek`Torek",
+   "tod_et": "2023-11-03 22:07:34"
+  },
+  {
+   "name": "Narandi the Wretched",
+   "tod_et": "2023-11-03 17:35:43"
+  },
+  {
+   "name": "Venril Sathirs remains",
+   "tod_et": "2022-05-31 20:11:27"
+  },
+  {
+   "name": "Vaniki 3",
+   "tod_et": "2022-03-16 17:13:00"
+  },
+  {
+   "name": "Vaniki 2",
+   "tod_et": "2022-03-16 18:02:00"
+  },
+  {
+   "name": "Sontalak",
+   "tod_et": "2023-11-01 20:27:08"
+  },
+  {
+   "name": "an angry goblin",
+   "tod_et": "2023-10-14 12:33:01"
+  },
+  {
+   "name": "Druushk",
+   "tod_et": "2023-10-31 01:11:34"
+  },
+  {
+   "name": "Hoshkar",
+   "tod_et": "2023-10-31 01:00:46"
+  },
+  {
+   "name": "Nexona",
+   "tod_et": "2023-09-21 22:17:47"
+  },
+  {
+   "name": "Phara Dar",
+   "tod_et": "2023-10-31 01:00:35"
+  },
+  {
+   "name": "Silverwing",
+   "tod_et": "2023-10-31 01:00:50"
+  },
+  {
+   "name": "Xygoz",
+   "tod_et": "2023-10-31 01:25:55"
+  },
+  {
+   "name": "The Progenitor",
+   "tod_et": "2023-11-03 08:24:04"
+  },
+  {
+   "name": "The Final Arbiter",
+   "tod_et": "2023-11-03 08:13:43"
+  },
+  {
+   "name": "Master of the Guard",
+   "tod_et": "2023-11-02 19:59:43"
+  },
+  {
+   "name": "a shady goblin",
+   "tod_et": "2023-08-03 16:27:00"
+  },
+  {
+   "name": "Nillipuss",
+   "tod_et": "2023-11-03 14:49:53"
+  },
+  {
+   "name": "Sir Lucan D`Lere",
+   "tod_et": "2023-11-01 23:51:16"
+  },
+  {
+   "name": "Myga NE PH",
+   "tod_et": "2023-10-29 20:21:20"
+  },
+  {
+   "name": "Myga ToV PH",
+   "tod_et": "2023-10-29 20:43:45"
+  },
+  {
+   "name": "a broken golem",
+   "tod_et": "2023-11-03 22:08:19"
+  },
+  {
+   "name": "Bazzt Zzzt",
+   "tod_et": "2023-01-16 00:11:42"
+  },
+  {
+   "name": "Tolapumj",
+   "tod_et": "2000-01-01 00:00:00"
+  },
+  {
+   "name": "sebilite protector",
+   "tod_et": "2000-01-01 00:00:00"
+  }
+ ]
+}
