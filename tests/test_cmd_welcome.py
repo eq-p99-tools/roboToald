@@ -10,31 +10,27 @@ from roboToald import config
 from roboToald.discord_client.commands import cmd_welcome
 
 
-def test_welcome_enabled_requires_flag_and_member_role(monkeypatch):
-    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_welcome": True, "member_role": 0})
+def test_welcome_enabled_requires_channel_and_policy_file(monkeypatch):
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_channel": 0, "welcome_policy_file": "p.txt"})
     assert cmd_welcome._welcome_enabled(1) is False
-    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_welcome": True, "member_role": 99})
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_channel": 123, "welcome_policy_file": ""})
+    assert cmd_welcome._welcome_enabled(1) is False
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_channel": 123, "welcome_policy_file": "p.txt"})
     assert cmd_welcome._welcome_enabled(1) is True
-    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"enable_welcome": False, "member_role": 99})
-    assert cmd_welcome._welcome_enabled(1) is False
 
 
-def test_policy_text_prefers_file(tmp_path, monkeypatch):
+def test_policy_text_reads_file(tmp_path, monkeypatch):
     policy = tmp_path / "policy.txt"
     policy.write_text("File policy body", encoding="utf-8")
-    monkeypatch.setitem(
-        config.GUILD_SETTINGS,
-        1,
-        {"welcome_policy_file": str(policy), "welcome_policy": "inline ignored"},
-    )
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_policy_file": str(policy)})
     assert cmd_welcome._policy_text(1) == "File policy body"
 
 
-def test_policy_text_inline_and_default(monkeypatch):
-    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_policy": "Line1\\nLine2"})
-    assert cmd_welcome._policy_text(1) == "Line1\nLine2"
+def test_policy_text_missing_file(monkeypatch):
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {"welcome_policy_file": "/no/such/policy.txt"})
+    assert cmd_welcome._policy_text(1) is None
     monkeypatch.setitem(config.GUILD_SETTINGS, 2, {})
-    assert "I Agree" in cmd_welcome._policy_text(2)
+    assert cmd_welcome._policy_text(2) is None
 
 
 @pytest.mark.asyncio
@@ -62,7 +58,7 @@ async def test_welcome_agree_grants_member_role(monkeypatch):
     monkeypatch.setitem(
         config.GUILD_SETTINGS,
         10,
-        {"enable_welcome": True, "member_role": 55, "welcome_channel": 1},
+        {"member_role": 55, "welcome_channel": 1, "welcome_policy_file": "policy.txt"},
     )
 
     await cmd_welcome.welcome_agree_listener(inter)
@@ -97,7 +93,7 @@ async def test_welcome_agree_noop_if_already_has_role(monkeypatch):
     monkeypatch.setitem(
         config.GUILD_SETTINGS,
         10,
-        {"enable_welcome": True, "member_role": 55},
+        {"member_role": 55, "welcome_channel": 1, "welcome_policy_file": "policy.txt"},
     )
 
     await cmd_welcome.welcome_agree_listener(inter)
@@ -119,9 +115,9 @@ async def test_handle_member_join_dms_pointer(monkeypatch):
         config.GUILD_SETTINGS,
         10,
         {
-            "enable_welcome": True,
             "member_role": 55,
             "welcome_channel": 123,
+            "welcome_policy_file": "policy.txt",
             "welcome_dm_on_join": True,
         },
     )

@@ -72,11 +72,10 @@ audiofile = wakeup.wav
 
 [guild.12345]
 # Member Role is necessary for raidtarget commands to work, and is granted after
-# welcome policy agreement when enable_welcome is true (not the DS active role).
+# welcome policy agreement (not the DS active role).
 member_role = 77777
 
-# Custom welcome / policy agree (no Community server required):
-#enable_welcome = true
+# Custom welcome / policy agree (enabled when both channel + policy file are set):
 #welcome_channel = <channel_id>
 #welcome_policy_file = welcome_policy.txt
 #welcome_dm_on_join = true

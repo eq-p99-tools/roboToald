@@ -113,11 +113,9 @@ for guild in TEST_GUILDS:
         "sso_admin_roles": [int(x) for x in CONF.get(f"guild.{guild}", "sso_admin_roles", fallback="0").split(",")],
         "enable_raid": CONF.getboolean(f"guild.{guild}", "enable_raid", fallback=False),
         "enable_ds": CONF.getboolean(f"guild.{guild}", "enable_ds", fallback=False),
-        # Custom welcome / policy agree → grant member_role (no Community server required).
-        "enable_welcome": CONF.getboolean(f"guild.{guild}", "enable_welcome", fallback=False),
+        # Welcome / policy agree → grant member_role when welcome_channel + welcome_policy_file are set.
         "welcome_channel": CONF.getint(f"guild.{guild}", "welcome_channel", fallback=0),
         "welcome_policy_file": CONF.get(f"guild.{guild}", "welcome_policy_file", fallback=None),
-        "welcome_policy": CONF.get(f"guild.{guild}", "welcome_policy", fallback=None),
         "welcome_dm_on_join": CONF.getboolean(f"guild.{guild}", "welcome_dm_on_join", fallback=True),
         "ds_tod_channel": CONF.getint(f"guild.{guild}", "ds_tod_channel", fallback=0),
         "tod_channel_id": CONF.getint(f"guild.{guild}", "tod_channel_id", fallback=0),

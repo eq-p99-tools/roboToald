@@ -17,36 +17,36 @@ WELCOME_MESSAGE_MARKER = "<!-- robotoald-welcome -->"
 
 
 def _welcome_enabled(guild_id: int) -> bool:
+    """Enabled when both welcome_channel and welcome_policy_file are configured."""
     settings = config.GUILD_SETTINGS.get(guild_id, {})
-    return bool(settings.get("enable_welcome")) and bool(settings.get("member_role"))
+    channel_id = settings.get("welcome_channel") or 0
+    policy_file = (settings.get("welcome_policy_file") or "").strip()
+    return bool(channel_id) and bool(policy_file)
 
 
-def _policy_text(guild_id: int) -> str:
+def _policy_text(guild_id: int) -> str | None:
     settings = config.GUILD_SETTINGS.get(guild_id, {})
-    policy_file = settings.get("welcome_policy_file")
-    if policy_file:
-        path = Path(policy_file)
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        try:
-            return path.read_text(encoding="utf-8").strip()
-        except OSError:
-            logger.exception("Failed to read welcome_policy_file %s for guild %s", path, guild_id)
-    inline = (settings.get("welcome_policy") or "").strip()
-    if inline:
-        return inline.replace("\\n", "\n")
-    return (
-        "Welcome!\n\n"
-        "Please read our server policy and click **I Agree** to receive the member role "
-        "and access the rest of the server."
-    )
+    policy_file = (settings.get("welcome_policy_file") or "").strip()
+    if not policy_file:
+        return None
+    path = Path(policy_file)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.exception("Failed to read welcome_policy_file %s for guild %s", path, guild_id)
+        return None
+    return text or None
 
 
-def _welcome_content(guild: disnake.Guild) -> str:
+def _welcome_content(guild: disnake.Guild) -> str | None:
+    policy = _policy_text(guild.id)
+    if not policy:
+        return None
     role_id = config.GUILD_SETTINGS.get(guild.id, {}).get("member_role") or 0
     role = guild.get_role(role_id) if role_id else None
     role_label = role.mention if role else "the member role"
-    policy = _policy_text(guild.id)
     return (
         f"{WELCOME_MESSAGE_MARKER}\n"
         f"**Welcome to {guild.name}**\n\n"
@@ -84,15 +84,18 @@ async def ensure_welcome_message(guild: disnake.Guild) -> None:
         return
     settings = config.GUILD_SETTINGS[guild.id]
     channel_id = settings.get("welcome_channel") or 0
-    if not channel_id:
-        logger.warning("enable_welcome set for guild %s but welcome_channel is unset", guild.id)
-        return
     channel = guild.get_channel(channel_id)
     if channel is None or not isinstance(channel, disnake.TextChannel):
         logger.warning("welcome_channel %s not found or not a text channel in guild %s", channel_id, guild.id)
         return
 
     content = _welcome_content(guild)
+    if not content:
+        logger.warning("Welcome enabled for guild %s but policy file is missing or empty", guild.id)
+        return
+    if not (settings.get("member_role") or 0):
+        logger.warning("Welcome enabled for guild %s but member_role is unset", guild.id)
+        return
     components = _agree_components(guild.id)
     try:
         async for message in channel.history(limit=50):
@@ -109,8 +112,8 @@ async def ensure_welcome_message(guild: disnake.Guild) -> None:
 
 
 async def ensure_all_welcome_messages() -> None:
-    for guild_id, settings in config.GUILD_SETTINGS.items():
-        if not settings.get("enable_welcome"):
+    for guild_id in config.GUILD_SETTINGS:
+        if not _welcome_enabled(guild_id):
             continue
         guild = base.DISCORD_CLIENT.get_guild(guild_id)
         if guild is None:
@@ -137,11 +140,11 @@ async def welcome_agree_listener(inter: disnake.MessageInteraction) -> None:
         return
 
     if not _welcome_enabled(guild_id):
-        await inter.response.send_message("Welcome agreement is not enabled here.", ephemeral=True)
+        await inter.response.send_message("Welcome agreement is not configured here.", ephemeral=True)
         return
 
     role_id = config.GUILD_SETTINGS.get(guild_id, {}).get("member_role") or 0
-    role = inter.guild.get_role(role_id)
+    role = inter.guild.get_role(role_id) if role_id else None
     if role is None:
         await inter.response.send_message(
             "Member role is not configured correctly. Please contact a moderator.",
