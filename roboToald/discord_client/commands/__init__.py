@@ -7,6 +7,7 @@ from roboToald.discord_client.commands import cmd_raidtarget
 from roboToald.discord_client.commands import cmd_ds
 from roboToald.discord_client.commands import cmd_ds_data
 from roboToald.discord_client.commands import cmd_sso
+from roboToald.discord_client.commands import cmd_welcome
 
 if config.EQDKP_SETTINGS:
     from roboToald.discord_client.commands import cmd_lookup  # noqa: F401
@@ -27,6 +28,7 @@ _MODULES = (
     cmd_ds,
     cmd_ds_data,
     cmd_sso,
+    cmd_welcome,
 )
 for module in _MODULES:
     try:

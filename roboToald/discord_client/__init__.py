@@ -52,11 +52,18 @@ async def on_ready():
     logger.info("Reconciled DS active roles.")
     await commands.cmd_ds.schedule_messages()
     logger.info("Scheduled DS messages.")
+    await commands.cmd_welcome.ensure_all_welcome_messages()
+    logger.info("Ensured welcome messages.")
     install_discord_dm_handler(DISCORD_CLIENT, config.ERROR_DM_USER_ID)
 
     SUBSCRIPTION_TASK = asyncio.create_task(announce_subscriptions_task())
     asyncio.ensure_future(SUBSCRIPTION_TASK)
     logger.info("Started Subscription Notifier.")
+
+
+@DISCORD_CLIENT.event
+async def on_member_join(member: disnake.Member):
+    await commands.cmd_welcome.handle_member_join(member)
 
 
 @DISCORD_CLIENT.listen("on_button_click")
