@@ -39,6 +39,11 @@ async def on_ready():
 
     if _BOT_READY:
         logger.info("Discord client reconnected as: %s", DISCORD_CLIENT.user.name)
+        # Idempotent: recover deleted welcome messages after a reconnect.
+        try:
+            await commands.cmd_welcome.ensure_all_welcome_messages()
+        except Exception:
+            logger.exception("Welcome refresh on reconnect failed")
         return
 
     _BOT_READY = True
@@ -71,11 +76,14 @@ async def help_listener(inter: disnake.MessageInteraction):
     # Match by prefix so custom_ids can embed metadata
     # (e.g. "unsubscribe:Target:guild_id").
     # Longest keys first so a prefix cannot steal a longer match.
+    custom_id = (inter.component.custom_id if inter.component else None) or ""
+    if not custom_id:
+        return
     sorted_listeners = sorted(
         commands.BUTTON_LISTENERS.items(),
         key=lambda kv: -len(kv[0]),
     )
     for key, handler in sorted_listeners:
-        if inter.component.custom_id.startswith(key):
+        if custom_id.startswith(key):
             await handler(inter)
             return

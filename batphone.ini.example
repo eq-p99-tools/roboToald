@@ -77,10 +77,13 @@ member_role = 77777
 
 # Custom welcome / policy agree (enabled when both channel + policy file are set):
 #welcome_channel = <channel_id>
-#welcome_policy_file = welcome_policy.txt
+# Prefer a path under the mounted data volume so Docker needs no extra bind:
+#welcome_policy_file = data/welcome_policy.txt
 #welcome_dm_on_join = true
 # Bot needs Manage Roles and a higher role than member_role.
-# Lock non-public channels to member_role so agreeing unlocks the server.
+# @everyone must View Channel on welcome_channel (so joiners can click I Agree).
+# Lock other channels to member_role so agreeing unlocks the server.
+# Restart the bot after changing these keys (config is read at process start).
 
 # Raidtarget, batphone, DS, and SSO commands default to false, but can be enabled:
 enable_raidtarget = true
