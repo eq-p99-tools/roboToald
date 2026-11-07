@@ -71,6 +71,19 @@ def test_ws_auth_happy_path_full_state(client, monkeypatch):
         assert msg["count"] == 1
         assert "dynamic_tag_zones" in msg
         assert "dynamic_tag_classes" in msg
+        assert msg["report_servers"] == ["P1999Green", "project1999", "P1999PVP"]
+
+
+def test_ws_full_state_sends_guild_report_servers(client, monkeypatch):
+    from roboToald import config
+
+    _patch_ws_auth_ok(monkeypatch)
+    monkeypatch.setitem(config.GUILD_SETTINGS, 1, {**config.GUILD_SETTINGS[1], "sso_report_servers": ["P1999Green"]})
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        msg = ws.receive_json()
+        assert msg["type"] == "full_state"
+        assert msg["report_servers"] == ["P1999Green"]
 
 
 def test_ws_auth_invalid_access_key(client, monkeypatch):

@@ -349,7 +349,8 @@ Sent immediately after successful authentication. Contains the complete set of a
   "account_tree": { ... },
   "count": 42,
   "dynamic_tag_zones": ["vp", "st", "tov", ...],
-  "dynamic_tag_classes": ["bar", "brd", "bard", "clr", ...]
+  "dynamic_tag_classes": ["bar", "brd", "bard", "clr", ...],
+  "report_servers": ["P1999Green", "project1999", "P1999PVP"]
 }
 ```
 
@@ -360,6 +361,7 @@ Sent immediately after successful authentication. Contains the complete set of a
 | `count` | `int` | Number of accounts in the tree |
 | `dynamic_tag_zones` | `string[]` | Available zone prefixes for dynamic tags |
 | `dynamic_tag_classes` | `string[]` | Available class suffixes for dynamic tags |
+| `report_servers` | `string[]` | EQ log-file server names whose ToDs, FTEs, locations and heartbeats the proxy reports for this guild (guild setting `sso_report_servers`; default the live P99 servers) |
 
 The `account_tree` is filtered to only accounts the user has access to via RBAC. The full tree for a guild may contain accounts the user cannot see.
 

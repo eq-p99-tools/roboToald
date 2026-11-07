@@ -214,9 +214,12 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
   },
   "count": 1,
   "dynamic_tag_zones": ["seb", "vp", "st", "tov", "dn", "kael", "pog", "thurg", "ss", "fear", "vox", "naggy", "dain", "yeli", "zlandi", "trak"],
-  "dynamic_tag_classes": ["bar", "brd", "bard", "clr", "cle", "cleric", "dru", "druid", "enc", "enchanter", "mag", "mage", "magician", "mnk", "mon", "monk", "nec", "necro", "necromancer", "pal", "pld", "paladin", "ran", "rng", "ranger", "rog", "rogue", "sk", "shadowknight", "sha", "shm", "sham", "shaman", "war", "warrior", "wiz", "wizard"]
+  "dynamic_tag_classes": ["bar", "brd", "bard", "clr", "cle", "cleric", "dru", "druid", "enc", "enchanter", "mag", "mage", "magician", "mnk", "mon", "monk", "nec", "necro", "necromancer", "pal", "pld", "paladin", "ran", "rng", "ranger", "rog", "rogue", "sk", "shadowknight", "sha", "shm", "sham", "shaman", "war", "warrior", "wiz", "wizard"],
+  "report_servers": ["P1999Green", "project1999", "P1999PVP"]
 }
 ```
+
+Optional `report_servers`: EQ log-file server names (the `<server>` in `eqlog_<character>_<server>.txt`, case-insensitive) whose events the proxy reports for this guild (`heartbeat`, `update_location`, `fte`, `mob_death`). Logs from any other server, such as a test server, send nothing. **[reference]** sends the guild's `sso_report_servers` setting (default: the live P99 servers); a proxy that receives no list uses the same default.
 
 #### Account tree entry fields
 

@@ -802,6 +802,7 @@ async def websocket_accounts(websocket: WebSocket):
                 "count": len(account_tree),
                 "dynamic_tag_zones": list(dynamic_tag_zones.keys()),
                 "dynamic_tag_classes": list(dynamic_tag_classes.keys()),
+                "report_servers": config.get_sso_report_servers(guild_id),
             }
         )
         logger.info("WebSocket connected | %s | accounts=%d", session_ctx, len(account_tree))

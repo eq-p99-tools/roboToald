@@ -100,6 +100,11 @@ ERROR_DM_USER_ID = CONF.getint("discord", "error_dm_user_id", fallback=0)
 # Default asyncio thread pool for asyncio.to_thread / run_in_executor (Python default is min(32, cpu+4)).
 ASYNCIO_DEFAULT_THREAD_POOL_MAX_WORKERS = CONF.getint("sso", "asyncio_default_thread_pool_max_workers", fallback=64)
 
+# EQ log-file server names (eqlog_<character>_<server>.txt) whose events a
+# login proxy reports for a guild when [guild.<id>] sets no sso_report_servers:
+# the live P99 servers (Green, Blue, Red).
+DEFAULT_SSO_REPORT_SERVERS = ["P1999Green", "project1999", "P1999PVP"]
+
 WAKEUP_CHANNELS = {}
 GUILD_SETTINGS = {}
 for guild in TEST_GUILDS:
@@ -135,6 +140,13 @@ for guild in TEST_GUILDS:
         "min_client_version": CONF.get(f"guild.{guild}", "min_client_version", fallback=None),
         "client_update_message": CONF.get(f"guild.{guild}", "client_update_message", fallback=None),
         "require_log": CONF.getboolean(f"guild.{guild}", "require_log", fallback=False),
+        "sso_report_servers": [
+            x.strip()
+            for x in CONF.get(
+                f"guild.{guild}", "sso_report_servers", fallback=",".join(DEFAULT_SSO_REPORT_SERVERS)
+            ).split(",")
+            if x.strip()
+        ],
         "block_rustle": CONF.getboolean(f"guild.{guild}", "block_rustle", fallback=False),
         "block_rustle_exempt_roles": [
             int(x) for x in CONF.get(f"guild.{guild}", "block_rustle_exempt_roles", fallback="").split(",") if x.strip()
@@ -162,6 +174,11 @@ for guild in TEST_GUILDS:
 def get_tod_channel_id(guild_id: int) -> int:
     """Discord text channel ID for FTE / raid TOD relay from the login proxy (0 = disabled)."""
     return GUILD_SETTINGS.get(guild_id, {}).get("tod_channel_id", 0)
+
+
+def get_sso_report_servers(guild_id: int) -> List[str]:
+    """EQ log server names whose ToDs, FTEs, locations and heartbeats the login proxy reports."""
+    return list(GUILD_SETTINGS.get(guild_id, {}).get("sso_report_servers", DEFAULT_SSO_REPORT_SERVERS))
 
 
 def get_member_role(guild_id: int) -> int:

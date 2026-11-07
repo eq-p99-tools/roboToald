@@ -106,6 +106,7 @@ def test_live_full_state_matches_schema(schema: dict) -> None:
         "count": len(tree),
         "dynamic_tag_zones": ["seb", "vp"],
         "dynamic_tag_classes": ["clr"],
+        "report_servers": ["P1999Green"],
     }
     jsonschema.validate(instance=message, schema=schema)
 
