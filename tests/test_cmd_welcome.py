@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import disnake
 import pytest
 
 from roboToald import config
@@ -119,9 +120,65 @@ async def test_handle_member_join_dms_pointer(monkeypatch):
             "welcome_channel": 123,
             "welcome_policy_file": "policy.txt",
             "welcome_dm_on_join": True,
+            "welcome_ping_on_join": False,
         },
     )
 
     await cmd_welcome.handle_member_join(member)
     member.send.assert_awaited_once()
     assert "#123" in member.send.await_args.args[0]
+
+
+def _join_member(channel):
+    member = MagicMock()
+    member.bot = False
+    member.id = 7
+    member.mention = "<@7>"
+    member.guild.id = 10
+    member.guild.name = "SKP"
+    member.guild.get_channel.return_value = channel
+    member.get_role.return_value = None
+    member.send = AsyncMock()
+    return member
+
+
+def _welcome_channel():
+    channel = MagicMock(spec=disnake.TextChannel)
+    channel.send = AsyncMock()
+    return channel
+
+
+@pytest.mark.asyncio
+async def test_handle_member_join_pings_even_when_dm_blocked(monkeypatch):
+    channel = _welcome_channel()
+    member = _join_member(channel)
+    member.send.side_effect = disnake.Forbidden(MagicMock(status=403), "Cannot send messages to this user")
+    monkeypatch.setitem(
+        config.GUILD_SETTINGS,
+        10,
+        {"member_role": 55, "welcome_channel": 123, "welcome_policy_file": "policy.txt"},
+    )
+
+    await cmd_welcome.handle_member_join(member)
+
+    channel.send.assert_awaited_once()
+    assert "<@7>" in channel.send.await_args.args[0]
+    assert channel.send.await_args.kwargs["delete_after"] == cmd_welcome.WELCOME_PING_DELETE_AFTER_SECONDS
+    member.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_member_join_skips_existing_members(monkeypatch):
+    channel = _welcome_channel()
+    member = _join_member(channel)
+    member.get_role.return_value = MagicMock()
+    monkeypatch.setitem(
+        config.GUILD_SETTINGS,
+        10,
+        {"member_role": 55, "welcome_channel": 123, "welcome_policy_file": "policy.txt"},
+    )
+
+    await cmd_welcome.handle_member_join(member)
+
+    channel.send.assert_not_called()
+    member.send.assert_not_called()

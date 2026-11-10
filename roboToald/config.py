@@ -117,6 +117,7 @@ for guild in TEST_GUILDS:
         "welcome_channel": CONF.getint(f"guild.{guild}", "welcome_channel", fallback=0),
         "welcome_policy_file": CONF.get(f"guild.{guild}", "welcome_policy_file", fallback=None),
         "welcome_dm_on_join": CONF.getboolean(f"guild.{guild}", "welcome_dm_on_join", fallback=True),
+        "welcome_ping_on_join": CONF.getboolean(f"guild.{guild}", "welcome_ping_on_join", fallback=True),
         "ds_tod_channel": CONF.getint(f"guild.{guild}", "ds_tod_channel", fallback=0),
         "tod_channel_id": CONF.getint(f"guild.{guild}", "tod_channel_id", fallback=0),
         "ds_schedule_channel": CONF.getint(f"guild.{guild}", "ds_schedule_channel", fallback=0),

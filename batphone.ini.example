@@ -79,6 +79,8 @@ member_role = 77777
 #welcome_channel = <channel_id>
 #welcome_policy_file = welcome_policy.txt
 #welcome_dm_on_join = true
+#welcome_ping_on_join = true
+# In welcome_channel the bot needs View Channel, Send Messages, and Read Message History.
 # Bot needs Manage Roles and a higher role than member_role.
 # Lock non-public channels to member_role so agreeing unlocks the server.
 

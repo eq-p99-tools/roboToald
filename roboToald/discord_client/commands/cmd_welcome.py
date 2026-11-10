@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 WELCOME_AGREE_PREFIX = "welcome_agree:"
 WELCOME_MESSAGE_MARKER = "<!-- robotoald-welcome -->"
+# Join pings self-delete so they don't push the persistent welcome post out of
+# the history window the bot searches on startup.
+WELCOME_PING_DELETE_AFTER_SECONDS = 60 * 60
+WELCOME_HISTORY_SEARCH_LIMIT = 200
 
 
 def _welcome_enabled(guild_id: int) -> bool:
@@ -97,16 +101,24 @@ async def ensure_welcome_message(guild: disnake.Guild) -> None:
         logger.warning("Welcome enabled for guild %s but member_role is unset", guild.id)
         return
     components = _agree_components(guild.id)
+    step = "read history (needs View Channel + Read Message History)"
     try:
-        async for message in channel.history(limit=50):
+        async for message in channel.history(limit=WELCOME_HISTORY_SEARCH_LIMIT):
             if _message_is_welcome(message, guild.id):
+                step = "edit existing welcome message"
                 await message.edit(content=content, components=components)
                 logger.info("Refreshed welcome message in guild %s channel %s", guild.id, channel_id)
                 return
+        step = "send welcome message (needs Send Messages)"
         await channel.send(content=content, components=components)
         logger.info("Posted welcome message in guild %s channel %s", guild.id, channel_id)
     except disnake.Forbidden:
-        logger.warning("Missing permission to manage welcome message in guild %s channel %s", guild.id, channel_id)
+        logger.warning(
+            "Missing permission to %s in guild %s channel %s",
+            step,
+            guild.id,
+            channel_id,
+        )
     except Exception:
         logger.exception("Failed to ensure welcome message for guild %s", guild.id)
 
@@ -194,29 +206,65 @@ async def welcome_agree_listener(inter: disnake.MessageInteraction) -> None:
     )
 
 
-async def handle_member_join(member: disnake.Member) -> None:
-    """DM a pointer to the welcome channel when a new member joins."""
-    if member.bot or not _welcome_enabled(member.guild.id):
+async def _ping_in_welcome_channel(member: disnake.Member, channel_id: int) -> None:
+    channel = member.guild.get_channel(channel_id)
+    if channel is None or not isinstance(channel, disnake.TextChannel):
+        logger.warning(
+            "Welcome ping skipped for user %s in guild %s: welcome_channel %s not found",
+            member.id,
+            member.guild.id,
+            channel_id,
+        )
         return
-    settings = config.GUILD_SETTINGS.get(member.guild.id, {})
-    if not settings.get("welcome_dm_on_join", True):
-        return
-    role_id = settings.get("member_role") or 0
-    if role_id and member.get_role(role_id):
-        return
-    channel_id = settings.get("welcome_channel") or 0
-    if not channel_id:
-        return
+    try:
+        await channel.send(
+            f"Welcome {member.mention}! Read the policy above and click **I Agree** to get access.",
+            allowed_mentions=disnake.AllowedMentions(users=[member]),
+            delete_after=WELCOME_PING_DELETE_AFTER_SECONDS,
+        )
+        logger.info("Welcome ping sent for user %s in guild %s", member.id, member.guild.id)
+    except disnake.Forbidden:
+        logger.warning(
+            "Missing permission to send welcome ping in guild %s channel %s",
+            member.guild.id,
+            channel_id,
+        )
+    except Exception:
+        logger.exception("Failed to send welcome ping for user %s in guild %s", member.id, member.guild.id)
+
+
+async def _dm_welcome(member: disnake.Member, channel_id: int) -> None:
     try:
         await member.send(
             f"Welcome to **{member.guild.name}**!\n"
-            f"Please open <#{channel_id}> , read the policy, and click **I Agree** "
-            f"to get access."
+            f"Please open <#{channel_id}>, read the policy, and click **I Agree** to get access."
         )
+        logger.info("Welcome DM sent to user %s for guild %s", member.id, member.guild.id)
     except disnake.Forbidden:
         logger.info("Could not DM welcome instructions to user %s (DMs closed)", member.id)
     except Exception:
         logger.exception("Failed to DM welcome instructions to user %s", member.id)
+
+
+async def handle_member_join(member: disnake.Member) -> None:
+    """Point a new member at the welcome channel via a channel mention and a DM."""
+    guild = member.guild
+    if member.bot:
+        return
+    if not _welcome_enabled(guild.id):
+        logger.debug("Member %s joined guild %s; welcome not configured", member.id, guild.id)
+        return
+    settings = config.GUILD_SETTINGS.get(guild.id, {})
+    role_id = settings.get("member_role") or 0
+    if role_id and member.get_role(role_id):
+        logger.info("Member %s joined guild %s already holding member_role; skipping welcome", member.id, guild.id)
+        return
+    channel_id = settings.get("welcome_channel") or 0
+    logger.info("Member %s joined guild %s; sending welcome", member.id, guild.id)
+    if settings.get("welcome_ping_on_join", True):
+        await _ping_in_welcome_channel(member, channel_id)
+    if settings.get("welcome_dm_on_join", True):
+        await _dm_welcome(member, channel_id)
 
 
 BUTTON_LISTENERS = {
