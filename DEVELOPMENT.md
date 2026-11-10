@@ -62,6 +62,7 @@ Each Discord guild (server) gets its own section keyed by guild ID.
 | `welcome_channel` | int | `0` | Text channel for the welcome/policy message. Welcome is on when this **and** `welcome_policy_file` are set |
 | `welcome_policy_file` | path | *(none)* | UTF-8 text file with the policy body. Welcome is on when this **and** `welcome_channel` are set |
 | `welcome_dm_on_join` | bool | `true` | When welcome is on, DM new joiners a pointer to `welcome_channel` (skipped if they already have `member_role` or DMs are closed) |
+| `welcome_ping_on_join` | bool | `true` | When welcome is on, mention new joiners in `welcome_channel` so they're notified even with DMs closed. The mention deletes itself after an hour |
 | `enable_random` | bool | `true` | Enable `/random` |
 | `enable_timer` | bool | `true` | Enable `/timer` |
 | `enable_batphone` | bool | `false` | Enable `/batphone` |
