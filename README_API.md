@@ -405,7 +405,7 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
   "bind_location": "zone_key",
   "park_location": "zone_key",
   "level": 60,
-  "items": { "seb": true, "vp": false, "void": true }
+  "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
 }
 ```
 
@@ -415,14 +415,15 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
 | `bind_location` | `string?` | no | New bind zone key (only updated if present) |
 | `park_location` | `string?` | no | New park zone key (only updated if present) |
 | `level` | `int?` | no | New level (only updated if present and non-null) |
-| `items` | `object?` | no | **Preferred:** zone keys and tracked inventory flags from the login proxy (only sent when present). Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). |
+| `inventory` | `string?` | no | Raw `*-Inventory.txt` export. When non-empty and parseable, the server fills every tracked item column from it and ignores `items` / `keys` on the same message. Blank, oversized (over 524288 bytes), or headerless text is ignored. |
+| `items` | `object?` | no | Tracked item wires from older clients, and partial updates such as a log line. Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). Used only when `inventory` was not applied. |
 | `keys` | `object?` | no | **Legacy:** same wire names as `items` for zone keys (`seb`, `vp`, `st`). If both `keys` and `items` are sent, **`items` wins** on duplicate fields. |
 
-When `items` and/or `keys` are present, merged wire fields map to `SSOAccountCharacter` booleans. `true`/`false` updates the column; `null` or a missing sub-field leaves that column unchanged.
+A parsed `inventory` export sets every tracked column, including `false` / `0` for items that are not in the file. When `items` and/or `keys` are used instead, `true`/`false` updates the column and `null` or a missing sub-field leaves that column unchanged.
 
 Side effects (same as heartbeat, plus):
 - `SSOAccountCharacter.bind_location`, `park_location`, and/or `level` updated
-- If `items` and/or `keys` are present, matching `key_*` / `item_*` columns updated per the rules above
+- If `inventory` was parsed, or `items` and/or `keys` are present, matching `key_*` / `item_*` columns are updated per the rules above
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 

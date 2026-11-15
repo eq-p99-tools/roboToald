@@ -27,6 +27,7 @@ from roboToald import config
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
 from roboToald.api.websocket import manager as ws_manager, ClientConnection
+from roboToald.inventory_parser import MAX_INVENTORY_TEXT_BYTES, parse_inventory_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -882,6 +883,28 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
         )
 
 
+def _inventory_wires_from_message(msg: dict) -> dict:
+    """Tracked item wires from ``inventory`` text, or from legacy ``items``/``keys``.
+
+    A non-empty inventory export is a full snapshot and replaces ``items`` and
+    ``keys`` on the same message. Blank, oversized, or unparseable text leaves
+    that path in place so older clients keep working.
+    """
+    raw = msg.get("inventory")
+    if isinstance(raw, str) and raw.strip():
+        if len(raw.encode("utf-8")) > MAX_INVENTORY_TEXT_BYTES:
+            logger.warning(
+                "update_location inventory text exceeds %s bytes; ignoring",
+                MAX_INVENTORY_TEXT_BYTES,
+            )
+        else:
+            parsed = parse_inventory_text(raw)
+            if parsed is not None:
+                return parsed
+            logger.warning("update_location inventory text has no Name column; ignoring")
+    return sso_model.merge_keys_and_items_message(msg)
+
+
 async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     """Process an update_location message: update character, then push delta."""
     character_name = msg.get("character_name")
@@ -907,9 +930,9 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
             "park_location": msg.get("park_location"),
             "level": msg.get("level"),
         }
-        merged = sso_model.merge_keys_and_items_message(msg)
-        if merged:
-            kw.update(sso_model.merged_wires_to_character_kwargs(merged))
+        wires = _inventory_wires_from_message(msg)
+        if wires:
+            kw.update(sso_model.merged_wires_to_character_kwargs(wires))
         character_changed = sso_model.update_account_character(**kw)
         key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
         return character_changed or key_marked

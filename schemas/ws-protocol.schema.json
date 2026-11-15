@@ -107,7 +107,7 @@
     },
     "update_location": {
       "type": "object",
-      "description": "Client -> server. Character park/bind/level/item updates. All fields besides character_name are optional. Legacy clients may send `keys`; server merges with `items` (`items` wins on conflict).",
+      "description": "Client -> server. Character park/bind/level/item updates. All fields besides character_name are optional. A non-empty `inventory` string is the raw EQ *-Inventory.txt export; the server parses tracked items from it and ignores `items` and `keys` on that message. Text longer than 524288 bytes is ignored. When `inventory` is absent, legacy clients may send `keys`; the server merges those with `items` (`items` wins on conflict).",
       "required": ["type", "character_name"],
       "properties": {
         "type": { "const": "update_location" },
@@ -116,7 +116,8 @@
         "bind_location": { "type": "string" },
         "level": { "type": "integer" },
         "items": { "type": "object" },
-        "keys": { "type": "object" }
+        "keys": { "type": "object" },
+        "inventory": { "type": "string" }
       }
     },
     "fte": {

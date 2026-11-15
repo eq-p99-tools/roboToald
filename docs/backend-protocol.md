@@ -146,7 +146,7 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 | `login_auth` | C→S | `type`, `request_id`, `username` |
 | `login_auth_response` | S→C | `type`, `request_id` (+ success or error fields) |
 | `heartbeat` | C→S | `type`, `character_name` |
-| `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `items`, legacy `keys`) |
+| `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `inventory`, `items`, legacy `keys`) |
 | `fte` | C→S | `type`, `mob`, `player`, `character_name`, `eq_log_time` |
 | `mob_death` | C→S | `type`, `mob`, `eq_log_time`, `character_name` |
 | `ping` | either | `type` |
@@ -240,7 +240,9 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
 **CharacterClass enum values (exact strings):**  
 `Bard`, `Cleric`, `Druid`, `Enchanter`, `Magician`, `Monk`, `Necromancer`, `Paladin`, `Ranger`, `Rogue`, `ShadowKnight`, `Shaman`, `Warrior`, `Wizard`
 
-#### `items` wire keys **[proxy-required]** for ingest; UI expects these names
+#### `items` wire keys **[proxy-required]** on the way back to the UI
+
+New clients send the raw export in `inventory` and the server fills these keys. Older clients still send `items` directly. The UI reads these names from `full_state` / `delta`.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -372,11 +374,12 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
   "park_location": "veeshan",
   "bind_location": "poknowledge",
   "level": 60,
-  "items": { "seb": true, "vp": false }
+  "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
 }
 ```
 
-- Schema allows optional `items` and legacy `keys`. **[reference]** merges them with `items` winning on conflict.
+- `inventory` is the raw `*-Inventory.txt` export. When it is non-empty and parseable, the server treats it as a full snapshot of the tracked item keys and ignores `items` / `keys` on that message. Text longer than 524288 bytes, or text with no `Name` column, is ignored.
+- When `inventory` is absent, schema allows optional `items` and legacy `keys`. **[reference]** merges them with `items` winning on conflict. Log-driven updates (a single flag, a level, a zone) still use those fields.
 - Proxy heartbeat interval: **20s** if log mtime within **30s**.
 - Missing/inaccessible `character_name`: **MUST** ignore (no error, no close). Proxy may send local-only character names.
 
