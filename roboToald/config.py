@@ -7,6 +7,18 @@ CONFIG_FILENAME = "batphone.ini"
 CONF = configparser.ConfigParser()
 CONF.read(CONFIG_FILENAME)
 
+
+def section_option(parser: configparser.ConfigParser, section: str, option: str, fallback=None):
+    """Read an option from ``section`` only — ignore ``[DEFAULT]`` inheritance.
+
+    ConfigParser otherwise pulls missing keys from ``[DEFAULT]``, which would
+    silently enable a shared ``log_stream_url`` for every guild.
+    """
+    section_map = parser._sections.get(section)
+    if section_map is None or option not in section_map:
+        return fallback
+    return parser.get(section, option, fallback=fallback)
+
 DISCORD_TOKEN = CONF.get("discord", "token")
 DISCORD_OAUTH_CLIENT_ID = CONF.get("discord", "oauth_client_id", fallback=None)
 DISCORD_OAUTH_CLIENT_SECRET = CONF.get("discord", "oauth_client_secret", fallback=None)
@@ -143,8 +155,8 @@ for guild in TEST_GUILDS:
         "raidtargets_source": CONF.get(f"guild.{guild}", "raidtargets_source", fallback="endpoint"),
         "raid_timers_channel_id": CONF.getint(f"guild.{guild}", "raid_timers_channel_id", fallback=0),
         "raidtargets_feed_key": CONF.get(f"guild.{guild}", "raidtargets_feed_key", fallback=None),
-        "log_stream_url": CONF.get(f"guild.{guild}", "log_stream_url", fallback=None),
-        "log_stream_key": CONF.get(f"guild.{guild}", "log_stream_key", fallback=None),
+        "log_stream_url": section_option(CONF, f"guild.{guild}", "log_stream_url", fallback=None),
+        "log_stream_key": section_option(CONF, f"guild.{guild}", "log_stream_key", fallback=None),
         "guild_chat_channel_id": CONF.getint(f"guild.{guild}", "guild_chat_channel_id", fallback=0),
     }
     if GUILD_SETTINGS[guild]["wakeup_channels"]:

@@ -472,12 +472,20 @@ def log_stream_disconnect(
 
 
 async def run_log_stream(guild_id: int, discord) -> None:
-    """Reconnect forever. Backoff is 1, 2, 4, … 30s and resets after any SSE event."""
+    """Reconnect forever. Backoff is 1, 2, 4, … 30s and resets after any SSE event.
+
+    ``guild_id`` is always the Discord guild id from ``[guild.<id>]``. Stops if
+    ``log_stream_url`` becomes empty (reader should not have started without one).
+    """
     backoff = 1.0
     consecutive_failures = 0
     last_error_alert_at: float | None = None
     timeout = httpx.Timeout(READ_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
     while True:
+        url = config.get_log_stream_url(guild_id)
+        if not url:
+            logger.info("log stream URL unset; stopping reader guild=%s", guild_id)
+            return
         saw_event = False
         try:
             async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
@@ -506,10 +514,12 @@ async def run_log_stream(guild_id: int, discord) -> None:
 
 
 def start_log_stream_tasks(discord) -> list[asyncio.Task]:
+    """Start one reconnect loop per guild that owns a non-empty ``log_stream_url``."""
     tasks = []
     for guild_id in config.GUILD_SETTINGS:
-        if not config.get_log_stream_url(guild_id):
+        url = config.get_log_stream_url(guild_id)
+        if not url:
             continue
         tasks.append(asyncio.create_task(run_log_stream(guild_id, discord)))
-        logger.info("Started log stream reader for guild %s", guild_id)
+        logger.info("Started log stream reader for guild %s url=%s", guild_id, url)
     return tasks

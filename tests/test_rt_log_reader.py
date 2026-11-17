@@ -258,6 +258,11 @@ def _patch_run_loop(monkeypatch, *, raise_exc: BaseException, stop_after: int = 
         if len(sleeps) >= stop_after:
             raise asyncio.CancelledError()
 
+    monkeypatch.setattr(
+        config,
+        "get_log_stream_url",
+        lambda _gid: "https://logs.example/v1/streams/myguild",
+    )
     monkeypatch.setattr(rt_log_reader.httpx, "AsyncClient", _PassthroughAsyncClient)
     monkeypatch.setattr(rt_log_reader, "follow_once", boom_follow)
     monkeypatch.setattr(rt_log_reader.asyncio, "sleep", fast_sleep)
