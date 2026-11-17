@@ -29,6 +29,11 @@ BACKOFF_MAX_SECONDS = 30.0
 ARCHIVE_MAX_CHARS = 1900
 ARCHIVE_MAX_AGE_SECONDS = 2.0
 BP_DEBOUNCE_SECONDS = 30.0
+# Quiet reconnect noise: WARN until this many consecutive failures, then ERROR
+# (no traceback) at most once per ERROR_ALERT_COOLDOWN_SECONDS. Discord DM
+# alerts listen at ERROR+, so transient connect blips must stay below that.
+PERSISTENT_FAILURES_BEFORE_ERROR = 5
+ERROR_ALERT_COOLDOWN_SECONDS = 300.0
 
 _bp_seen: dict[tuple[int, str], float] = {}
 
@@ -39,6 +44,14 @@ class LogStreamError(Exception):
 
 class ArchiveFlushError(LogStreamError):
     """The archive channel send failed. The cursor stays on the last flushed seq."""
+
+
+# Network / stream ends that are expected while the reader reconnects.
+_TRANSIENT_DISCONNECT_TYPES = (
+    httpx.TransportError,
+    httpx.TimeoutException,
+    LogStreamError,
+)
 
 
 @dataclass
@@ -396,31 +409,117 @@ async def _next_chunk(stream):
     return await anext(stream)
 
 
+def _format_disconnect_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    name = type(exc).__name__
+    return f"{name}: {text}" if text else name
+
+
+def is_transient_disconnect(exc: BaseException) -> bool:
+    """True for connect/read/timeout/HTTP stream failures that warrant a quiet reconnect."""
+    return isinstance(exc, _TRANSIENT_DISCONNECT_TYPES)
+
+
+def log_stream_disconnect(
+    guild_id: int,
+    exc: BaseException,
+    *,
+    consecutive_failures: int,
+    backoff: float,
+    last_error_alert_at: float | None,
+    now: float | None = None,
+) -> float | None:
+    """Log a reconnectable disconnect. Returns the updated ERROR-alert timestamp.
+
+    Transient failures log at WARNING without a traceback so Discord DM error
+    alerts stay quiet. After ``PERSISTENT_FAILURES_BEFORE_ERROR`` consecutive
+    failures, an ERROR (still no traceback) is emitted at most once per
+    ``ERROR_ALERT_COOLDOWN_SECONDS``. ``last_error_alert_at`` is ``None`` until
+    the first ERROR alert.
+    """
+    detail = _format_disconnect_error(exc)
+    if consecutive_failures < PERSISTENT_FAILURES_BEFORE_ERROR:
+        logger.warning(
+            "log stream disconnected guild=%s; reconnecting in %.0fs (%s)",
+            guild_id,
+            backoff,
+            detail,
+        )
+        return last_error_alert_at
+
+    now_mono = time.monotonic() if now is None else now
+    if (
+        last_error_alert_at is None
+        or now_mono - last_error_alert_at >= ERROR_ALERT_COOLDOWN_SECONDS
+    ):
+        logger.error(
+            "log stream still failing guild=%s failures=%s backoff=%.0fs (%s)",
+            guild_id,
+            consecutive_failures,
+            backoff,
+            detail,
+        )
+        return now_mono
+
+    logger.warning(
+        "log stream still failing guild=%s failures=%s; reconnecting in %.0fs (%s)",
+        guild_id,
+        consecutive_failures,
+        backoff,
+        detail,
+    )
+    return last_error_alert_at
+
+
 async def run_log_stream(guild_id: int, discord) -> None:
-    """Reconnect forever. Backoff is 1, 2, 4, … 30s and resets after any SSE event."""
+    """Reconnect forever. Backoff is 1, 2, 4, … 30s and resets after any SSE event.
+
+    ``guild_id`` is always the Discord guild id from ``[guild.<id>]``. Stops if
+    ``log_stream_url`` becomes empty (reader should not have started without one).
+    """
     backoff = 1.0
+    consecutive_failures = 0
+    last_error_alert_at: float | None = None
     timeout = httpx.Timeout(READ_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
     while True:
+        url = config.get_log_stream_url(guild_id)
+        if not url:
+            logger.info("log stream URL unset; stopping reader guild=%s", guild_id)
+            return
         saw_event = False
         try:
             async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
                 saw_event = await follow_once(guild_id, discord, client)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("log stream disconnected guild=%s", guild_id)
+        except Exception as exc:
+            consecutive_failures += 1
+            if is_transient_disconnect(exc):
+                last_error_alert_at = log_stream_disconnect(
+                    guild_id,
+                    exc,
+                    consecutive_failures=consecutive_failures,
+                    backoff=backoff,
+                    last_error_alert_at=last_error_alert_at,
+                )
+            else:
+                logger.exception("log stream unexpected error guild=%s", guild_id)
+                last_error_alert_at = time.monotonic()
         if saw_event:
             backoff = 1.0
+            consecutive_failures = 0
         await asyncio.sleep(backoff)
         if not saw_event:
             backoff = min(backoff * 2, BACKOFF_MAX_SECONDS)
 
 
 def start_log_stream_tasks(discord) -> list[asyncio.Task]:
+    """Start one reconnect loop per guild that owns a non-empty ``log_stream_url``."""
     tasks = []
     for guild_id in config.GUILD_SETTINGS:
-        if not config.get_log_stream_url(guild_id):
+        url = config.get_log_stream_url(guild_id)
+        if not url:
             continue
         tasks.append(asyncio.create_task(run_log_stream(guild_id, discord)))
-        logger.info("Started log stream reader for guild %s", guild_id)
+        logger.info("Started log stream reader for guild %s url=%s", guild_id, url)
     return tasks
