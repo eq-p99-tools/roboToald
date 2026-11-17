@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import disnake
+import httpx
 import pytest
 
 from roboToald import config
@@ -179,3 +182,122 @@ async def test_failed_archive_leaves_the_earlier_cursor(raid_timers_session, mon
     with pytest.raises(rt_log_reader.ArchiveFlushError):
         await rt_log_reader.follow_once(GUILD, FakeDiscord({777: channel}), FakeClient([body]), now_utc=NOW)
     assert rt_log_reader.get_log_cursor(GUILD) == 4
+
+
+def test_is_transient_disconnect_covers_network_and_stream_errors():
+    assert rt_log_reader.is_transient_disconnect(httpx.ConnectError("refused"))
+    assert rt_log_reader.is_transient_disconnect(httpx.ReadTimeout("timed out"))
+    assert rt_log_reader.is_transient_disconnect(rt_log_reader.LogStreamError("HTTP 502"))
+    assert rt_log_reader.is_transient_disconnect(rt_log_reader.ArchiveFlushError("discord down"))
+    assert not rt_log_reader.is_transient_disconnect(RuntimeError("bug"))
+
+
+def test_log_stream_disconnect_warns_then_errors_with_cooldown(caplog):
+    exc = httpx.ConnectError("All connection attempts failed")
+    with caplog.at_level(logging.WARNING, logger=rt_log_reader.logger.name):
+        first = rt_log_reader.log_stream_disconnect(
+            GUILD,
+            exc,
+            consecutive_failures=1,
+            backoff=1.0,
+            last_error_alert_at=None,
+            now=100.0,
+        )
+        assert first is None
+        assert any(r.levelno == logging.WARNING and "disconnected" in r.message for r in caplog.records)
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+        caplog.clear()
+        errored = rt_log_reader.log_stream_disconnect(
+            GUILD,
+            exc,
+            consecutive_failures=rt_log_reader.PERSISTENT_FAILURES_BEFORE_ERROR,
+            backoff=16.0,
+            last_error_alert_at=None,
+            now=100.0,
+        )
+        assert errored == 100.0
+        assert any(r.levelno == logging.ERROR and "still failing" in r.message for r in caplog.records)
+        assert all(r.exc_info is None for r in caplog.records if r.levelno >= logging.ERROR)
+
+        caplog.clear()
+        cooled = rt_log_reader.log_stream_disconnect(
+            GUILD,
+            exc,
+            consecutive_failures=rt_log_reader.PERSISTENT_FAILURES_BEFORE_ERROR + 1,
+            backoff=30.0,
+            last_error_alert_at=errored,
+            now=errored + 1.0,
+        )
+        assert cooled == errored
+        assert any(r.levelno == logging.WARNING and "still failing" in r.message for r in caplog.records)
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+class _PassthroughAsyncClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+def _patch_run_loop(monkeypatch, *, raise_exc: BaseException, stop_after: int = 2):
+    """Drive ``run_log_stream`` without a real HTTP client or DB."""
+
+    async def boom_follow(*_args, **_kwargs):
+        raise raise_exc
+
+    sleeps: list[float] = []
+
+    async def fast_sleep(delay: float) -> None:
+        sleeps.append(delay)
+        if len(sleeps) >= stop_after:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(rt_log_reader.httpx, "AsyncClient", _PassthroughAsyncClient)
+    monkeypatch.setattr(rt_log_reader, "follow_once", boom_follow)
+    monkeypatch.setattr(rt_log_reader.asyncio, "sleep", fast_sleep)
+    return sleeps
+
+
+async def test_run_log_stream_warns_on_connect_error_without_traceback(monkeypatch, caplog):
+    _patch_run_loop(monkeypatch, raise_exc=httpx.ConnectError("All connection attempts failed"), stop_after=2)
+    with caplog.at_level(logging.WARNING, logger=rt_log_reader.logger.name):
+        with pytest.raises(asyncio.CancelledError):
+            await rt_log_reader.run_log_stream(GUILD, FakeDiscord({}))
+
+    stream_records = [r for r in caplog.records if "log stream" in r.getMessage()]
+    assert stream_records
+    assert all(r.levelno == logging.WARNING for r in stream_records)
+    assert all(r.exc_info is None for r in stream_records)
+    assert any("disconnected" in r.getMessage() for r in stream_records)
+
+
+async def test_run_log_stream_exceptions_unexpected_bugs(monkeypatch, caplog):
+    _patch_run_loop(monkeypatch, raise_exc=RuntimeError("unexpected bug"), stop_after=1)
+    with caplog.at_level(logging.ERROR, logger=rt_log_reader.logger.name):
+        with pytest.raises(asyncio.CancelledError):
+            await rt_log_reader.run_log_stream(GUILD, FakeDiscord({}))
+
+    unexpected = [r for r in caplog.records if "unexpected error" in r.getMessage()]
+    assert len(unexpected) == 1
+    assert unexpected[0].exc_info is not None
+
+
+async def test_run_log_stream_escalates_persistent_connect_failures(monkeypatch, caplog):
+    monkeypatch.setattr(rt_log_reader, "PERSISTENT_FAILURES_BEFORE_ERROR", 3)
+    monkeypatch.setattr(rt_log_reader, "ERROR_ALERT_COOLDOWN_SECONDS", 0.0)
+    _patch_run_loop(monkeypatch, raise_exc=httpx.ConnectError("All connection attempts failed"), stop_after=3)
+    with caplog.at_level(logging.WARNING, logger=rt_log_reader.logger.name):
+        with pytest.raises(asyncio.CancelledError):
+            await rt_log_reader.run_log_stream(GUILD, FakeDiscord({}))
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "log stream" in r.getMessage()]
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and "still failing" in r.getMessage()]
+    assert len(warnings) == 2
+    assert len(errors) == 1
+    assert errors[0].exc_info is None
