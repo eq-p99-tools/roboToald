@@ -306,3 +306,30 @@ def test_mark_key_from_park_zone_sets_key_updated_at(sso_session):
     ch = sso_session.query(sso.SSOAccountCharacter).filter_by(name="Wiz", guild_id=GUILD_ID).one()
     assert ch.key_seb is True
     assert ch.key_seb_updated_at == t1
+
+
+def test_set_account_and_character_notes(sso_session):
+    sso.create_account(GUILD_ID, "notesuser", "pw")
+    sso.add_account_character(GUILD_ID, "notesuser", "Tank", sso.CharacterClass.Warrior)
+    account = sso.set_account_notes(GUILD_ID, "NotesUser", "  Shared bot  ")
+    assert account.notes == "Shared bot"
+    assert sso.set_character_notes(GUILD_ID, "Tank", "Kael factioned")
+    assert not sso.set_character_notes(GUILD_ID, "Nope", "x")
+
+    resolved = sso.find_account_by_username("tank", GUILD_ID)
+    assert sso.login_notes_for_account(resolved) == {
+        "account": "Shared bot",
+        "characters": {"Tank": "Kael factioned"},
+    }
+
+    assert sso.set_account_notes(GUILD_ID, "notesuser", "   ").notes is None
+    assert sso.set_character_notes(GUILD_ID, "Tank", None)
+    assert sso.login_notes_for_account(sso.find_account_by_username("notesuser", GUILD_ID)) is None
+
+
+def test_set_notes_rejects_too_long_and_missing_account(sso_session):
+    sso.create_account(GUILD_ID, "longnotes", "pw")
+    with pytest.raises(ValueError):
+        sso.set_account_notes(GUILD_ID, "longnotes", "x" * (sso.NOTES_MAX_LENGTH + 1))
+    with pytest.raises(sso.SSOAccountNotFoundError):
+        sso.set_account_notes(GUILD_ID, "missing", "x")

@@ -202,7 +202,8 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
             "lizard": null, "pearl": null, "peridot": null,
             "mb3": null, "mb4": null, "mb5": null
           },
-          "keys": { "seb": true, "vp": false, "st": null }
+          "keys": { "seb": true, "vp": false, "st": null },
+          "notes": "Kael factioned"
         }
       },
       "last_login": "2025-01-15T03:22:00+00:00",
@@ -210,7 +211,8 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
       "active_character": null,
       "owned": true,
       "shared": false,
-      "group_roles": ["Member"]
+      "group_roles": ["Member"],
+      "notes": null
     }
   },
   "count": 1,
@@ -232,11 +234,15 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
 | `characters.*.level` | int \| null | UI |
 | `characters.*.items` | object | UI |
 | `characters.*.keys` | object | Legacy UI; **[reference]** optional duplicate of `seb`/`vp`/`st` |
+| `characters.*.notes` | string \| null | UI — character login notes (plain text) |
 | `last_login` | ISO-8601 string \| null | UI; **[reference]** null if year ≤ 1 |
 | `last_login_by` | string \| null | UI |
 | `active_character` | string \| null | UI |
 | `owned` / `shared` | bool | UI metadata |
 | `group_roles[]` | string | UI metadata |
+| `notes` | string \| null | UI — account login notes (plain text) |
+
+**Login notes** (`notes` on accounts and characters) are free text, at most 500 characters **[reference]**, editable by admins and account owners. They are visible to everyone with access to the account and **MUST** be rendered as plain text, never markup. Clients that predate notes ignore the field (additive change).
 
 **CharacterClass enum values (exact strings):**  
 `Bard`, `Cleric`, `Druid`, `Enchanter`, `Magician`, `Monk`, `Necromancer`, `Paladin`, `Ranger`, `Rogue`, `ShadowKnight`, `Shaman`, `Warrior`, `Wizard`
@@ -263,7 +269,7 @@ New clients send the raw export with `update_inventory` and the server fills the
       "action": "add",
       "entity": "account",
       "account": "newacct",
-      "data": { "aliases": [], "tags": [], "characters": {}, "last_login": null, "last_login_by": null, "active_character": null, "owned": false, "shared": false, "group_roles": [] }
+      "data": { "aliases": [], "tags": [], "characters": {}, "last_login": null, "last_login_by": null, "active_character": null, "owned": false, "shared": false, "group_roles": [], "notes": null }
     },
     {
       "action": "remove",
@@ -281,11 +287,12 @@ New clients send the raw export with `update_inventory` and the server fills the
         "characters": {
           "add": { "New": { "class": "Wizard", "bind": null, "park": null, "level": null, "items": {} } },
           "remove": ["Gone"],
-          "update": { "Zzzz": { "class": "Cleric", "bind": "a", "park": "b", "level": 60, "items": {} } }
+          "update": { "Zzzz": { "class": "Cleric", "bind": "a", "park": "b", "level": 60, "items": {}, "notes": "Kael factioned" } }
         },
         "last_login": "2025-01-15T03:22:00+00:00",
         "last_login_by": "Name",
-        "active_character": "Zzzz"
+        "active_character": "Zzzz",
+        "notes": "Shared with the raid team"
       }
     }
   ]
@@ -296,8 +303,9 @@ New clients send the raw export with `update_inventory` and the server fills the
 |---|---|---|
 | `aliases`, `tags` | `{add:[], remove:[]}` | **Yes** |
 | `group_roles` | same | **No** (until next `full_state`) |
-| `characters` | `add` map / `remove` list / `update` map of **full** char objects | **Yes** |
+| `characters` | `add` map / `remove` list / `update` map of **full** char objects (character `notes` ride along) | **Yes** |
 | `last_login`, `last_login_by`, `active_character` | scalar (incl. null) | **Yes** |
+| `notes` (account) | scalar string \| null (null = cleared) | **Yes** (Rust proxy with login notes; older proxies ignore it until the next `full_state`) |
 | `owned`, `shared` | — | **[reference]** `compute_diff` does **not** emit field diffs; only present on `add`/`full_state` |
 
 **[reference]** debounce ~3s for heartbeat bursts; immediate push on successful login / admin RBAC changes.
@@ -318,9 +326,19 @@ Success:
   "type": "login_auth_response",
   "request_id": "6f1c2d3e4a5b6c7d8e9f0a1b2c3d4e5f",
   "real_user": "realbot01",
-  "encrypted_credentials": "qqIv/3uQ7ssYIp1Nv6kGw5uiXJoY4ou/"
+  "encrypted_credentials": "qqIv/3uQ7ssYIp1Nv6kGw5uiXJoY4ou/",
+  "notes": {
+    "account": "Shared with the raid team; log out after use.",
+    "characters": { "Zzzz": "Kael factioned" }
+  }
 }
 ```
+
+`notes` (optional, success only): login notes for the account the server **resolved** the username to. Tags and dynamic tags resolve only on the server, so this is the authoritative source; the proxy cannot reliably map a tag to an account from its cache.
+- **[reference]** present only when the account or at least one of its characters has notes; omitted otherwise.
+- `account`: string \| null. `characters`: map of character name → notes, only for that account's characters that have notes.
+- Proxy behavior: never holds or blocks the login. It forwards the rewritten packet as usual and shows the notes in a non-modal, always-on-top window until the user acknowledges it, on every login with notes. EQ login is per account and the character is picked later on the world server, so the proxy shows the account note plus all character notes, highlighting the typed name when it is a character.
+- Older proxies ignore the field.
 
 Failure:
 ```json

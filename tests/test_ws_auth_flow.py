@@ -229,6 +229,25 @@ def test_ws_login_auth_success_encrypted_credentials(client, monkeypatch):
         assert resp["real_user"] == "realu"
         raw = base64.b64decode(resp["encrypted_credentials"])
         assert raw == _des_encrypt_credentials("realu", "realp")
+        assert "notes" not in resp
+
+
+def test_ws_login_auth_success_includes_notes(client, monkeypatch):
+    _patch_ws_auth_ok(monkeypatch)
+    notes = {"account": "Shared bot", "characters": {"Zzzz": "Kael factioned"}}
+
+    def fake_perform(**kwargs):
+        return LoginAuthResult(success=True, real_user="realu", real_pass="realp", notes=notes)
+
+    monkeypatch.setattr("roboToald.api.server._perform_login_auth", fake_perform)
+
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        assert ws.receive_json()["type"] == "full_state"
+        ws.send_json({"type": "login_auth", "request_id": "req-1", "username": "tagname"})
+        resp = ws.receive_json()
+        assert resp["real_user"] == "realu"
+        assert resp["notes"] == notes
 
 
 def test_ws_login_auth_missing_fields(client, monkeypatch):

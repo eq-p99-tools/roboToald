@@ -180,6 +180,9 @@ class SSOAccount(base.Base):
     # a matching group role. Admins always retain override regardless of ownership.
     owner_discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=True, index=True)
 
+    # Free-text login notes shown by the proxy on every login. Plain text, visible to everyone with access.
+    notes = sqlalchemy.Column(sqlalchemy.Text, nullable=True)
+
     groups = sqlalchemy.orm.relationship("SSOAccountGroup", secondary=account_group_mapping, back_populates="accounts")
     audit_logs = sqlalchemy.orm.relationship("SSOAuditLog", back_populates="account")
     tags = sqlalchemy.orm.relationship("SSOTag", back_populates="account", cascade="all, delete-orphan")
@@ -713,6 +716,52 @@ def can_manage_account(account: SSOAccount, discord_user_id: int, is_admin: bool
         return True
     owner = getattr(account, "owner_discord_user_id", None)
     return owner is not None and owner == discord_user_id
+
+
+NOTES_MAX_LENGTH = 500
+
+
+def normalize_notes(notes: str | None) -> str | None:
+    """Strip *notes*; blank becomes ``None``. Raises ``ValueError`` above ``NOTES_MAX_LENGTH`` characters."""
+    if notes is None:
+        return None
+    notes = notes.strip()
+    if not notes:
+        return None
+    if len(notes) > NOTES_MAX_LENGTH:
+        raise ValueError(f"Notes must be at most {NOTES_MAX_LENGTH} characters")
+    return notes
+
+
+def set_account_notes(guild_id: int, real_user: str, notes: str | None) -> SSOAccount:
+    """Set (or clear, with blank/``None``) the login notes on an account."""
+    notes = normalize_notes(notes)
+    real_user = real_user.lower()
+    with base.get_session() as session:
+        account = (
+            session.query(SSOAccount)
+            .filter(SSOAccount.guild_id == guild_id, SSOAccount.real_user == real_user)
+            .one_or_none()
+        )
+        if account is None:
+            raise SSOAccountNotFoundError(f"Account '{real_user}' not found in guild {guild_id}")
+        account.notes = notes
+        session.commit()
+        session.refresh(account)
+        session.expunge(account)
+    return account
+
+
+def login_notes_for_account(account: SSOAccount) -> dict | None:
+    """Notes for the ``login_auth_response`` of *account*, or ``None`` when it has none.
+
+    Shape: ``{"account": str | None, "characters": {name: str}}`` (only characters with notes).
+    """
+    characters = {c.name: c.notes for c in (account.characters or []) if getattr(c, "notes", None)}
+    account_notes = getattr(account, "notes", None) or None
+    if not account_notes and not characters:
+        return None
+    return {"account": account_notes, "characters": characters}
 
 
 def get_accounts_owned_by(guild_id: int, discord_user_id: int) -> list[SSOAccount]:
@@ -1910,6 +1959,8 @@ class SSOAccountCharacter(base.Base):
     item_mb4_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
     item_mb5_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
 
+    notes = sqlalchemy.Column(sqlalchemy.Text, nullable=True)
+
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
 
@@ -1995,6 +2046,18 @@ def remove_account_character(guild_id: int, name: str) -> bool:
         if not character:
             return False
         session.delete(character)
+        session.commit()
+    return True
+
+
+def set_character_notes(guild_id: int, name: str, notes: str | None) -> bool:
+    """Set (or clear, with blank/``None``) a character's login notes. Returns False if not found."""
+    notes = normalize_notes(notes)
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
+        if not character:
+            return False
+        character.notes = notes
         session.commit()
     return True
 

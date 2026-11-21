@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime
 from types import SimpleNamespace
 
+import pytest
+
 from roboToald.db.models import sso as sso_model
 from roboToald.db.models.sso import CharacterClass
 from roboToald.api.websocket import build_account_tree, compute_diff
@@ -31,6 +33,7 @@ def _char(name, klass=None, **kwargs):
         "item_mb3": kwargs.get("item_mb3"),
         "item_mb4": kwargs.get("item_mb4"),
         "item_mb5": kwargs.get("item_mb5"),
+        "notes": kwargs.get("notes"),
     }
     return SimpleNamespace(**defaults)
 
@@ -47,6 +50,7 @@ def _account(
     owner_discord_user_id=None,
     shares=(),
     groups=(),
+    notes=None,
 ):
     return SimpleNamespace(
         id=id,
@@ -59,6 +63,7 @@ def _account(
         owner_discord_user_id=owner_discord_user_id,
         shares=[SimpleNamespace(shared_with_discord_user_id=uid) for uid in shares],
         groups=[SimpleNamespace(role_id=rid) for rid in groups],
+        notes=notes,
     )
 
 
@@ -114,6 +119,7 @@ def test_build_account_tree_shape():
                         "mb5": None,
                     },
                     "keys": {"seb": None, "vp": None, "st": None},
+                    "notes": None,
                 }
             },
             "last_login": ts.astimezone(datetime.timezone.utc).isoformat(),
@@ -122,6 +128,7 @@ def test_build_account_tree_shape():
             "owned": False,
             "shared": False,
             "group_roles": [],
+            "notes": None,
         }
     }
 
@@ -296,3 +303,52 @@ def test_compute_diff_group_roles_changes():
     ch = compute_diff(old_t, new_t)
     assert len(ch) == 1
     assert ch[0]["fields"]["group_roles"] == {"add": ["Officer"], "remove": []}
+
+
+def test_build_account_tree_includes_account_and_character_notes():
+    acc = _account(
+        "main",
+        notes="Shared with raid",
+        characters=[_char("Raid", CharacterClass.Warrior, notes="Kael factioned"), _char("Alt", CharacterClass.Cleric)],
+    )
+    tree = build_account_tree([acc])
+    assert tree["main"]["notes"] == "Shared with raid"
+    assert tree["main"]["characters"]["Raid"]["notes"] == "Kael factioned"
+    assert tree["main"]["characters"]["Alt"]["notes"] is None
+
+
+def test_compute_diff_account_notes_scalar_set_and_clear():
+    acc = _account("main")
+    old_t = build_account_tree([acc])
+    new_t = build_account_tree([_account("main", notes="Kael factioned")])
+    ch = compute_diff(old_t, new_t)
+    assert ch == [{"action": "update", "entity": "account", "account": "main", "fields": {"notes": "Kael factioned"}}]
+    cleared = compute_diff(new_t, old_t)
+    assert cleared[0]["fields"] == {"notes": None}
+
+
+def test_compute_diff_character_notes_ride_in_character_update():
+    old_t = build_account_tree([_account("main", characters=[_char("Raid", CharacterClass.Warrior)])])
+    new_t = build_account_tree(
+        [_account("main", characters=[_char("Raid", CharacterClass.Warrior, notes="Kael factioned")])]
+    )
+    fields = compute_diff(old_t, new_t)[0]["fields"]
+    assert set(fields) == {"characters"}
+    assert fields["characters"]["update"]["Raid"]["notes"] == "Kael factioned"
+
+
+def test_login_notes_for_account():
+    assert sso_model.login_notes_for_account(_account("main", characters=[_char("Raid")])) is None
+    acc = _account("main", notes="Acct note", characters=[_char("Raid", notes="Char note"), _char("Alt")])
+    assert sso_model.login_notes_for_account(acc) == {"account": "Acct note", "characters": {"Raid": "Char note"}}
+    only_char = _account("main", characters=[_char("Raid", notes="Char note")])
+    assert sso_model.login_notes_for_account(only_char) == {"account": None, "characters": {"Raid": "Char note"}}
+
+
+def test_normalize_notes():
+    assert sso_model.normalize_notes(None) is None
+    assert sso_model.normalize_notes("   ") is None
+    assert sso_model.normalize_notes("  hi  ") == "hi"
+    assert sso_model.normalize_notes("x" * sso_model.NOTES_MAX_LENGTH) == "x" * sso_model.NOTES_MAX_LENGTH
+    with pytest.raises(ValueError):
+        sso_model.normalize_notes("x" * (sso_model.NOTES_MAX_LENGTH + 1))

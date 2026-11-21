@@ -48,6 +48,10 @@
     <label title="{{ field }}">{{ item_field_labels.get(field, field) }}<input name="{{ field }}" inputmode="numeric" value="{{ character|attr(field) if character|attr(field) is not none else "" }}"></label>
     {% endfor %}
 
+    <label style="grid-column: 1 / -1;">Login notes
+        <textarea name="notes" rows="3" maxlength="500" placeholder="Shown by the proxy on every login to this account">{{ character.notes or "" }}</textarea>
+    </label>
+
     <div style="grid-column: 1 / -1;">
         <button type="submit">Save Character</button>
         <button type="button" class="secondary" onclick="document.getElementById('character-form-modal').close()">Cancel</button>
