@@ -25,6 +25,7 @@ erDiagram
         datetime last_login
         string last_login_by
         int owner_discord_user_id
+        text notes
     }
 
     SSOAccountGroup {
@@ -100,6 +101,7 @@ erDiagram
         bool item_neck
         bool item_lizard
         bool item_thurg
+        text notes
         int account_id FK
     }
 
@@ -152,6 +154,7 @@ Represents a real EverQuest account with encrypted credentials.
 | `last_login` | DateTime | default `datetime.min` | Last time this account was used for login |
 | `last_login_by` | String(255) | nullable | Display name of the Discord user who last logged in |
 | `owner_discord_user_id` | Integer | nullable, indexed | Discord user id of the bot's owner. `NULL` = legacy / admin-only. A non-NULL value grants the owning user full manage rights (`/sso_owner ...`) and login access without needing a matching group role. Admins always retain override. Set via `/sso_admin account reassign` or implicitly when a non-admin uses `/sso_owner account create`. |
+| `notes` | Text | nullable | Login notes (plain text, max 500 chars). Sent in `account_tree` and in `login_auth_response.notes`; the proxy shows them on login. |
 
 **Unique constraint:** `(guild_id, real_user)`
 
@@ -300,6 +303,7 @@ Maps a character name and class to an account. Characters have optional bind/par
 | `item_mb3` | Integer | nullable | Mana Battery - Class Three stack count |
 | `item_mb4` | Integer | nullable | Mana Battery - Class Four stack count |
 | `item_mb5` | Integer | nullable | Mana Battery - Class Five stack count |
+| `notes` | Text | nullable | Character login notes (plain text, max 500 chars) |
 | `key_seb_updated_at`, `key_vp_updated_at`, `key_st_updated_at`, `item_void_updated_at`, `item_neck_updated_at`, `item_lizard_updated_at`, `item_thurg_updated_at`, `item_reaper_updated_at`, `item_brass_idol_updated_at`, `item_pearl_updated_at`, `item_peridot_updated_at`, `item_mb3_updated_at`, `item_mb4_updated_at`, `item_mb5_updated_at` | DateTime | nullable | Server-side only: last time the matching value column was written (not exposed on WebSocket/API) |
 | `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
 

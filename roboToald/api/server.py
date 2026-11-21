@@ -349,6 +349,7 @@ class LoginAuthResult:
     real_pass: str | None = None
     error_detail: str | None = None
     error_status: int = 401
+    notes: dict | None = None
 
 
 def _is_sso_enabled_for_guild(guild_id: int) -> bool:
@@ -467,6 +468,7 @@ def _perform_login_auth(
         success=True,
         real_user=account.real_user,
         real_pass=account.real_pass,
+        notes=sso_model.login_notes_for_account(account),
     )
 
 
@@ -1105,14 +1107,15 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
 
     if result.success:
         encrypted = _des_encrypt_credentials(result.real_user, result.real_pass)
-        await conn.websocket.send_json(
-            {
-                "type": "login_auth_response",
-                "request_id": request_id,
-                "real_user": result.real_user,
-                "encrypted_credentials": base64.b64encode(encrypted).decode(),
-            }
-        )
+        response = {
+            "type": "login_auth_response",
+            "request_id": request_id,
+            "real_user": result.real_user,
+            "encrypted_credentials": base64.b64encode(encrypted).decode(),
+        }
+        if result.notes:
+            response["notes"] = result.notes
+        await conn.websocket.send_json(response)
     else:
         await conn.websocket.send_json(
             {

@@ -29,6 +29,7 @@
                     {% for user in g.users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}
                 </select>
             </label>
+            <label>Login notes<textarea name="notes" rows="2" maxlength="500" placeholder="Shown by the proxy on every login (optional)"></textarea></label>
             <button type="submit">Create Account</button>
         </form>
     </details>
@@ -38,7 +39,7 @@
     <table>
         <thead>
             <tr>
-                <th>Account</th><th>Owner</th><th>Groups</th><th>Characters</th><th>Tags</th><th>Aliases</th><th>Last Login</th><th>Actions</th>
+                <th>Account</th><th>Owner</th><th>Groups</th><th>Characters</th><th>Tags</th><th>Aliases</th><th>Notes</th><th>Last Login</th><th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -50,6 +51,14 @@
                 <td>{% for c in a.characters %}<span class="badge">{{ c.name }} <small>({{ c.klass.value }})</small></span> {% endfor %}{% if not a.characters %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
                 <td>{% for tag in a.tags %}<span class="badge">{{ tag }}</span> {% endfor %}{% if not a.tags %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
                 <td>{% for alias in a.aliases %}<span class="badge">{{ alias }}</span> {% endfor %}{% if not a.aliases %}<span style="opacity: 0.4;">None</span>{% endif %}</td>
+                <td>
+                    <form hx-put="/admin/manage/accounts/{{ quote(a.real_user) }}/notes" hx-target="#panel-manage" hx-swap="innerHTML show:none">
+                        <input type="hidden" name="csrf" value="{{ csrf }}">
+                        <input type="hidden" name="guild_id" value="{{ g.id }}">
+                        <textarea name="notes" rows="2" maxlength="500" placeholder="No notes" style="min-width: 12rem;">{{ a.notes }}</textarea>
+                        <button type="submit" class="secondary">Save notes</button>
+                    </form>
+                </td>
                 <td>{% if a.last_login_iso %}<time class="local-time" datetime="{{ a.last_login_iso }}"></time>{% if a.last_login_by %}<br><small>by {{ a.last_login_by }}</small>{% endif %}{% else %}<span style="opacity: 0.4;">Never</span>{% endif %}</td>
                 <td>
                     <div class="manage-compact-actions">

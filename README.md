@@ -20,6 +20,7 @@ The SSO system lets guild members log in to shared EverQuest accounts through th
 - **Dynamic Tag** -- a computed zone+class tag (e.g. `vpclr`, `stenc`). Logging in with a dynamic tag finds an inactive character of the matching class parked in the matching zone.
 - **Access Key** -- a per-user secret generated via `/sso access get`. Used as the password in the login proxy.
 - **Owner** -- the Discord user who created (or has been assigned) an account. Owners manage their own bots via `/sso_owner` without needing an admin role; admins retain override on everything. Legacy accounts (created before ownership existed) have no owner and are admin-only until an admin runs `/sso_admin account reassign`.
+- **Login notes** -- short plain-text notes on an account or character (e.g. "kael factioned"). When you log in to an account with notes, the login proxy shows them in an always-on-top window until you acknowledge it; the login itself is never held up. Notes are visible to everyone with access to the account. The window cannot appear over EverQuest in exclusive fullscreen; use windowed mode to see it.
 - **Direct user share** -- an owner (or admin) can share a specific bot directly with another Discord user via `/sso_owner share add` (or `/sso_admin share add`), independent of group roles. The recipient gets login + read access but not management rights. The first time an owner uses `/sso_owner share add`, they must click through an ephemeral safety disclaimer (**I Accept** / **Cancel**); acceptance is remembered per-user-per-guild.
 
 ### User Workflow
@@ -38,6 +39,7 @@ Any user can create and manage their own bot accounts via `/sso_owner` without n
 3. **Update / delete** your accounts: `/sso_owner account update|delete`.
 4. **Manage access**: add/remove your bots to any guild group with `/sso_owner account add_to_group|remove_from_group`, or share directly with a specific user via `/sso_owner share add`.
 5. **Aliases, tags, characters, items**: `/sso_owner alias`, `/sso_owner tag`, `/sso_owner character`.
+6. **Login notes**: `/sso_owner account notes_set|notes_clear` and `/sso_owner character notes_set|notes_clear`.
 
 Admins always retain override rights (anything an owner can do, an admin can do on any account via `/sso_admin`).
 
@@ -129,10 +131,12 @@ Subscriptions persist until you unsubscribe or lose the guild member role.
 | `account reassign <username> [new_owner]` | Transfer ownership to a user, or omit `new_owner` to clear (admin-only) |
 | `account list_no_characters` | Accounts missing characters |
 | `account add_to_group / remove_from_group` | Add/remove an account to/from an access group |
+| `account notes_set / notes_clear` | Set/clear login notes on any account (shown by the proxy on login) |
 | `group create / delete` | Manage groups |
 | `tag add / remove / update` | Manage tags (incl. UI macros) |
 | `alias create / delete` | Manage aliases |
 | `character add / remove / items` | Manage characters; `items` sets zone keys (Seb/VP/ST), boolean items, or stack counts |
+| `character notes_set / notes_clear` | Set/clear login notes on any character |
 | `share add / remove / list` | Manage direct user-to-user shares on any account |
 | `audit account / user / failed / statistics` | Audit logs |
 | `revocation add / list / remove` | Revoke/restore user access |
@@ -145,9 +149,11 @@ Subscriptions persist until you unsubscribe or lose the guild member role.
 | `account create / update / delete` | Manage accounts you own (you are recorded as owner on `create`) |
 | `account list` | List bots you own |
 | `account add_to_group / remove_from_group` | Add/remove your accounts to/from any guild access group |
+| `account notes_set / notes_clear` | Set/clear login notes on your accounts |
 | `tag add / remove` | Tag/untag your accounts |
 | `alias create / delete` | Manage aliases on your accounts |
 | `character add / remove / items` | Manage characters and tracked items on your accounts |
+| `character notes_set / notes_clear` | Set/clear login notes on your characters |
 | `share add / remove / list` | Share your accounts directly with another Discord user (login access only, not management) |
 
 ### `/ds`
