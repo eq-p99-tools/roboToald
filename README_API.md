@@ -405,7 +405,7 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
   "bind_location": "zone_key",
   "park_location": "zone_key",
   "level": 60,
-  "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
+  "items": { "seb": true, "vp": false, "void": true }
 }
 ```
 
@@ -415,15 +415,35 @@ Updates a character's bind/park location and level. Also updates `last_login`, r
 | `bind_location` | `string?` | no | New bind zone key (only updated if present) |
 | `park_location` | `string?` | no | New park zone key (only updated if present) |
 | `level` | `int?` | no | New level (only updated if present and non-null) |
-| `inventory` | `string?` | no | Raw `*-Inventory.txt` export. When non-empty and parseable, the server fills every tracked item column from it and ignores `items` / `keys` on the same message. Blank, oversized (over 524288 bytes), or headerless text is ignored. |
-| `items` | `object?` | no | Tracked item wires from older clients, and partial updates such as a log line. Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). Used only when `inventory` was not applied. |
+| `items` | `object?` | no | Zone keys and tracked inventory flags (only sent when present). Older clients send their whole parsed inventory here; current clients send exports with `update_inventory` and use `items` only for partial updates such as a log line. Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). |
 | `keys` | `object?` | no | **Legacy:** same wire names as `items` for zone keys (`seb`, `vp`, `st`). If both `keys` and `items` are sent, **`items` wins** on duplicate fields. |
 
-A parsed `inventory` export sets every tracked column, including `false` / `0` for items that are not in the file. When `items` and/or `keys` are used instead, `true`/`false` updates the column and `null` or a missing sub-field leaves that column unchanged.
+When `items` and/or `keys` are present, merged wire fields map to `SSOAccountCharacter` booleans. `true`/`false` updates the column; `null` or a missing sub-field leaves that column unchanged.
 
 Side effects (same as heartbeat, plus):
 - `SSOAccountCharacter.bind_location`, `park_location`, and/or `level` updated
-- If `inventory` was parsed, or `items` and/or `keys` are present, matching `key_*` / `item_*` columns are updated per the rules above
+- If `items` and/or `keys` are present, matching `key_*` / `item_*` columns updated per the rules above
+
+RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
+
+#### Update Inventory
+
+Replaces a character's tracked item columns from a raw EQ inventory export (`/outputfile inventory`, which writes `<Char>-Inventory.txt`). The login proxy sends the whole file whenever it changes; the server decides which items it tracks, so recognition can change without a client release. Triggers a delta push when a column changed. Does **not** touch `last_login` or sessions.
+
+```json
+{
+  "type": "update_inventory",
+  "character_name": "CharName",
+  "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `character_name` | `string` | yes | Character the export belongs to |
+| `inventory` | `string` | yes | Raw tab-separated export text (header row with a `Name` column; `Count` is summed for stackable items) |
+
+A parsed export is a full snapshot: every tracked `key_*` / `item_*` column is set, including `false` / `0` for items not in the file (see `INVENTORY_TRACKED_ITEMS` / `INVENTORY_COUNTED_ITEMS` in `roboToald/inventory_parser.py`). Blank text, text over 524288 bytes, or text with no `Name` column is ignored and stored items stay unchanged.
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 

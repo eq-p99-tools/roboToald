@@ -1,6 +1,6 @@
 """Parse an EQ ``*-Inventory.txt`` export into the ``items`` wire keys.
 
-The login proxy sends the whole export on ``update_location``. Names recognized
+The login proxy sends the whole export on ``update_inventory``. Names recognized
 here can grow without a client release; the proxy's local-character parser is a
 separate copy used only for characters that never reach the server.
 """

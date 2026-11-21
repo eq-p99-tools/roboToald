@@ -428,7 +428,7 @@ def test_ws_update_location_items_overrides_keys(client, monkeypatch):
     assert uac_calls[0]["item_void"] is True
 
 
-def test_ws_update_location_inventory_file_sets_items(client, monkeypatch):
+def _patch_update_inventory(monkeypatch, *, access: bool = True) -> list[dict]:
     from types import SimpleNamespace
 
     _patch_ws_auth_ok(monkeypatch)
@@ -436,8 +436,7 @@ def test_ws_update_location_inventory_file_sets_items(client, monkeypatch):
     monkeypatch.setattr(
         "roboToald.api.server.sso_model.find_account_by_character", lambda g, n: acc if n == "Zed" else None
     )
-    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
-    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc] if access else [])
 
     uac_calls: list[dict] = []
 
@@ -446,32 +445,61 @@ def test_ws_update_location_inventory_file_sets_items(client, monkeypatch):
         return True
 
     monkeypatch.setattr("roboToald.api.server.sso_model.update_account_character", fake_uac)
-    monkeypatch.setattr("roboToald.api.server.sso_model.mark_key_from_park_zone", lambda *a, **k: False)
 
     async def notify(gid, immediate=False):
         pass
 
     monkeypatch.setattr("roboToald.api.server.ws_manager.notify_guild_async", notify)
+    return uac_calls
 
-    export = "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\nGeneral1\tPearl\t2\t4\t5\n"
+
+_INVENTORY_EXPORT = "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\nGeneral1\tPearl\t2\t4\t5\n"
+
+
+def _send_after_auth(client, message: dict) -> None:
+    import time
+
     with client.websocket_connect("/ws/accounts") as ws:
         ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
         assert ws.receive_json()["type"] == "full_state"
-        ws.send_json(
-            {
-                "type": "update_location",
-                "character_name": "Zed",
-                "inventory": export,
-                "items": {"seb": False, "pearl": 99},
-            }
-        )
-        import time
-
+        ws.send_json(message)
         time.sleep(0.05)
+
+
+def test_ws_update_inventory_sets_items(client, monkeypatch):
+    uac_calls = _patch_update_inventory(monkeypatch)
+    _send_after_auth(client, {"type": "update_inventory", "character_name": "Zed", "inventory": _INVENTORY_EXPORT})
     assert len(uac_calls) == 1
+    assert uac_calls[0]["name"] == "Zed"
     assert uac_calls[0]["key_seb"] is True
     assert uac_calls[0]["item_pearl"] == 4
     assert uac_calls[0]["key_vp"] is False
+    assert "level" not in uac_calls[0]
+
+
+def test_ws_update_inventory_without_access_is_ignored(client, monkeypatch):
+    uac_calls = _patch_update_inventory(monkeypatch, access=False)
+    _send_after_auth(client, {"type": "update_inventory", "character_name": "Zed", "inventory": _INVENTORY_EXPORT})
+    assert uac_calls == []
+
+
+def test_ws_update_inventory_unparseable_is_ignored(client, monkeypatch):
+    uac_calls = _patch_update_inventory(monkeypatch)
+    _send_after_auth(client, {"type": "update_inventory", "character_name": "Zed", "inventory": "garbage"})
+    assert uac_calls == []
+
+
+def test_ws_update_location_ignores_inventory_field(client, monkeypatch):
+    uac_calls = _patch_update_inventory(monkeypatch)
+    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", lambda *a, **k: None)
+    monkeypatch.setattr("roboToald.api.server.sso_model.mark_key_from_park_zone", lambda *a, **k: False)
+    _send_after_auth(
+        client,
+        {"type": "update_location", "character_name": "Zed", "inventory": _INVENTORY_EXPORT, "items": {"pearl": 2}},
+    )
+    assert len(uac_calls) == 1
+    assert uac_calls[0]["item_pearl"] == 2
+    assert "key_seb" not in uac_calls[0]
 
 
 def test_ws_json_decode_error_in_message_loop_ignored(client, monkeypatch):

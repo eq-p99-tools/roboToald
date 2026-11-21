@@ -43,7 +43,7 @@ Implement an HTTP + WebSocket API such that an unmodified P99 Login Proxy can: a
 ### Ordered implementation checklist
 1. `GET /` health JSON.
 2. `WS /ws/accounts`: accept → require `auth` ≤15s → validate key → send `full_state` → app-level `ping`/~30s.
-3. Handle client: `pong`, `login_auth`, `heartbeat`, `update_location` (ignore unknown `type`).
+3. Handle client: `pong`, `login_auth`, `heartbeat`, `update_location`, `update_inventory` (ignore unknown `type`).
 4. `login_auth_response` with Base64 DES-CBC credentials (test vector below).
 5. Push `delta` on account-tree changes (shape in §5).
 6. Username resolution + access control such that only authorized names appear in `account_tree` and succeed `login_auth`.
@@ -120,7 +120,7 @@ Client                         Server
 |   ... bidirectional ...      |
 |<-- ping ---------------------|
 |-- pong --------------------->|
-|-- login_auth / heartbeat / update_location / fte / mob_death -->|
+|-- login_auth / heartbeat / update_location / update_inventory / fte / mob_death -->|
 |<-- login_auth_response / delta / ping -------|
 ```
 
@@ -146,7 +146,8 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 | `login_auth` | C→S | `type`, `request_id`, `username` |
 | `login_auth_response` | S→C | `type`, `request_id` (+ success or error fields) |
 | `heartbeat` | C→S | `type`, `character_name` |
-| `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `inventory`, `items`, legacy `keys`) |
+| `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `items`, legacy `keys`) |
+| `update_inventory` | C→S | `type`, `character_name`, `inventory` |
 | `fte` | C→S | `type`, `mob`, `player`, `character_name`, `eq_log_time` |
 | `mob_death` | C→S | `type`, `mob`, `eq_log_time`, `character_name` |
 | `ping` | either | `type` |
@@ -242,7 +243,7 @@ Schema requires `type`, `account_tree`, `count`, `dynamic_tag_zones`, `dynamic_t
 
 #### `items` wire keys **[proxy-required]** on the way back to the UI
 
-New clients send the raw export in `inventory` and the server fills these keys. Older clients still send `items` directly. The UI reads these names from `full_state` / `delta`.
+New clients send the raw export with `update_inventory` and the server fills these keys. Older clients still send `items` on `update_location`. The UI reads these names from `full_state` / `delta`.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -374,14 +375,25 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
   "park_location": "veeshan",
   "bind_location": "poknowledge",
   "level": 60,
+  "items": { "seb": true, "vp": false }
+}
+```
+
+- Schema allows optional `items` and legacy `keys`. **[reference]** merges them with `items` winning on conflict. Log-driven updates (a single flag, a level, a zone) use these fields.
+- Proxy heartbeat interval: **20s** if log mtime within **30s**.
+- Missing/inaccessible `character_name`: **MUST** ignore (no error, no close). Proxy may send local-only character names.
+
+```json
+{
+  "type": "update_inventory",
+  "character_name": "Zzzz",
   "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
 }
 ```
 
-- `inventory` is the raw `*-Inventory.txt` export. When it is non-empty and parseable, the server treats it as a full snapshot of the tracked item keys and ignores `items` / `keys` on that message. Text longer than 524288 bytes, or text with no `Name` column, is ignored.
-- When `inventory` is absent, schema allows optional `items` and legacy `keys`. **[reference]** merges them with `items` winning on conflict. Log-driven updates (a single flag, a level, a zone) still use those fields.
-- Proxy heartbeat interval: **20s** if log mtime within **30s**.
-- Missing/inaccessible `character_name`: **MUST** ignore (no error, no close). Proxy may send local-only character names.
+- `inventory` is the raw `<Char>-Inventory.txt` export (`/outputfile inventory`). The proxy sends it only for SSO characters, whenever the file changes, and skips an identical resend. **[reference]** parses it into the `items` wire keys (§5.2) as a full snapshot, so items missing from the file become `false` / `0`, then pushes a `delta`. It does not count as a heartbeat.
+- Blank text, text longer than 524288 bytes, or text with no `Name` column: **[reference]** ignores it and keeps stored items.
+- Missing/inaccessible `character_name`: **MUST** ignore (no error, no close).
 
 ```json
 {"type": "fte", "mob": "Cekenar", "player": "Toald", "character_name": "Zzzz", "eq_log_time": "Fri Jan 31 22:04:02 2025"}
@@ -537,7 +549,7 @@ and USER_API_TOKEN set
 5. **[proxy]** on bad-password LoginAccepted may retry original client credentials once (backend unaware).
 
 ### C. Play telemetry
-1. `heartbeat` / `update_location` while logged in.
+1. `heartbeat` / `update_location` while logged in; `update_inventory` when the player runs `/outputfile inventory`.
 2. Server updates state → `delta` to subscribers.
 
 ---
@@ -554,7 +566,7 @@ and USER_API_TOKEN set
 - Require EQ client password for resolution.
 - Send plaintext password on WS.
 - Change DES key/IV/padding without a coordinated proxy break.
-- Close WS on bad heartbeat/location/unknown type.
+- Close WS on bad heartbeat/location/inventory/unknown type.
 - Depend on cookies for the proxy API.
 
 ---
@@ -571,6 +583,7 @@ and USER_API_TOKEN set
 | `POST /auth` | | ✓ |
 | Discord RBAC / revocation / audit | | ✓ (wire outcomes still required) |
 | `fte` / `mob_death` handling | ignore OK | TOD channel |
+| `update_inventory` handling | ignore OK | parse + persist + delta |
 | Legacy character `keys` | ignore OK | emit flag |
 | Close codes 4001–4011 | | ✓ (proxy mainly needs `error`+drop) |
 
@@ -621,6 +634,7 @@ These are hard facts about ambiguity — resolve before inventing behavior:
 | WS + HTTP | `roboToald/api/server.py` |
 | Deltas / tree | `roboToald/api/websocket.py` |
 | Resolution / items map | `roboToald/db/models/sso.py` |
+| Inventory export parser | `roboToald/inventory_parser.py` |
 | Proxy WS client | `p99-login-proxy/p99_sso_login_proxy/ws_client.py` |
 | Proxy SSO gate / splice | `p99-login-proxy/p99_sso_login_proxy/server.py` |
 | DES helpers | `p99-login-proxy/p99_sso_login_proxy/login_protocol.py` |

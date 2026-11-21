@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from roboToald.api.server import _inventory_wires_from_message
+from roboToald.api.server import _inventory_wires_from_text
 from roboToald.inventory_parser import (
     INVENTORY_COUNTED_ITEMS,
     INVENTORY_TRACKED_ITEMS,
@@ -69,32 +69,23 @@ def test_parse_covers_every_tracked_wire():
     assert set(parsed) == set(INVENTORY_TRACKED_ITEMS.values()) | set(INVENTORY_COUNTED_ITEMS.values())
 
 
-def test_inventory_text_replaces_legacy_items():
+def test_inventory_text_yields_full_snapshot():
     text = _HEADER + "Primary\tTrakanon Idol\t1\t1\t5\nGeneral1\tPearl\t2\t4\t5\n"
-    wires = _inventory_wires_from_message(
-        {
-            "inventory": text,
-            "items": {"seb": False, "pearl": 99},
-            "keys": {"vp": True},
-        }
-    )
+    wires = _inventory_wires_from_text(text)
+    assert wires is not None
     assert wires["seb"] is True
     assert wires["pearl"] == 4
     assert wires["vp"] is False
 
 
-def test_unparseable_inventory_falls_back_to_items():
-    wires = _inventory_wires_from_message({"inventory": "not an export", "items": {"seb": True}})
-    assert wires == {"seb": True}
+def test_unparseable_inventory_is_ignored():
+    assert _inventory_wires_from_text("not an export") is None
 
 
-def test_oversized_inventory_falls_back_to_items():
-    wires = _inventory_wires_from_message(
-        {"inventory": "Name\tCount\n" + ("x" * (MAX_INVENTORY_TEXT_BYTES + 1)), "items": {"pearl": 3}}
-    )
-    assert wires == {"pearl": 3}
+def test_oversized_inventory_is_ignored():
+    assert _inventory_wires_from_text("Name\tCount\n" + ("x" * (MAX_INVENTORY_TEXT_BYTES + 1))) is None
 
 
-def test_blank_inventory_uses_items():
-    wires = _inventory_wires_from_message({"inventory": "  \n", "keys": {"vp": True}})
-    assert wires == {"vp": True}
+def test_blank_or_missing_inventory_is_ignored():
+    assert _inventory_wires_from_text("  \n") is None
+    assert _inventory_wires_from_text(None) is None
