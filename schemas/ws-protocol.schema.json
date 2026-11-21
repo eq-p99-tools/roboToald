@@ -14,6 +14,7 @@
     { "$ref": "#/$defs/login_auth" },
     { "$ref": "#/$defs/heartbeat" },
     { "$ref": "#/$defs/update_location" },
+    { "$ref": "#/$defs/update_inventory" },
     { "$ref": "#/$defs/fte" },
     { "$ref": "#/$defs/mob_death" }
   ],
@@ -117,6 +118,16 @@
         "level": { "type": "integer" },
         "items": { "type": "object" },
         "keys": { "type": "object" }
+      }
+    },
+    "update_inventory": {
+      "type": "object",
+      "description": "Client -> server. Raw EQ `<Char>-Inventory.txt` export (`/outputfile inventory`). The server parses tracked items from it and treats the result as a full snapshot of the tracked item columns. Blank text, text longer than 524288 bytes, or text with no `Name` column is ignored.",
+      "required": ["type", "character_name", "inventory"],
+      "properties": {
+        "type": { "const": "update_inventory" },
+        "character_name": { "type": "string" },
+        "inventory": { "type": "string" }
       }
     },
     "fte": {

@@ -27,6 +27,7 @@ from roboToald import config
 from roboToald.db.models import sso as sso_model
 from roboToald.db import base
 from roboToald.api.websocket import manager as ws_manager, ClientConnection
+from roboToald.inventory_parser import MAX_INVENTORY_TEXT_BYTES, parse_inventory_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -837,6 +838,9 @@ async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
             elif msg_type == "update_location":
                 await _ws_handle_update_location(conn, msg)
 
+            elif msg_type == "update_inventory":
+                await _ws_handle_update_inventory(conn, msg)
+
             elif msg_type == "login_auth":
                 await _ws_handle_login_auth(conn, msg)
 
@@ -879,6 +883,58 @@ async def _ws_handle_heartbeat(conn: ClientConnection, msg: dict):
     except Exception:
         logger.exception(
             "heartbeat failed | guild_id=%s user_id=%s char=%s", conn.guild_id, conn.discord_user_id, character_name
+        )
+
+
+def _inventory_wires_from_text(raw) -> dict | None:
+    """Tracked item wires parsed from a raw inventory export.
+
+    Returns ``None`` for blank, oversized, or unparseable text so the stored
+    items stay as they were.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    if len(raw.encode("utf-8")) > MAX_INVENTORY_TEXT_BYTES:
+        logger.warning("update_inventory text exceeds %s bytes; ignoring", MAX_INVENTORY_TEXT_BYTES)
+        return None
+    parsed = parse_inventory_text(raw)
+    if parsed is None:
+        logger.warning("update_inventory text has no Name column; ignoring")
+    return parsed
+
+
+async def _ws_handle_update_inventory(conn: ClientConnection, msg: dict):
+    """Process an update_inventory message: replace tracked items, then push delta."""
+    character_name = msg.get("character_name")
+    if not character_name:
+        return
+
+    def _sync():
+        wires = _inventory_wires_from_text(msg.get("inventory"))
+        if wires is None:
+            return False
+        account = sso_model.find_account_by_character(conn.guild_id, character_name)
+        if not account:
+            return False
+        if not user_has_access_to_accounts(
+            ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]
+        ):
+            return False
+        return sso_model.update_account_character(
+            guild_id=conn.guild_id,
+            name=character_name,
+            **sso_model.merged_wires_to_character_kwargs(wires),
+        )
+
+    try:
+        if await asyncio.to_thread(_sync):
+            await ws_manager.notify_guild_async(conn.guild_id)
+    except Exception:
+        logger.exception(
+            "update_inventory failed | guild_id=%s user_id=%s char=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
         )
 
 
