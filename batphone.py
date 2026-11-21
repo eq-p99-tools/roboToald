@@ -37,6 +37,9 @@ def main() -> None:
             audit_archived,
             sessions_archived,
         )
+    faction_purged = sso_model.purge_old_faction_events(retention_days=config.FACTION_EVENT_RETENTION_DAYS)
+    if faction_purged:
+        logging.getLogger(__name__).info("Purged %d old faction events", faction_purged)
 
     # Start API server in background thread
     server.run_api_server(

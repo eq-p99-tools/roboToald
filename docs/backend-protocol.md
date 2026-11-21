@@ -49,6 +49,7 @@ Implement an HTTP + WebSocket API such that an unmodified P99 Login Proxy can: a
 6. Username resolution + access control such that only authorized names appear in `account_tree` and succeed `login_auth`.
 7. Optionally `POST /auth` (HTTP plaintext fallback; **not** used by current proxy).
 8. Optionally `fte` / `mob_death` (proxy sends; silent drop is OK for login compatibility).
+8a. Optionally `faction_hits` (proxy sends; silent drop is OK for login compatibility).
 9. Verify with §12.
 
 ---
@@ -120,7 +121,7 @@ Client                         Server
 |   ... bidirectional ...      |
 |<-- ping ---------------------|
 |-- pong --------------------->|
-|-- login_auth / heartbeat / update_location / update_inventory / fte / mob_death -->|
+|-- login_auth / heartbeat / update_location / update_inventory / fte / mob_death / faction_hits -->|
 |<-- login_auth_response / delta / ping -------|
 ```
 
@@ -150,6 +151,7 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 | `update_inventory` | C→S | `type`, `character_name`, `inventory` |
 | `fte` | C→S | `type`, `mob`, `player`, `character_name`, `eq_log_time` |
 | `mob_death` | C→S | `type`, `mob`, `eq_log_time`, `character_name` |
+| `faction_hits` | C→S | `type`, `character_name`, `eq_log_time`, `hits` (1–50 × `faction`, `direction`) |
 | `ping` | either | `type` |
 | `pong` | either | `type` |
 | `error` | S→C | `type`, `detail` |
@@ -421,6 +423,15 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
 `eq_log_time`: EQ log bracket form `Wed Jul 15 22:14:05 2026`.  
 **[reference]** skew: reject if \|Δ\| > 24h; else minute+second within 60s around hour. Discord TOD side effects optional for proxy login compatibility.
 
+```json
+{"type": "faction_hits", "character_name": "Zzzz", "eq_log_time": "Sat Nov 21 09:55:01 2026",
+ "hits": [{"faction": "Coldain", "direction": "better"}, {"faction": "Claws of Veeshan", "direction": "max"}]}
+```
+
+- Proxy parses `Your faction standing with <faction> got better|worse.` (`better` / `worse`) and `... could not possibly get any better|worse.` (`max` / `min`: capped). P99 logs no amount. `faction` is the log text verbatim.
+- One message per character per EQ log second (a kill or turn-in logs all its lines in one second); at most 50 hits, larger bursts split. Newest log only, SSO characters only, nothing queued while disconnected.
+- **[reference]** same skew check as `fte`; unknown/inaccessible `character_name` ignored as for `heartbeat`; malformed `hits` entries skipped; more than 60 messages per connection per 60s dropped. Stores per-character/faction state (`hits_better`, `hits_worse`, `cap`, timestamps) and a raw event log (character, account, session user and display name) purged after `faction_event_retention_days` (90). No reply, no `delta`.
+
 ### 5.7 Keepalive / error
 
 ```json
@@ -602,6 +613,7 @@ and USER_API_TOKEN set
 | Discord RBAC / revocation / audit | | ✓ (wire outcomes still required) |
 | `fte` / `mob_death` handling | ignore OK | TOD channel |
 | `update_inventory` handling | ignore OK | parse + persist + delta |
+| `faction_hits` handling | ignore OK | faction state + event log |
 | Legacy character `keys` | ignore OK | emit flag |
 | Close codes 4001–4011 | | ✓ (proxy mainly needs `error`+drop) |
 

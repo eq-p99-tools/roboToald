@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import logging
 import threading
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -229,6 +230,7 @@ class ClientConnection:
     connected_at: datetime.datetime = field(default_factory=datetime.datetime.now)
     client_version: str = "unknown"
     client_ip: str = ""
+    faction_hits_times: deque = field(default_factory=deque)
 
 
 class ConnectionManager:

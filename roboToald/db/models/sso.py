@@ -2418,6 +2418,149 @@ def get_sessions_in_range(guild_id: int, start: datetime.datetime, end: datetime
     return sessions
 
 
+FACTION_DIRECTIONS = ("better", "worse", "max", "min")
+FACTION_NAME_MAX_LEN = 255
+
+
+class SSOCharacterFaction(base.Base):
+    """Current faction standing for a character, from proxy-reported log lines.
+
+    P99 logs only the direction of a hit, never its size, so this is counts of
+    successful hits seen plus the cap state. ``cap`` is ``max`` / ``min`` after a
+    "could not possibly get any better / worse" line and clears on the next
+    successful hit; ``cap_at`` keeps the last time a cap line was seen.
+    """
+
+    __tablename__ = "sso_character_faction"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
+    character_name = sqlalchemy.Column(sqlalchemy.String(64), nullable=False)
+    faction = sqlalchemy.Column(sqlalchemy.String(FACTION_NAME_MAX_LEN), nullable=False)
+    hits_better = sqlalchemy.Column(sqlalchemy.Integer, nullable=False, default=0)
+    hits_worse = sqlalchemy.Column(sqlalchemy.Integer, nullable=False, default=0)
+    cap = sqlalchemy.Column(sqlalchemy.String(3), nullable=True)
+    cap_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+    last_direction = sqlalchemy.Column(sqlalchemy.String(6), nullable=False)
+    first_hit_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
+    last_hit_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
+
+    account = sqlalchemy.orm.relationship("SSOAccount")
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint("guild_id", "character_name", "faction", name="uq_character_faction"),
+    )
+
+
+class SSOFactionEvent(base.Base):
+    """One faction-standing log line, kept for attribution of who was playing.
+
+    ``discord_user_id`` / ``login_by`` are the WebSocket session's user (same
+    source as ``SSOAccount.last_login_by``). Rows older than
+    ``config.FACTION_EVENT_RETENTION_DAYS`` are purged.
+    """
+
+    __tablename__ = "sso_faction_event"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    guild_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
+    character_name = sqlalchemy.Column(sqlalchemy.String(64), nullable=False)
+    faction = sqlalchemy.Column(sqlalchemy.String(FACTION_NAME_MAX_LEN), nullable=False)
+    direction = sqlalchemy.Column(sqlalchemy.String(6), nullable=False)
+    eq_log_time = sqlalchemy.Column(sqlalchemy.String(32), nullable=False)
+    received_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=False)
+    discord_user_id = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    login_by = sqlalchemy.Column(sqlalchemy.String(255), nullable=True)
+
+    account = sqlalchemy.orm.relationship("SSOAccount")
+
+    __table_args__ = (
+        sqlalchemy.Index("ix_faction_event_guild_char_time", "guild_id", "character_name", "received_at"),
+        sqlalchemy.Index("ix_faction_event_received_at", "received_at"),
+    )
+
+
+def record_faction_hits(
+    guild_id: int,
+    account_id: int,
+    character_name: str,
+    discord_user_id: int,
+    login_by: str | None,
+    eq_log_time: str,
+    hits: list[tuple[str, str]],
+    now: datetime.datetime | None = None,
+) -> None:
+    """Append ``(faction, direction)`` hits to the event log and fold them into the
+    character's per-faction state, in one transaction."""
+    if not hits:
+        return
+    now = now or datetime.datetime.now()
+    with base.get_session() as session:
+        states = {
+            row.faction: row
+            for row in session.query(SSOCharacterFaction).filter(
+                SSOCharacterFaction.guild_id == guild_id,
+                SSOCharacterFaction.character_name == character_name,
+                SSOCharacterFaction.faction.in_({faction for faction, _ in hits}),
+            )
+        }
+        for faction, direction in hits:
+            state = states.get(faction)
+            if state is None:
+                state = SSOCharacterFaction(
+                    guild_id=guild_id,
+                    account_id=account_id,
+                    character_name=character_name,
+                    faction=faction,
+                    hits_better=0,
+                    hits_worse=0,
+                    first_hit_at=now,
+                )
+                session.add(state)
+                states[faction] = state
+            state.account_id = account_id
+            if direction == "better":
+                state.hits_better += 1
+                state.cap = None
+            elif direction == "worse":
+                state.hits_worse += 1
+                state.cap = None
+            else:
+                state.cap = direction
+                state.cap_at = now
+            state.last_direction = direction
+            state.last_hit_at = now
+            session.add(
+                SSOFactionEvent(
+                    guild_id=guild_id,
+                    account_id=account_id,
+                    character_name=character_name,
+                    faction=faction,
+                    direction=direction,
+                    eq_log_time=eq_log_time,
+                    received_at=now,
+                    discord_user_id=discord_user_id,
+                    login_by=login_by,
+                )
+            )
+        session.commit()
+
+
+def purge_old_faction_events(retention_days: int = 90, now: datetime.datetime | None = None) -> int:
+    """Delete faction events older than *retention_days*. Returns the number deleted."""
+    cutoff = (now or datetime.datetime.now()) - datetime.timedelta(days=retention_days)
+    with base.get_session() as session:
+        count = (
+            session.query(SSOFactionEvent)
+            .filter(SSOFactionEvent.received_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        session.commit()
+    return count
+
+
 def archive_old_records(retention_days: int = 90, archive_dir: str = "audit_archives") -> tuple[int, int]:
     """Export audit logs and character sessions older than *retention_days* to
     CSV files, then delete them from the database.

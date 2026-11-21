@@ -42,6 +42,14 @@ EQ_LOG_TIME_FMT = "%a %b %d %H:%M:%S %Y"
 EST = ZoneInfo("America/New_York")
 _tod_recent: dict[tuple[int, str, str], float] = {}
 
+# The proxy sends at most one faction_hits message per character per log second
+# (split at 50 hits), so a legitimate client stays under one message per second.
+FACTION_HITS_MAX_PER_MESSAGE = 50
+FACTION_HITS_RATE_MAX_MESSAGES = 60
+FACTION_HITS_RATE_WINDOW_SECONDS = 60
+FACTION_EVENT_PRUNE_INTERVAL_SECONDS = 24 * SECONDS_PER_HOUR
+_faction_last_prune: float | None = None
+
 
 def _tod_dedup(guild_id: int, event_type: str, mob: str) -> bool:
     """Return True if this event should be suppressed (duplicate). Cleans stale entries."""
@@ -851,6 +859,9 @@ async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
 
             elif msg_type == "mob_death":
                 await _ws_handle_mob_death(conn, msg)
+
+            elif msg_type == "faction_hits":
+                await _ws_handle_faction_hits(conn, msg)
     finally:
         ping_task.cancel()
         try:
@@ -1062,6 +1073,117 @@ async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
     tod_timestamp = _format_tod_for_discord(parsed_log)
     _send_to_tod_channel(conn.guild_id, f"!tod {mob}, {tod_timestamp}")
     _schedule_auto_attendance(conn.guild_id, mob)
+
+
+def _faction_hits_rate_limited(conn: ClientConnection, now: float | None = None) -> bool:
+    """Sliding-window limit of ``faction_hits`` messages per connection."""
+    now = time.monotonic() if now is None else now
+    times = conn.faction_hits_times
+    while times and now - times[0] >= FACTION_HITS_RATE_WINDOW_SECONDS:
+        times.popleft()
+    if len(times) >= FACTION_HITS_RATE_MAX_MESSAGES:
+        return True
+    times.append(now)
+    if len(times) == FACTION_HITS_RATE_MAX_MESSAGES:
+        logger.warning(
+            "faction_hits rate limit reached; dropping for up to %ds | guild_id=%s user_id=%s",
+            FACTION_HITS_RATE_WINDOW_SECONDS,
+            conn.guild_id,
+            conn.discord_user_id,
+        )
+    return False
+
+
+def _parse_faction_hits(raw) -> list[tuple[str, str]]:
+    """Valid ``(faction, direction)`` pairs from a ``hits`` array; malformed entries are skipped."""
+    if not isinstance(raw, list):
+        return []
+    hits = []
+    for item in raw[:FACTION_HITS_MAX_PER_MESSAGE]:
+        if not isinstance(item, dict):
+            continue
+        faction = item.get("faction")
+        direction = item.get("direction")
+        if not isinstance(faction, str) or direction not in sso_model.FACTION_DIRECTIONS:
+            continue
+        faction = faction.strip()
+        if not faction or len(faction) > sso_model.FACTION_NAME_MAX_LEN:
+            continue
+        hits.append((faction, direction))
+    return hits
+
+
+async def _maybe_prune_faction_events() -> None:
+    global _faction_last_prune
+    now = time.monotonic()
+    if _faction_last_prune is not None and now - _faction_last_prune < FACTION_EVENT_PRUNE_INTERVAL_SECONDS:
+        return
+    _faction_last_prune = now
+    try:
+        count = await asyncio.to_thread(sso_model.purge_old_faction_events, config.FACTION_EVENT_RETENTION_DAYS)
+    except Exception:
+        logger.exception("faction event purge failed")
+        return
+    if count:
+        logger.info("Purged %d faction events older than %d days", count, config.FACTION_EVENT_RETENTION_DAYS)
+
+
+async def _ws_handle_faction_hits(conn: ClientConnection, msg: dict):
+    """Store faction-standing hits for an SSO character the user can access.
+
+    Unknown or inaccessible characters are ignored, as for heartbeats. Faction
+    state is not part of the account tree, so no delta is pushed.
+    """
+    character_name = msg.get("character_name")
+    eq_log_time = msg.get("eq_log_time")
+    if not isinstance(character_name, str) or not isinstance(eq_log_time, str):
+        return
+    character_name = character_name.strip()
+    eq_log_time = eq_log_time.strip()
+    hits = _parse_faction_hits(msg.get("hits"))
+    if not character_name or not eq_log_time or not hits:
+        return
+    if _faction_hits_rate_limited(conn):
+        return
+    if _verify_eq_log_time_skew(eq_log_time, "faction_hits", conn.guild_id) is None:
+        return
+
+    def _sync():
+        account = sso_model.find_account_by_character(conn.guild_id, character_name)
+        if not account:
+            return False
+        if not user_has_access_to_accounts(
+            ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]
+        ):
+            return False
+        login_name = _resolve_display_name(ws_manager._discord_client, conn.guild_id, conn.discord_user_id)
+        sso_model.record_faction_hits(
+            guild_id=conn.guild_id,
+            account_id=account.id,
+            character_name=character_name,
+            discord_user_id=conn.discord_user_id,
+            login_by=login_name,
+            eq_log_time=eq_log_time,
+            hits=hits,
+        )
+        return True
+
+    try:
+        stored = await asyncio.to_thread(_sync)
+    except Exception:
+        logger.exception(
+            "faction_hits failed | guild_id=%s user_id=%s char=%s", conn.guild_id, conn.discord_user_id, character_name
+        )
+        return
+    if stored:
+        logger.debug(
+            "faction_hits stored | guild_id=%s user_id=%s char=%s hits=%d",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
+            len(hits),
+        )
+    await _maybe_prune_faction_events()
 
 
 async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
