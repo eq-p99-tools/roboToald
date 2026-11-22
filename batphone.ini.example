@@ -19,6 +19,8 @@ port = 443
 # Audit log archival: rows older than this are exported to CSV and deleted on startup
 #audit_retention_days = 90
 #audit_archive_dir = audit_archives
+# Faction-hit events reported by the login proxy older than this are deleted
+#faction_event_retention_days = 90
 # Admin dashboard: set base URL to enable the web dashboard at /admin
 # Requires oauth_client_id and oauth_client_secret in [discord] section
 # Set the OAuth2 redirect URI to <dashboard_base_url>/admin/callback in the Discord Developer Portal

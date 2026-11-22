@@ -528,6 +528,31 @@ For each qualifying Discord user, the bot looks up their EQDKP characters (cache
 
 The suggestion message is posted to the event channel with **Apply** and **Ignore** buttons. The +lines are formatted as a copy-pasteable code block so a raid lead can also paste a subset manually. Clicking **Apply** inserts the Attendee records (with full EQDKP validation and deduplication matching `+Player` manual adds). Clicking **Ignore** dismisses the suggestion.
 
+#### Faction hits
+
+Relayed when an SSO character's EQ log shows faction-standing lines: `Your faction standing with <faction> got better.` / `got worse.` (`better` / `worse`) and `Your faction standing with <faction> could not possibly get any better.` / `worse.` (`max` / `min`, the faction is capped). P99 does not log the amount. The proxy batches the lines one character logged in one log second (at most 50 per message).
+
+```json
+{
+  "type": "faction_hits",
+  "character_name": "CharName",
+  "eq_log_time": "Sat Nov 21 09:55:01 2026",
+  "hits": [
+    {"faction": "Coldain", "direction": "better"},
+    {"faction": "Claws of Veeshan", "direction": "max"}
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `string` | yes | Must be `"faction_hits"` |
+| `character_name` | `string` | yes | Character whose log file produced the lines |
+| `eq_log_time` | `string` | yes | Bracket timestamp shared by the lines |
+| `hits` | `array` | yes | `{faction, direction}` entries; `faction` is verbatim from the log, `direction` is `better`, `worse`, `max` or `min` |
+
+The server applies the `mob_death` skew rules and ignores characters that are unknown or not accessible to the connected user. Malformed entries are skipped, and more than 60 messages per connection in 60 seconds are dropped. Each hit updates `SSOCharacterFaction` (per character and faction: `hits_better`, `hits_worse`, `cap`, `cap_at`, `first_hit_at`, `last_hit_at`; a successful hit clears `cap`) and appends an `SSOFactionEvent` with the character, account, the session's Discord user ID and display name (as `last_login_by`), and `eq_log_time`. Events older than `faction_event_retention_days` (default 90) are purged at startup and at most once a day while hits arrive. Nothing is displayed or pushed to clients.
+
 ### Server -> Client Messages
 
 #### Ping
