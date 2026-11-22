@@ -1,89 +1,31 @@
-# RoboToald API Reference
+# RoboToald API: Reference Server Notes
 
 > **Note:** This documentation is primarily AI-generated from the source code and may contain inaccuracies. Always verify behavior against the actual implementation.
 
-**Implementing a compatible SSO backend?**  
-- **Wire shapes (normative):** [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json) + [`schemas/fixtures/`](schemas/fixtures/)  
-- **Implementer guide (additive):** [`docs/backend-protocol.md`](docs/backend-protocol.md) — flows, crypto, RBAC, checklists; must not diverge from the schema  
-Prefer schema + guide over this narrative when they disagree.
+**Implementing a compatible SSO backend, or looking for message shapes?**
+The wire contract and implementer guide live in the P99 Login Proxy repo:
+- **Wire shapes (normative):** [`schemas/ws-protocol.schema.json`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/schemas/ws-protocol.schema.json) + [`schemas/fixtures/`](https://github.com/eq-p99-tools/p99-login-proxy/tree/rust/schemas/fixtures). This repo keeps no copy; `tests/test_ws_protocol_schema.py` loads them from a p99-login-proxy checkout.
+- **Implementer guide:** [`docs/backend-protocol.md`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/docs/backend-protocol.md): endpoints, every message and its fields, error and close codes, credential crypto, username resolution, dynamic tags, size caps, checklists.
 
-The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net) client. It provides authentication for shared EQ accounts and real-time account data streaming.
+This file covers only how roboToald implements and operates that protocol: storage, configuration, Discord integration, and admin routes. Prefer the schema and guide on any wire question.
 
-**The WebSocket (`/ws/accounts`) is the primary interface.** The login proxy connects via WebSocket for account listing, heartbeats, location updates, login authentication, and real-time delta pushes. `POST /auth` remains available as a fallback HTTP endpoint; newer clients perform login authentication over the WebSocket via `login_auth` messages. The only other public HTTP route is `GET /` (health check). Account listing, heartbeats, and location updates are WebSocket-only.
+The API serves the [P99 SSO Login Proxy](https://p99loginproxy.net). The WebSocket (`/ws/accounts`) is the primary interface; `POST /auth` remains as an HTTP fallback, and `GET /` is a health check. `POST /list_accounts`, `/heartbeat` and `/update_location` return 404 and log a deprecation warning.
 
-## Concepts
+## Access keys
 
-### Access Keys
+Each Discord user in a guild has a unique access key: a random multi-word passphrase (e.g. `ConcentrateRedundantCollar`) generated from word lists (verb + adjective + noun, 14-24 characters). The key is stored encrypted in the database, bound to exactly one `(guild_id, discord_user_id)` pair, and is the credential for all API operations.
 
-Each Discord user in a guild has a unique access key -- a random multi-word passphrase (e.g. `ConcentrateRedundantCollar`) generated from word lists (verb + adjective + noun, 14-24 characters). The key is stored encrypted in the database, bound to exactly one `(guild_id, discord_user_id)` pair. It serves as the authentication credential for all API operations.
+## Account tree internals
 
-### Account Tree
+`build_account_tree` in `roboToald/api/websocket.py` builds the `account_tree` sent in `full_state` and diffed into `delta` (field list in the guide). Implementation details:
 
-The primary data structure returned by the API is the `account_tree` -- a dictionary keyed by account username, containing everything the client needs to know about each accessible account:
-
-```json
-{
-  "<real_user>": {
-    "aliases": ["string", ...],
-    "tags": ["string", ...],
-    "characters": {
-      "<character_name>": {
-        "class": "Cleric",
-        "bind": "zone_key_or_null",
-        "park": "zone_key_or_null",
-        "level": 60,
-        "items": {
-          "seb": true,
-          "vp": null,
-          "st": false,
-          "void": true,
-          "neck": null,
-          "lizard": 0,
-          "thurg": null,
-          "reaper": false,
-          "brass_idol": false,
-          "pearl": 0,
-          "peridot": 0,
-          "mb3": 0,
-          "mb4": 1,
-          "mb5": 0
-        },
-        "keys": {
-          "seb": true,
-          "vp": null,
-          "st": false
-        }
-      }
-    },
-    "last_login": "2025-01-15T03:22:00+00:00",
-    "last_login_by": "DiscordDisplayName",
-    "active_character": "CharName_or_null",
-    "group_roles": ["Member", "Officer"]
-  }
-}
-```
-
-Field details:
-
-| Field | Type | Description |
-|---|---|---|
-| `aliases` | `string[]` | Alternative names that resolve to this account |
-| `tags` | `string[]` | Tag names this account belongs to (shared across multiple accounts for round-robin) |
-| `characters` | `object` | Map of character name to character details |
-| `characters.*.class` | `string` | `CharacterClass` enum value: `Bard`, `Cleric`, `Druid`, `Enchanter`, `Magician`, `Monk`, `Necromancer`, `Paladin`, `Ranger`, `Rogue`, `ShadowKnight`, `Shaman`, `Warrior`, `Wizard` |
-| `characters.*.bind` | `string?` | Zone key where the character is bound (null if unknown) |
-| `characters.*.park` | `string?` | Zone key where the character is parked (null if unknown) |
-| `characters.*.level` | `int?` | Character level (null if unknown) |
-| `characters.*.items` | `object` | Canonical map: `seb`, `vp`, `st` (zone keys); booleans `void`, `neck`, `thurg`, `reaper`, `brass_idol`; integer stack counts `lizard`, `pearl`, `peridot`, `mb3`, `mb4`, `mb5` (Mana Battery Class Three/Four/Five). Booleans use `true` / `false` / `null` (unknown). Stack keys use a non-negative integer or `null` (unknown). |
-| `characters.*.keys` | `object` | **Legacy (optional):** duplicate of `seb` / `vp` / `st` only, for older login-proxy builds. New clients should read `items` only. May be omitted when legacy support is disabled server-side (`INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE` in `api/websocket.py`). |
-| `last_login` | `string?` | ISO 8601 UTC timestamp of last login. Null if never logged in. Accounts with `last_login` before epoch year 2 are treated as never-logged-in. |
-| `last_login_by` | `string?` | Discord display name of the user who last logged in |
-| `active_character` | `string?` | Character name from the most recent active heartbeat session, or null if no active session |
-| `group_roles` | `string[]` | Discord role names configured on this account's SSO groups (sorted, deduplicated). Empty when the account belongs to no groups or roles cannot be resolved. Display-only metadata; access control remains server-side. |
-| `owned` | `boolean?` | When the viewer's Discord user id is known, true if they own the account |
-| `shared` | `boolean?` | When the viewer's Discord user id is known, true if they have a direct user share (and are not the owner) |
-
-Per-field “last updated” timestamps for keys and inventory are stored **only in the database** (for server-side use). They are **not** included in `full_state`, WebSocket payloads, or HTTP responses to clients.
+- Account keys are `SSOAccount.real_user`, stored lowercased.
+- `characters.*.items` comes from the `key_*` / `item_*` columns on `SSOAccountCharacter` (`WIRE_KEY_TO_ATTR` in `db/models/sso.py`).
+- Legacy `characters.*.keys` is emitted while `INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE` in `api/websocket.py` is `True`.
+- `group_roles` resolves the role IDs on the account's `SSOAccountGroup` rows to Discord role names; empty when roles cannot be resolved.
+- `owned` / `shared` compare the viewer's Discord user ID with `owner_discord_user_id` and `SSOAccountUserShare` rows.
+- Per-field "last updated" timestamps for keys and items (`*_updated_at` columns) are stored only in the database and never sent.
+- Login notes are `SSOAccount.notes` and `SSOAccountCharacter.notes` (at most `NOTES_MAX_LENGTH` = 500 characters, trimmed, blank stored as `NULL`), edited with `/sso_owner ... notes_set` or the dashboard.
 
 ### Admin Dashboard Management API
 
@@ -103,59 +45,15 @@ Read partials render HTML fragments:
 
 Mutating routes mirror `/sso_admin` operations for accounts, groups, tags, aliases, characters, and shares. Successful mutations call `ws_manager.notify_guild(guild_id, immediate=True)` so connected login-proxy clients receive fresh account deltas, and write an `SSOAuditLog` entry with `rate_limit=False` and `details` prefixed with `dashboard:`.
 
-### Dynamic Tags
+## Username resolution configuration
 
-Dynamic tags are computed zone+class combinations not stored in the database. They are the Cartesian product of zone prefixes and class suffixes:
+Resolution order, tag pick order and the dynamic tag tables are in the guide. roboToald specifics:
 
-**Zone prefixes** (each maps to one or more internal zone keys):
+- Implemented by `find_account_by_username` in `db/models/sso.py`; the dynamic tag prefix and suffix maps come from `get_dynamic_tags`.
+- `inactivity_seconds` (default 62) in `[sso]` in `batphone.ini` sets the inactivity threshold used by tag and dynamic tag resolution.
+- `require_keys_for_dynamic_tags` in `[sso]` (default `false`): when `true`, the `seb`/`trak`, `vp` and `st` prefixes also require the matching `key_seb`, `key_vp` or `key_st` flag to be `true`.
 
-| Prefix | Zone keys |
-|---|---|
-| `seb` | `sebilis`, `trakanon` |
-| `trak` | (same as `seb`) |
-| `vp` | `veeshan`, `skyfire` |
-| `st` | `sleeper`, `eastwastes` |
-| `tov` | `templeveeshan`, `westwastes` |
-| `dn` | `necropolis`, `westwastes` |
-| `kael` | `kael`, `wakening` |
-| `pog` | `growthplane`, `wakening` |
-| `thurg` | `thurgadina`, `thurgadinb` |
-| `ss` | `skyshrine` |
-| `fear` | `fearplane`, `feerrott` |
-| `vox` | `everfrost`, `permafrost` |
-| `naggy` | `lavastorm`, `soldungb` |
-| `dain` | (same as `thurg`) |
-| `yeli` | (same as `ss`) |
-| `zlandi` | (same as `dn`) |
-
-**Class suffixes** (multiple suffixes map to the same class):
-
-| Suffixes | Class |
-|---|---|
-| `bar`, `brd`, `bard` | Bard |
-| `clr`, `cle`, `cleric` | Cleric |
-| `dru`, `druid` | Druid |
-| `enc`, `enchanter` | Enchanter |
-| `mag`, `mage`, `magician` | Magician |
-| `mnk`, `mon`, `monk` | Monk |
-| `nec`, `necro`, `necromancer` | Necromancer |
-| `pal`, `pld`, `paladin` | Paladin |
-| `ran`, `rng`, `ranger` | Ranger |
-| `rog`, `rogue` | Rogue |
-| `sk`, `shadowknight` | ShadowKnight |
-| `sha`, `shm`, `sham`, `shaman` | Shaman |
-| `war`, `warrior` | Warrior |
-| `wiz`, `wizard` | Wizard |
-
-Example: `vpclr` = Cleric parked in Veeshan's Peak or Skyfire Mountains.
-
-When `require_keys_for_dynamic_tags` is `true` in `[sso]` in `batphone.ini` (default `false`), dynamic tag resolution for `seb`/`trak`, `vp`, and `st` prefixes additionally requires the matching character key flag (`key_seb`, `key_vp`, or `key_st`) to be `true`. Other zone prefixes are unchanged.
-
-### Inactivity Threshold
-
-An account is considered "inactive" if its `last_login` is older than `inactivity_seconds` (default 62 seconds) ago. This is used by tag and dynamic tag resolution to avoid assigning an account that is currently in use. The login proxy sends heartbeats at a shorter interval to keep the session alive.
-
-### RBAC Model
+### RBAC model
 
 Access is determined by Discord roles:
 
@@ -166,369 +64,76 @@ User's Discord Roles
     -> SSOAccount
 ```
 
-The check is a single query: join `account_group_mapping` with `SSOAccountGroup`, filter by `account_id IN (requested_ids)` and `role_id IN (user_role_ids)` and `guild_id = guild_id`. The returned set of account IDs is the accessible subset.
+The check is a single query: join `account_group_mapping` with `SSOAccountGroup`, filter by `account_id IN (requested_ids)` and `role_id IN (user_role_ids)` and `guild_id = guild_id`. The returned set of account IDs is the accessible subset. Account owners, users with a direct share, and admin roles also have access.
 
-### Session Tracking
+### Session tracking
 
-Heartbeats create or extend `SSOCharacterSession` rows. A session is a contiguous series of heartbeats for the same character. If no heartbeat arrives within `inactivity_seconds`, the session is considered ended and a new heartbeat starts a new session. The most recent active session per account determines the `active_character` field in the account tree.
+Heartbeats (and `update_location`) create or extend `SSOCharacterSession` rows. A session is a contiguous series of heartbeats for the same character. If no heartbeat arrives within `inactivity_seconds`, the session ends and the next heartbeat starts a new one. The most recent active session per account determines `active_character` in the account tree.
 
-When a heartbeat arrives, any active sessions for the same Discord user on *different* accounts are expired (their `last_seen` is set to the inactivity threshold). This ensures a user shows as active on only one account at a time.
-
----
-
-## `POST /auth`
-
-Authenticate with an access key and receive real EQ credentials. This is called by the login proxy when EverQuest connects to the login server.
-
-### Request
-
-```
-POST /auth
-Content-Type: application/json
-X-Client-Version: 1.2.0       (optional, compared against guild min_client_version)
-```
-
-```json
-{
-  "username": "string",
-  "password": "string",
-  "client_settings": {
-    "log_enabled": true,
-    "rustle_present": false
-  }
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `username` | `string` | yes | Account name, alias, tag, character name, or dynamic tag |
-| `password` | `string` | yes | The user's access key |
-| `client_settings` | `object?` | no | Client state for guild policy enforcement. Older clients that omit this entirely are allowed through (use `min_client_version` to close this loophole). |
-| `client_settings.log_enabled` | `bool` | no | Whether EQ logging is enabled |
-| `client_settings.rustle_present` | `bool` | no | *(internal use)* |
-
-### Authentication Flow
-
-The server processes the request in this order:
-
-1. **Rate limit check.** Count failed attempts from client IP via `_get_client_ip` (prefers first `X-Forwarded-For` hop when present, else `request.client.host`) within `rate_limit_window_minutes` (default **30**). If count >= `rate_limit_max_attempts` (config fallback **10**), reject with 401.
-
-2. **Access key lookup.** Look up `password` in `SSOAccessKey` table. If not found, log an audit entry and reject with 401.
-
-3. **SSO enabled check.** If the access key's guild has `enable_sso = false` in `batphone.ini`, log an audit entry (`SSO disabled`) and reject with 401.
-
-4. **Revocation check.** If the user's access is revoked, log an audit entry and reject with 401.
-
-5. **Client version check.** If the guild has `min_client_version` set, compare `X-Client-Version` header (defaults to `0.0.0` if absent) using semver-ish parsing (dot-separated integers; pre-release suffix sorts below release). If below minimum, reject with 422 and the `client_update_message` (or a default message).
-
-6. **Client settings validation.** If `client_settings` is present, check guild policies:
-   - If `require_log` is set and `log_enabled` is `false`: reject with 422.
-   - If `block_rustle` is set and `rustle_present` is `true` (and user lacks exempt roles): reject with 422.
-
-7. **Username resolution.** Resolve `username` to an account by trying each method in order:
-   1. Direct account name (`SSOAccount.real_user`, case-insensitive)
-   2. Character name (`SSOAccountCharacter.name`, case-insensitive)
-   3. Alias (`SSOAccountAlias.alias`)
-   4. Tag (`SSOTag.tag`) -- if multiple accounts share the tag, filter to inactive accounts only (see Inactivity Threshold), then sort by a bucketed login-age key with character level as tiebreaker. If all tagged accounts are active, raise 410.
-   5. Dynamic tag -- parse zone prefix and class suffix, query for characters of the matching class whose `bind_location` or `park_location` is in the zone key set, joined to accounts with `last_login` older than the inactivity threshold. Sort by the same login-age + level key. If no matches, raise 410.
-   - If no method resolves, reject with 400.
-
-8. **RBAC check.** Verify the Discord user has access to the resolved account (see RBAC Model above). If not, log an audit entry and reject with 401.
-
-9. **Success.** Update `last_login` and `last_login_by` on the account. Notify all WebSocket clients for the guild (triggers delta pushes). Log a success audit entry. Return the real credentials.
-
-### Tag Sort Algorithm
-
-When a tag or dynamic tag matches multiple accounts, the selection algorithm is:
-
-1. Filter to inactive accounts only (last_login older than `inactivity_seconds`).
-2. Compute a sort key for each account: `(-bucket, -max_character_level)` where:
-   - If the account was logged in less than 20 minutes ago: `bucket = age_seconds // 30` (higher = older = preferred)
-   - If the account was logged in 20+ minutes ago: `bucket = 0` (all equivalent)
-3. Sort ascending (lowest sort key = most preferred = oldest login, then highest level as tiebreaker).
-4. Pick the first account.
-
-### Response
-
-**200 OK:**
-```json
-{
-  "real_user": "actual_username",
-  "real_pass": "actual_password"
-}
-```
-
-**400 Bad Request:** `{"detail": "Character not found"}` -- username could not be resolved to any account.
-
-**401 Unauthorized:** `{"detail": "Authentication failed"}` -- invalid access key, access denied, rate limited, or revoked. All failures return the identical body to prevent information leakage.
-
-**410 Gone:** `{"detail": "Tag is empty (possibly temporarily, due to inactivity requirements)"}` -- tag or dynamic tag resolved but all matching accounts are currently active.
-
-**422 Unprocessable Entity:** `{"detail": "<human-readable reason>"}` -- client version too old, or client settings fail guild policy. The `detail` explains what the user needs to fix.
-
-### Side Effects
-
-On success:
-- `SSOAccount.last_login` set to current time
-- `SSOAccount.last_login_by` set to the Discord user's display name in the guild
-- `SSOAuditLog` entry created with `success=True`
-- WebSocket delta push triggered for all clients in the guild
-
-On failure:
-- `SSOAuditLog` entry created with `success=False` and the failure reason (except for "account not found" which is not logged)
+When a heartbeat arrives, any active sessions for the same Discord user on *different* accounts are expired (their `last_seen` is set to the inactivity threshold), so a user shows as active on only one account at a time.
 
 ---
 
-## `WS /ws/accounts`
+## `POST /auth` implementation
 
-WebSocket endpoint for real-time account data. This is the primary interface for the login proxy after initial authentication.
+`authenticate` in `roboToald/api/server.py`; credential resolution is shared with WebSocket `login_auth` through `_perform_login_auth`. Wire format and status codes are in the guide.
 
-### WebSocket message schema
+Processing order:
 
-The wire contract for every message below is pinned by a JSON Schema (draft 2020-12) at [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json), with one canonical example per message type under [`schemas/fixtures/`](schemas/fixtures/). That schema is the **normative machine-readable contract**. The additive implementer guide is [`docs/backend-protocol.md`](docs/backend-protocol.md). `tests/test_ws_protocol_schema.py` validates fixtures and live server output (`build_account_tree` / `compute_diff`) against the schema. The login proxy does **not** vendor or validate the schema at runtime; it speaks the shapes described here. Bulk payloads (`account_tree`, `changes`) are loosely typed and unknown extra fields are permitted, so additive server changes stay backward compatible; when you change a message shape, update the schema, fixtures, and `docs/backend-protocol.md` in the same commit.
+1. **Rate limit** (see Rate limiting below).
+2. **Access key lookup** in `SSOAccessKey`. Not found: audit entry, 401.
+3. **SSO enabled**: guild `enable_sso` in `batphone.ini`. Disabled: audit entry (`SSO disabled`), 401.
+4. **Revocation** (`SSORevocation`). Revoked: audit entry, 401.
+5. **Client version** against guild `min_client_version` (from `X-Client-Version`). Too old: 422 with `client_update_message` or a default message.
+6. **Client settings** against guild `require_log` / `block_rustle` (users with exempt roles skip `block_rustle`). Rejected: 422.
+7. **Username resolution** (`find_account_by_username(..., inactive_only=True)`).
+8. **RBAC check**. Denied: audit entry (`Access denied`), 401.
+9. **Success**: `last_login` / `last_login_by` updated, success audit entry, `ws_manager.notify_guild(guild_id, immediate=True)`.
 
-### Connection Protocol
+"Character not found" (400) and empty tags (410) are not audited.
 
-```
-1. Client connects to ws[s]://<host>:<port>/ws/accounts
-2. Server accepts the WebSocket connection
-3. Client sends auth message (must arrive within 15 seconds)
-4. Server validates credentials and guild policies
-5. Server sends full_state message
-6. Bidirectional message exchange begins (heartbeats, location updates, pings, deltas)
-```
+---
+
+## `WS /ws/accounts` implementation
+
+`websocket_accounts` and the `_ws_handle_*` functions in `roboToald/api/server.py`; connection management and deltas in `roboToald/api/websocket.py`.
+
+### Auth phase
+
+After the `auth` message: IP rate limit and key lookup (close 4003), wait up to 30s for the Discord client (close 4004), revocation (4003), guild `enable_sso` (4003, audited as `SSO disabled (WebSocket)`), `min_client_version` (4010), `client_settings` policy (4011). An invalid key writes an `Invalid access key (WebSocket)` audit entry. Each close is preceded by `{"type": "error", "detail": ...}` (`_ws_close`).
 
 ### Delta push timing
 
-Bursts of internal `notify_guild` triggers (e.g. many heartbeats in a short window) are **debounced** per guild (about 3 seconds, see `WS_NOTIFY_DEBOUNCE_SEC` in `api/websocket.py`) so they coalesce into a single `delta` push. Changes from Discord admin commands and successful SSO login use an **immediate** push so clients see RBAC/account updates right away.
+Each connection keeps `last_sent_state`. On a guild notification the server rebuilds each connection's RBAC-filtered tree, diffs it with `compute_diff`, and sends a `delta` only when something changed.
 
-`update_location` updates the database only when a field actually changes; if nothing changed, no delta is scheduled for that message.
+Bursts of `notify_guild` triggers (heartbeats, location and inventory updates) are **debounced** per guild (`WS_NOTIFY_DEBOUNCE_SEC`, about 3 seconds) into a single push. Successful SSO logins, Discord admin commands and dashboard changes push **immediately**.
 
-### Auth Message (client -> server)
+`update_location` schedules a notification whenever the character exists and is accessible, because it also refreshes `last_login` and the session. `update_inventory` schedules one only when a stored column changed. `update_spellbook` and `faction_hits` never do.
 
-Must be the first message, sent within 15 seconds of connection. Must be valid JSON.
+### Message handlers
 
-```json
-{
-  "type": "auth",
-  "access_key": "string",
-  "client_version": "1.2.1",
-  "client_settings": {
-    "log_enabled": true,
-    "rustle_present": false
-  }
-}
-```
+| Message | Handler effect |
+|---|---|
+| `heartbeat` | `heartbeat_and_session`: updates `SSOAccount.last_login` / `last_login_by`, creates or extends `SSOCharacterSession`, expires the user's sessions on other accounts |
+| `update_location` | Same as `heartbeat`, then `update_account_character` with the present fields; `items` / `keys` merged by `merge_keys_and_items_message` and mapped by `merged_wires_to_character_kwargs`; `mark_key_from_park_zone` may set a key from the park zone |
+| `update_inventory` | `parse_inventory_text` (`roboToald/inventory_parser.py`; tracked names in `INVENTORY_TRACKED_ITEMS` / `INVENTORY_COUNTED_ITEMS`, cap `MAX_INVENTORY_TEXT_BYTES`) then `update_account_character` with the full snapshot. Does not touch `last_login` or sessions. |
+| `update_spellbook` | `parse_spellbook_text` (`roboToald/spellbook_parser.py`; caps `MAX_SPELLBOOK_TEXT_BYTES`, `MAX_SPELLBOOK_ENTRIES`, `MAX_SPELL_LEVEL`, `SPELL_NAME_MAX_LEN`) then `replace_character_spells`: deletes the character's `SSOCharacterSpell` rows, inserts one per spell (`spell_name`, `level`), sets `SSOAccountCharacter.spellbook_updated_at` |
+| `faction_hits` | `_parse_faction_hits` (`FACTION_HITS_MAX_PER_MESSAGE`, `FACTION_NAME_MAX_LEN`), per-connection `_faction_hits_rate_limited` (`FACTION_HITS_RATE_MAX_MESSAGES` per `FACTION_HITS_RATE_WINDOW_SECONDS`), skew check, then `record_faction_hits` (below) |
+| `fte` / `mob_death` | Skew check, reporter gate, `_tod_dedup`, then a post to the guild's `tod_channel_id` (below) |
+| `login_auth` | `_perform_login_auth`, then `_des_encrypt_credentials` and `login_notes_for_account` on success |
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | yes | Must be `"auth"` |
-| `access_key` | `string` | yes | The user's access key |
-| `client_version` | `string` | no | Client version for `min_client_version` enforcement (defaults to `"unknown"` for logging, `"0.0.0"` for comparison) |
-| `client_settings` | `object?` | no | Same semantics as `POST /auth` |
+All handlers ignore unknown or inaccessible characters and never reply, except `login_auth` and `ping`.
 
-### Auth Validation
+#### Raid TOD relay (`fte`, `mob_death`)
 
-1. Parse JSON. If unparseable or times out (>15s), close with 4001.
-2. Check `type` is `"auth"` and `access_key` is present. If not, close with 4002.
-3. Look up access key. If invalid, close with 4003.
-4. Wait for Discord client to be ready (up to 30 seconds). If still not ready, close with 4004.
-5. Check access revocation. If revoked, close with 4003.
-6. Check `enable_sso` for the access key's guild. If disabled, close with 4003 (`Authentication failed`).
-7. Check `min_client_version`. If below minimum, close with 4010.
-8. Validate `client_settings` against guild policies. If rejected, close with 4011.
+`_verify_eq_log_time_skew` parses `eq_log_time` and compares it with the API host clock (naive local time): more than 24 hours apart is rejected; otherwise only minute and second are compared around the hour and must be within 60 seconds. Failures are dropped with a warning in the API log.
 
-Before closing, the server sends an error message: `{"type": "error", "detail": "<reason>"}`.
+The reporter gate (`user_has_any_character_access`) requires the connected user to have access to at least one SSO character in the guild; `character_name` itself is logged but not access-checked, so local-only characters can report.
 
-### Full State (server -> client, on successful auth)
+- `fte` posts `**FTE**: <mob> engages <player>! <t:…:T>`.
+- `mob_death` posts `!tod <mob>, <M/D HH:MM:SS>`.
 
-Sent immediately after successful authentication. Contains the complete set of accounts the user can access.
-
-```json
-{
-  "type": "full_state",
-  "account_tree": { ... },
-  "count": 42,
-  "dynamic_tag_zones": ["vp", "st", "tov", ...],
-  "dynamic_tag_classes": ["bar", "brd", "bard", "clr", ...]
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `type` | `string` | Always `"full_state"` |
-| `account_tree` | `object` | See Account Tree section above |
-| `count` | `int` | Number of accounts in the tree |
-| `dynamic_tag_zones` | `string[]` | Available zone prefixes for dynamic tags |
-| `dynamic_tag_classes` | `string[]` | Available class suffixes for dynamic tags |
-
-The `account_tree` is filtered to only accounts the user has access to via RBAC. The full tree for a guild may contain accounts the user cannot see.
-
-### Client -> Server Messages
-
-All messages are JSON objects with a `type` field. Unknown types are silently ignored.
-
-#### Ping
-
-```json
-{"type": "ping"}
-```
-
-Server replies with `{"type": "pong"}`.
-
-#### Heartbeat
-
-Updates `last_login` on the character's account and records/extends a session. Triggers a delta push to all WebSocket clients in the guild.
-
-```json
-{
-  "type": "heartbeat",
-  "character_name": "CharName"
-}
-```
-
-Side effects:
-- `SSOAccount.last_login` and `last_login_by` updated
-- `SSOCharacterSession` created or extended (extends if a session exists with `last_seen` within the inactivity threshold)
-- Active sessions for this Discord user on other accounts are expired
-- Delta push to all guild clients
-
-If `character_name` is missing or doesn't resolve to an account, the message is silently ignored (no error sent).
-
-#### Update Location
-
-Updates a character's bind/park location and level. Also updates `last_login`, records a session, and triggers a delta push.
-
-```json
-{
-  "type": "update_location",
-  "character_name": "CharName",
-  "bind_location": "zone_key",
-  "park_location": "zone_key",
-  "level": 60,
-  "items": { "seb": true, "vp": false, "void": true }
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `character_name` | `string` | yes | Character to update |
-| `bind_location` | `string?` | no | New bind zone key (only updated if present) |
-| `park_location` | `string?` | no | New park zone key (only updated if present) |
-| `level` | `int?` | no | New level (only updated if present and non-null) |
-| `items` | `object?` | no | Zone keys and tracked inventory flags (only sent when present). Older clients send their whole parsed inventory here; current clients send exports with `update_inventory` and use `items` only for partial updates such as a log line. Maps to `key_*` and `item_*` columns (see `WIRE_KEY_TO_ATTR` in `db/models/sso.py`). |
-| `keys` | `object?` | no | **Legacy:** same wire names as `items` for zone keys (`seb`, `vp`, `st`). If both `keys` and `items` are sent, **`items` wins** on duplicate fields. |
-
-When `items` and/or `keys` are present, merged wire fields map to `SSOAccountCharacter` booleans. `true`/`false` updates the column; `null` or a missing sub-field leaves that column unchanged.
-
-Side effects (same as heartbeat, plus):
-- `SSOAccountCharacter.bind_location`, `park_location`, and/or `level` updated
-- If `items` and/or `keys` are present, matching `key_*` / `item_*` columns updated per the rules above
-
-RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
-
-#### Update Inventory
-
-Replaces a character's tracked item columns from a raw EQ inventory export (`/outputfile inventory`, which writes `<Char>-Inventory.txt`). The login proxy sends the whole file whenever it changes; the server decides which items it tracks, so recognition can change without a client release. Triggers a delta push when a column changed. Does **not** touch `last_login` or sessions.
-
-```json
-{
-  "type": "update_inventory",
-  "character_name": "CharName",
-  "inventory": "Location\tName\tID\tCount\tSlots\nPrimary\tTrakanon Idol\t1\t1\t5\n"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `character_name` | `string` | yes | Character the export belongs to |
-| `inventory` | `string` | yes | Raw tab-separated export text (header row with a `Name` column; `Count` is summed for stackable items) |
-
-A parsed export is a full snapshot: every tracked `key_*` / `item_*` column is set, including `false` / `0` for items not in the file (see `INVENTORY_TRACKED_ITEMS` / `INVENTORY_COUNTED_ITEMS` in `roboToald/inventory_parser.py`). Blank text, text over 524288 bytes, or text with no `Name` column is ignored and stored items stay unchanged.
-
-RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
-
-#### Update Spellbook
-
-Replaces a character's stored spellbook from a raw EQ spellbook export (`/outputfile spellbook`, which writes `<Char>-Spellbook.txt`). The login proxy sends the whole file whenever it changes. Store only: nothing is pushed to clients and `last_login` / sessions are not touched.
-
-```json
-{
-  "type": "update_spellbook",
-  "character_name": "CharName",
-  "spellbook": "44\tShock of Swords\n4\tGate\n12\tBind Affinity\n"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `character_name` | `string` | yes | Character the export belongs to |
-| `spellbook` | `string` | yes | Raw export text: one `<level><TAB><spell name>` line per scribed spell, unsorted, no header (spaces are accepted in place of the tab) |
-
-An accepted upload deletes the character's `SSOCharacterSpell` rows, inserts one row per spell (`spell_name`, `level`; duplicate names collapse), and sets `SSOAccountCharacter.spellbook_updated_at`. Blank text, text over 131072 bytes, or text with any non-blank line that is not a level (1–255) followed by a name is ignored and the stored spellbook stays unchanged (see `roboToald/spellbook_parser.py`).
-
-RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
-
-#### Login Auth
-
-Performs the same credential lookup as `POST /auth` but over the existing WebSocket connection, avoiding a new TCP/TLS handshake per login. The access key, rate limiting, revocation, client version, and client settings are already validated at WebSocket connection time. Each `login_auth` request also re-checks that `enable_sso` is still true for the guild. The server then performs account resolution, RBAC check, and audit logging.
-
-```json
-{
-  "type": "login_auth",
-  "request_id": "unique_string",
-  "username": "alias_or_tag_or_character"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | yes | Must be `"login_auth"` |
-| `request_id` | `string` | yes | Client-generated unique ID for correlating the response |
-| `username` | `string` | yes | Account name, alias, tag, character name, or dynamic tag to resolve |
-
-The server replies with a `login_auth_response` message (see below).
-
-#### FTE (First to Engage)
-
-Relayed from the login proxy when the EQ log contains a first-to-engage line (`Mob engages Player!`). The server parses `eq_log_time` and applies the same skew rules as `mob_death` (see below), then posts to `tod_channel_id` after deduplication. The Discord dynamic timestamp (`<t:…:T>`) uses the **same rule as raid ToD relay**: **month, day, and hour** from the **current time in US Eastern** (`America/New_York`) and **minute and second** from the parsed EQ log (the log’s wall-clock hour is not used). `character_name` is logged for audit but is **not** ACL'd per-character — the reporter does not need to own it (so local-only characters can spot FTEs). The connecting user must hold a valid access key **and** have access to at least one SSO character in the guild (anti-troll gate).
-
-```json
-{
-  "type": "fte",
-  "mob": "Cekenar",
-  "player": "Toald",
-  "character_name": "CharName",
-  "eq_log_time": "Fri Jan 31 22:04:02 2025"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | yes | Must be `"fte"` |
-| `mob` | `string` | yes | Raid mob name from the log line |
-| `player` | `string` | yes | Player name from the log line |
-| `character_name` | `string` | yes | Character whose log file produced the line |
-| `eq_log_time` | `string` | yes | Bracket timestamp from the EQ log line (`time` group) |
-
-#### Mob death (raid target TOD)
-
-Relayed when the EQ log shows a raid target death (`You have slain …` or `… has been slain by …`) and the mob matches the proxy's static raid target list. The server parses `eq_log_time` and validates it against the API host clock (naive local time). **Skew rules:** if the absolute difference between parsed log time and server `now` is **more than 24 hours**, the message is rejected. If **within 24 hours**, the client timezone is treated as unknown: **hour and date are ignored**, and only **minute + second** are compared using the shortest distance around the hour (so e.g. :59:50 vs :00:10 is ~20s apart). That distance must be **≤ 60 seconds**. Then `!tod <mob>, <M/D HH:MM:SS>` is built with **month, day, and hour** from the **current time in US Eastern** (`America/New_York`, EDT/EST as appropriate) and **minute and second** from the parsed EQ log timestamp. Messages failing parse or skew checks are dropped with a warning in the API log. `character_name` is logged for audit but is **not** ACL'd per-character — the reporter does not need to own it (so local-only characters can record kills). The connecting user must hold a valid access key **and** have access to at least one SSO character in the guild (anti-troll gate).
-
-```json
-{
-  "type": "mob_death",
-  "mob": "King Tormax",
-  "eq_log_time": "Sat Feb 15 20:52:45 2025",
-  "character_name": "CharName"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | yes | Must be `"mob_death"` |
-| `mob` | `string` | yes | Raid target name |
-| `eq_log_time` | `string` | yes | Bracket timestamp from the EQ log line (`time` group), e.g. `Sat Feb 15 20:52:45 2025` |
-| `character_name` | `string` | yes | Character whose log file produced the line |
+Both timestamps take **month, day and hour** from the current time in US Eastern (`America/New_York`) and **minute and second** from the parsed EQ log line.
 
 ##### Auto-attendance proposal
 
@@ -549,261 +154,49 @@ For each qualifying Discord user, the bot looks up their EQDKP characters (cache
 
 The suggestion message is posted to the event channel with **Apply** and **Ignore** buttons. The +lines are formatted as a copy-pasteable code block so a raid lead can also paste a subset manually. Clicking **Apply** inserts the Attendee records (with full EQDKP validation and deduplication matching `+Player` manual adds). Clicking **Ignore** dismisses the suggestion.
 
-#### Faction hits
+#### Faction storage
 
-Relayed when an SSO character's EQ log shows faction-standing lines: `Your faction standing with <faction> got better.` / `got worse.` (`better` / `worse`) and `Your faction standing with <faction> could not possibly get any better.` / `worse.` (`max` / `min`, the faction is capped). P99 does not log the amount. The proxy batches the lines one character logged in one log second (at most 50 per message).
+`record_faction_hits` updates `SSOCharacterFaction` per character and faction (`hits_better`, `hits_worse`, `cap`, `cap_at`, `first_hit_at`, `last_hit_at`, `last_direction`; a better/worse hit clears `cap`) and appends an `SSOFactionEvent` with the character, account, the session's Discord user ID and display name (as `last_login_by`), and `eq_log_time`. Events older than `faction_event_retention_days` (default 90, `[sso]` in `batphone.ini`) are purged at startup and at most once a day while hits arrive. Nothing is displayed or pushed to clients.
 
-```json
-{
-  "type": "faction_hits",
-  "character_name": "CharName",
-  "eq_log_time": "Sat Nov 21 09:55:01 2026",
-  "hits": [
-    {"faction": "Coldain", "direction": "better"},
-    {"faction": "Claws of Veeshan", "direction": "max"}
-  ]
-}
-```
+### Ping loop
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | yes | Must be `"faction_hits"` |
-| `character_name` | `string` | yes | Character whose log file produced the lines |
-| `eq_log_time` | `string` | yes | Bracket timestamp shared by the lines |
-| `hits` | `array` | yes | `{faction, direction}` entries; `faction` is verbatim from the log, `direction` is `better`, `worse`, `max` or `min` |
-
-The server applies the `mob_death` skew rules and ignores characters that are unknown or not accessible to the connected user. Malformed entries are skipped, and more than 60 messages per connection in 60 seconds are dropped. Each hit updates `SSOCharacterFaction` (per character and faction: `hits_better`, `hits_worse`, `cap`, `cap_at`, `first_hit_at`, `last_hit_at`; a successful hit clears `cap`) and appends an `SSOFactionEvent` with the character, account, the session's Discord user ID and display name (as `last_login_by`), and `eq_log_time`. Events older than `faction_event_retention_days` (default 90) are purged at startup and at most once a day while hits arrive. Nothing is displayed or pushed to clients.
-
-### Server -> Client Messages
-
-#### Ping
-
-Sent every 30 seconds as an application-level keepalive:
-
-```json
-{"type": "ping"}
-```
-
-The client should reply with `{"type": "pong"}` (optional but recommended).
-
-#### Pong
-
-Reply to a client ping:
-
-```json
-{"type": "pong"}
-```
-
-#### Login Auth Response
-
-Reply to a `login_auth` request. Contains either the encrypted credentials or an error. The real password is never sent in plaintext; instead the server DES-CBC encrypts the credentials and returns a base64-encoded blob the client splices directly into the login packet.
-
-**Success:**
-```json
-{
-  "type": "login_auth_response",
-  "request_id": "same_as_request",
-  "real_user": "actual_username",
-  "encrypted_credentials": "<base64-encoded DES-CBC ciphertext>"
-}
-```
-
-**Error:**
-```json
-{
-  "type": "login_auth_response",
-  "request_id": "same_as_request",
-  "error": "human-readable reason",
-  "status": 401
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `request_id` | `string` | Echoed from the request for correlation |
-| `real_user` | `string?` | Real EQ account name (present on success, for logging/display) |
-| `encrypted_credentials` | `string?` | Base64-encoded DES-CBC ciphertext of `username\0password\0` (present on success) |
-| `error` | `string?` | Error detail (present on failure) |
-| `status` | `int?` | HTTP-equivalent status code: 400 (character not found), 401 (auth failed / access denied), 410 (tag temporarily empty) |
-
-Side effects on success are the same as `POST /auth`: `last_login` updated, audit log entry created, delta push triggered.
-
-#### Delta
-
-Sent whenever account data changes for the guild (triggered by logins, heartbeats, location updates, or admin actions via Discord commands). Only includes changes the user has access to see.
-
-```json
-{
-  "type": "delta",
-  "changes": [ ... ]
-}
-```
-
-Each change object has an `action` and `entity` (always `"account"`):
-
-**`add`** -- a new account appeared (e.g. user gained a role granting access, or admin created an account):
-
-```json
-{
-  "action": "add",
-  "entity": "account",
-  "account": "real_user",
-  "data": {
-    "aliases": [...],
-    "tags": [...],
-    "characters": {...},
-    "last_login": "...",
-    "last_login_by": "...",
-    "active_character": "..."
-  }
-}
-```
-
-**`remove`** -- an account was removed from the user's view:
-
-```json
-{
-  "action": "remove",
-  "entity": "account",
-  "account": "real_user"
-}
-```
-
-**`update`** -- one or more fields changed on an existing account:
-
-```json
-{
-  "action": "update",
-  "entity": "account",
-  "account": "real_user",
-  "fields": { ... }
-}
-```
-
-The `fields` object only contains changed fields. Each field type has its own diff format:
-
-**Scalar fields** (`last_login`, `last_login_by`, `active_character`) -- the new value:
-
-```json
-{
-  "fields": {
-    "last_login": "2025-01-15T03:22:00+00:00",
-    "last_login_by": "DisplayName",
-    "active_character": "CharName"
-  }
-}
-```
-
-**Set fields** (`aliases`, `tags`) -- additions and removals:
-
-```json
-{
-  "fields": {
-    "aliases": {"add": ["new_alias"], "remove": ["old_alias"]},
-    "tags": {"add": [], "remove": ["removed_tag"]}
-  }
-}
-```
-
-**Dict field** (`characters`) -- additions, removals, and updates:
-
-```json
-{
-  "fields": {
-    "characters": {
-      "add": {"NewChar": {"class": "Cleric", "bind": null, "park": null, "level": null}},
-      "remove": ["DeletedChar"],
-      "update": {"ExistingChar": {"class": "Cleric", "bind": "zone", "park": "zone", "level": 60}}
-    }
-  }
-}
-```
-
-Each sub-key in `characters` is only present if there are changes of that type. Updated characters include the full character object (not a partial diff).
-
-#### Delta Computation
-
-The server maintains a `last_sent_state` for each WebSocket connection. When a notification fires, it:
-
-1. Queries all accounts for the guild.
-2. Filters to the accounts accessible by this connection's Discord user.
-3. Builds a new `account_tree`.
-4. Computes the diff between `last_sent_state` and the new tree.
-5. If there are changes, sends the delta and updates `last_sent_state`.
-
-If there are no changes for a particular connection, no message is sent.
-
-#### Error
-
-Sent before closing the connection due to a server-side issue:
-
-```json
-{"type": "error", "detail": "reason string"}
-```
-
-### Close Codes
-
-| Code | Meaning |
-|---|---|
-| `4001` | Auth timeout (>15s) or unparseable JSON payload |
-| `4002` | First message was not `{"type": "auth", "access_key": "..."}` |
-| `4003` | Access key not found in database |
-| `4004` | Discord client not ready after 30s wait (server still initializing) |
-| `4010` | Client version below guild `min_client_version` |
-| `4011` | Client settings rejected by guild policy (`require_log`, `block_rustle`) |
+`_ws_ping_loop` sends `{"type": "ping"}` every `WS_PING_INTERVAL` (30) seconds after a random initial delay, so connections opened together (for example after a restart) do not ping on the same tick.
 
 ---
 
-## HTTP endpoints (non-WebSocket)
+## Authentication and authorization operations
 
-### `GET /`
-
-Health check.
-
-```json
-{"status": "ok", "service": "RoboToald API", "message": "API server is running"}
-```
-
-Returns `"status": "warning"` if the Discord client hasn't been injected yet.
-
-`POST /auth` is documented earlier in this file; it remains the HTTP fallback for credential resolution.
-
----
-
-## Authentication and Authorization
-
-### IP Resolution
+### IP resolution
 
 - `POST /auth` uses the first value of `X-Forwarded-For` when the connecting client is a trusted proxy (`forwarded_allow_ips` in `batphone.ini`); otherwise `request.client.host`.
 - WebSocket connections use `websocket.client.host` (the immediate TCP peer; `X-Forwarded-For` is not applied to WebSocket in this server).
 - Configure `forwarded_allow_ips` in `batphone.ini` to control which proxy IPs uvicorn trusts for `X-Forwarded-For` on HTTP requests.
 
-### Rate Limiting
+### Rate limiting
 
 Rate limiting is based on failed authentication attempts per IP address:
 
 - **Threshold:** `rate_limit_max_attempts` (config fallback **10**; see `batphone.ini` `[sso]`)
 - **Window:** `rate_limit_window_minutes` (config fallback **30**, rolling)
-- **Counting:** Failed audit rows for the IP where `success` is false and `rate_limit != False` (`count_failed_attempts` — no `account_id` filter)
-- **Response:** Same `401 Unauthorized` as any other auth failure (no `429` status code, to avoid information leakage)
+- **Counting:** Failed audit rows for the IP where `success` is false and `rate_limit != False` (`count_failed_attempts`, no `account_id` filter)
+- **Response:** Same `401 Unauthorized` / close 4003 as any other auth failure (no `429` status code, to avoid information leakage)
 - **Clearing:** An admin can clear the rate limit for an IP via `/sso_admin reset_rate_limit`, which sets `rate_limit = False` on all failed audit entries for that IP
 
 ### Revocation
 
-User access can be revoked via `/sso_admin revocation add`. The API checks `SSORevocation` table for active revocations before allowing access. Revocations can be permanent (`expiry_days = 0`) or time-limited.
+User access can be revoked via `/sso_admin revocation add`. The API checks the `SSORevocation` table for active revocations before allowing access. Revocations can be permanent (`expiry_days = 0`) or time-limited.
 
-### Client Version Enforcement
+### Client version enforcement
 
-When `min_client_version` is configured for a guild:
-- `POST /auth`: compares `X-Client-Version` header (defaults to `0.0.0`) against minimum. Rejects with 422.
-- WebSocket: compares `client_version` field in auth message (defaults to `0.0.0`) against minimum. Closes with 4010.
+Set `min_client_version` (and optionally `client_update_message`) for a guild. `POST /auth` compares the `X-Client-Version` header and rejects with 422; the WebSocket compares `auth.client_version` and closes with 4010. A missing version compares as `0.0.0`. See `_parse_version` in `api/server.py`.
 
-Version comparison is semver-ish: split on `.`, compare as integers. Pre-release suffixes (e.g. `1.2.0-rc1`) sort below the release they're attached to.
+### Client settings policies
 
-### Logging Requirement
+- `require_log`: clients that report `log_enabled: false` in `client_settings` are rejected (HTTP 422 / WS close 4011).
+- `block_rustle`: clients that report `rustle_present: true` are rejected unless the user has an exempt role.
 
-When `require_log` is set for a guild, clients that report `log_enabled: false` in `client_settings` are rejected (HTTP 422 / WS close 4011). Clients that omit `client_settings` entirely are allowed through for backward compatibility.
+Clients that omit `client_settings` entirely are allowed through for backward compatibility; use `min_client_version` to close that gap.
 
-### Audit Logging
+### Audit logging
 
-Every authentication attempt is logged to `SSOAuditLog` with: timestamp, IP address, username attempted, success/failure, Discord user ID (if key was valid), guild ID, account ID (if resolved), rate_limit flag, and a detail string explaining the outcome.
+Every authentication attempt is logged to `SSOAuditLog` with: timestamp, IP address, username attempted, success/failure, Discord user ID (if key was valid), guild ID, account ID (if resolved), rate_limit flag, client version, and a detail string explaining the outcome.
