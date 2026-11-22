@@ -246,3 +246,45 @@ def test_manage_partials_render_populated_tables(monkeypatch, dashboard_sso_sess
     assert 'title="key_seb"' in form_response.text
     assert "Mana Battery - Class Five" in form_response.text
     assert 'title="item_mb5"' in form_response.text
+
+
+def test_manage_account_and_character_notes(monkeypatch, dashboard_sso_session):
+    audits = []
+    notifications = []
+    monkeypatch.setattr(
+        "roboToald.api.dashboard_manage.ws_manager.notify_guild",
+        lambda guild_id, immediate=False: notifications.append((guild_id, immediate)),
+    )
+    monkeypatch.setattr("roboToald.api.dashboard_manage.sso_model.create_audit_log", lambda **kw: audits.append(kw))
+    sso.create_account(GUILD_ID, "botone", "pw")
+    sso.add_account_character(GUILD_ID, "botone", "Tank", sso.CharacterClass.Warrior)
+
+    with _client(monkeypatch) as client:
+        client.cookies.set(COOKIE_NAME, _session_cookie())
+        set_response = client.put(
+            "/admin/manage/accounts/botone/notes",
+            data={"guild_id": GUILD_ID, "csrf": CSRF, "notes": "<b>Kael</b> factioned"},
+        )
+        char_response = client.put(
+            "/admin/manage/characters/Tank",
+            data={"guild_id": GUILD_ID, "csrf": CSRF, "notes": "Char note"},
+        )
+        too_long = client.put(
+            "/admin/manage/accounts/botone/notes",
+            data={"guild_id": GUILD_ID, "csrf": CSRF, "notes": "x" * (sso.NOTES_MAX_LENGTH + 1)},
+        )
+
+    assert set_response.status_code == 200
+    assert "&lt;b&gt;Kael&lt;/b&gt; factioned" in set_response.text
+    assert "<b>Kael</b>" not in set_response.text
+    assert char_response.status_code == 200
+    assert too_long.status_code == 400
+    account = sso.get_account(GUILD_ID, "botone")
+    assert account.notes == "<b>Kael</b> factioned"
+    character = dashboard_sso_session.query(sso.SSOAccountCharacter).filter_by(name="Tank").one()
+    assert character.notes == "Char note"
+    assert [a["details"] for a in audits] == [
+        "dashboard:set account notes botone",
+        "dashboard:update character Tank",
+    ]
+    assert notifications == [(GUILD_ID, True), (GUILD_ID, True)]

@@ -194,3 +194,29 @@ def test_perform_login_auth_success_via_tag(monkeypatch):
     )
     assert r.success is True
     assert "tag" in log_calls[0]["details"]
+
+
+def test_perform_login_auth_returns_notes_for_resolved_account(monkeypatch):
+    acc = _account(real_user="owner", characters=("Other", "Raid"))
+    acc.notes = "Shared bot"
+    acc.characters[1].notes = "Kael factioned"
+    acc.real_pass = "pw"
+    monkeypatch.setattr("roboToald.api.server.sso_model.find_account_by_username", lambda *a, **k: acc)
+    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
+    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login_and_log", lambda **kw: None)
+    monkeypatch.setattr("roboToald.api.server.ws_manager.notify_guild", lambda *a, **k: None)
+    r = _perform_login_auth("sharedtag", GUILD_ID, DISCORD_UID, CLIENT_IP, None, None, auth_source="websocket")
+    assert r.success is True
+    assert r.notes == {"account": "Shared bot", "characters": {"Raid": "Kael factioned"}}
+
+
+def test_perform_login_auth_notes_none_without_notes(monkeypatch):
+    acc = _account(real_user="owner", characters=("Other",))
+    acc.real_pass = "pw"
+    monkeypatch.setattr("roboToald.api.server.sso_model.find_account_by_username", lambda *a, **k: acc)
+    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
+    monkeypatch.setattr("roboToald.api.server.sso_model.update_last_login_and_log", lambda **kw: None)
+    monkeypatch.setattr("roboToald.api.server.ws_manager.notify_guild", lambda *a, **k: None)
+    r = _perform_login_auth("owner", GUILD_ID, DISCORD_UID, CLIENT_IP, None, None, auth_source="websocket")
+    assert r.success is True
+    assert r.notes is None

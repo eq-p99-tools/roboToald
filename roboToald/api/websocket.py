@@ -55,6 +55,7 @@ def _build_character_tree_entry(char) -> dict:
         "park": char.park_location,
         "level": char.level,
         "items": items,
+        "notes": getattr(char, "notes", None) or None,
     }
     if INCLUDE_LEGACY_KEYS_ON_ACCOUNT_TREE:
         entry["keys"] = _legacy_keys_subset(items)
@@ -122,6 +123,7 @@ def build_account_tree(
             "owned": is_owner,
             "shared": is_shared,
             "group_roles": _group_roles_for_account(account, role_names_by_id),
+            "notes": getattr(account, "notes", None) or None,
         }
     return tree
 
@@ -132,7 +134,7 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
     Handles:
       - aliases/tags as sets (add/remove)
       - characters as dicts (add/remove/update with full entry)
-      - last_login as a scalar
+      - last_login, last_login_by, active_character, notes as scalars
     """
     changes: list[dict] = []
     old_keys = set(old_tree.keys())
@@ -199,7 +201,7 @@ def compute_diff(old_tree: dict, new_tree: dict) -> list[dict]:
                 fields["characters"] = char_diff
 
         # Scalar fields
-        for scalar in ("last_login", "last_login_by", "active_character"):
+        for scalar in ("last_login", "last_login_by", "active_character", "notes"):
             old_val = old_data.get(scalar)
             new_val = new_data.get(scalar)
             if old_val != new_val:

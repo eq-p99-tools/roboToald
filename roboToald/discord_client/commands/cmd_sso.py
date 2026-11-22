@@ -37,6 +37,13 @@ The Single Sign-On (SSO) system allows administrators to securely manage access 
 
 ## Alias Info
 - `/sso alias list` - List all aliases
+
+## Login Notes
+Accounts and characters can carry short notes (for example "kael factioned"). When you log in to an account that has notes, the login proxy shows them in an always-on-top window until you acknowledge it. The login is never held up.
+- Notes appear in `/sso account show` and `/sso character list`.
+- Account owners edit notes with `/sso_owner account notes_set|notes_clear` and `/sso_owner character notes_set|notes_clear`.
+- Notes are plain text and visible to everyone with access to the account. Do not put secrets in them.
+- The notes window cannot appear over EverQuest in exclusive fullscreen. Use windowed mode (`WindowedMode=TRUE` in `eqclient.ini`) to see it.
 """
 
 ADMIN_HELP_TEXT = """
@@ -78,6 +85,12 @@ For example, it might be a good idea to alias accounts with their character name
 Zone keys (Sebilis, Veeshan's Peak, Sleeper's Tomb) and tracked inventory items can be set per character for the login proxy UI and optional dynamic-tag filtering.
 
 - `/sso_admin character items <character_name> <item> [status] [stack_count]` - Set a zone key or boolean item (Yes/No/Unknown), or a stack count for stack-tracked items (Lizard Blood Potion, Pearl, Peridot, Mana Battery Class Three/Four/Five) (use **stack_count**, omit for Unknown)
+
+## Login Notes
+Short plain-text notes (max 500 characters) on an account or character. The login proxy shows them in an always-on-top window on every login to that account (it never blocks the login). Notes are visible to everyone with access to the account. Owners can edit their own accounts' notes with `/sso_owner`.
+
+- `/sso_admin account notes_set <username> <text>` / `/sso_admin account notes_clear <username>` - Set or clear account notes
+- `/sso_admin character notes_set <character_name> <text>` / `/sso_admin character notes_clear <character_name>` - Set or clear character notes
 
 ## User Access Revocation
 Revoking access to a user will prevent the user from logging in to otherwise authorized accounts via the P99LoginProxy Application.
@@ -169,7 +182,31 @@ def _account_list_entry(account: sso_model.SSOAccount) -> str:
             for s in sorted(account.shares, key=lambda s: s.shared_with_discord_user_id)
         )
         lines.append(f"  →  🤝 Direct shares: {shares}")
+    if getattr(account, "notes", None):
+        lines.append(f"  →  📝 Notes: {account.notes}")
+    for c in sorted(account.characters or [], key=lambda c: c.name):
+        if getattr(c, "notes", None):
+            lines.append(f"  →  📝 {c.name}: {c.notes}")
     return "\n".join(lines)
+
+
+def _character_notes_suffix(c: sso_model.SSOAccountCharacter) -> str:
+    notes = getattr(c, "notes", None)
+    return f"\n     📝 {notes}" if notes else ""
+
+
+def _audit_notes_change(
+    inter: disnake.ApplicationCommandInteraction, username: str, account_id: int | None, details: str
+) -> None:
+    sso_model.create_audit_log(
+        username=username,
+        success=True,
+        discord_user_id=inter.user.id,
+        guild_id=inter.guild_id,
+        account_id=account_id,
+        details=details,
+        rate_limit=False,
+    )
 
 
 def _autocomplete_visibility(inter: disnake.ApplicationCommandInteraction) -> tuple[int, set[int], bool]:
@@ -907,6 +944,25 @@ class SSOCommands(commands.Cog):
                 content=f"⚠️🤖🗂️ **Account/group mapping not found:** `{account}` : `{group_name}`",
                 ephemeral=True,
             )
+
+    @admin_account.sub_command(description="Set login notes on an account (shown by the proxy)", name="notes_set")
+    async def account_notes_set(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=account_autocomplete),
+        text: str = commands.Param(
+            description="Plain-text notes, visible to everyone with access", max_length=sso_model.NOTES_MAX_LENGTH
+        ),
+    ):
+        await self._apply_account_notes(inter, username, text)
+
+    @admin_account.sub_command(description="Clear login notes on an account", name="notes_clear")
+    async def account_notes_clear(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=account_autocomplete),
+    ):
+        await self._apply_account_notes(inter, username, None)
 
     @sso_admin.sub_command_group(description="Direct user-to-user shares (admin override)", name="share")
     async def admin_share(self, inter: disnake.ApplicationCommandInteraction):
@@ -2144,6 +2200,25 @@ class SSOCommands(commands.Cog):
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
+    @character_admin.sub_command(description="Set login notes on a character (shown by the proxy)", name="notes_set")
+    async def character_notes_set(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=character_autocomplete),
+        text: str = commands.Param(
+            description="Plain-text notes, visible to everyone with access", max_length=sso_model.NOTES_MAX_LENGTH
+        ),
+    ):
+        await self._apply_character_notes(inter, character_name, text)
+
+    @character_admin.sub_command(description="Clear login notes on a character", name="notes_clear")
+    async def character_notes_clear(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=character_autocomplete),
+    ):
+        await self._apply_character_notes(inter, character_name, None)
+
     @character.sub_command(description="List all characters for an account", name="list")
     async def character_list(
         self,
@@ -2163,6 +2238,7 @@ class SSOCommands(commands.Cog):
                 desc = "\n".join(
                     f" * `{c.name}` ({c.klass.value}){_character_key_list_suffix(c)}"
                     f"{'' if username else f' on `{c.account.real_user}`'}"
+                    f"{_character_notes_suffix(c)}"
                     for c in sorted(characters, key=lambda c: (c.account.real_user, c.name))
                 )
             else:
@@ -2318,6 +2394,25 @@ class SSOCommands(commands.Cog):
         await inter.send(content=f"🗑️🤖🗂️ **Removed account** `{resolved.real_user}` from group `{group_name}`")
         ws_manager.notify_guild(inter.guild_id, immediate=True)
 
+    @owner_account.sub_command(description="Set login notes on one of your accounts", name="notes_set")
+    async def owner_account_notes_set(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+        text: str = commands.Param(
+            description="Plain-text notes, visible to everyone with access", max_length=sso_model.NOTES_MAX_LENGTH
+        ),
+    ):
+        await self._apply_account_notes(inter, username, text)
+
+    @owner_account.sub_command(description="Clear login notes on one of your accounts", name="notes_clear")
+    async def owner_account_notes_clear(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        username: str = commands.Param(description="Account username", autocomplete=owned_account_autocomplete),
+    ):
+        await self._apply_account_notes(inter, username, None)
+
     @sso_owner.sub_command_group(description="Tag commands for your accounts", name="tag")
     async def owner_tag(self, inter: disnake.ApplicationCommandInteraction):
         pass
@@ -2465,6 +2560,57 @@ class SSOCommands(commands.Cog):
             return None
         return match
 
+    async def _apply_account_notes(
+        self, inter: disnake.ApplicationCommandInteraction, username: str, text: str | None
+    ) -> None:
+        account = await _resolve_manageable_account(inter, username)
+        if account is None:
+            return
+        try:
+            updated = sso_model.set_account_notes(inter.guild_id, account.real_user, text)
+        except ValueError as e:
+            await inter.send(content=f"⚠️📝 {e}", ephemeral=True)
+            return
+        except sso_model.SSOAccountNotFoundError:
+            await inter.send(content=f"⚠️🤖 **Account not found:** `{username}`", ephemeral=True)
+            return
+        action = "set" if updated.notes else "cleared"
+        _audit_notes_change(inter, updated.real_user, updated.id, f"discord:{action} account notes")
+        if updated.notes:
+            quoted = updated.notes.replace("\n", "\n> ")
+            content = f"📝🤖 **Notes set** on account `{updated.real_user}`:\n> {quoted}"
+        else:
+            content = f"🗑️📝 **Notes cleared** on account `{updated.real_user}`"
+        await inter.send(content=content, ephemeral=True)
+        await _send_audit_trail(inter, f"📝🤖 **Notes {action}** on account `{updated.real_user}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    async def _apply_character_notes(
+        self, inter: disnake.ApplicationCommandInteraction, character_name: str, text: str | None
+    ) -> None:
+        char = await self._resolve_manageable_character(inter, character_name)
+        if char is None:
+            return
+        try:
+            found = sso_model.set_character_notes(inter.guild_id, char.name, text)
+        except ValueError as e:
+            await inter.send(content=f"⚠️📝 {e}", ephemeral=True)
+            return
+        if not found:
+            await inter.send(content=f"⚠️🧍 **Character not found:** `{character_name}`", ephemeral=True)
+            return
+        notes = sso_model.normalize_notes(text)
+        action = "set" if notes else "cleared"
+        _audit_notes_change(inter, char.name, char.account_id, f"discord:{action} character notes {char.name}")
+        if notes:
+            quoted = notes.replace("\n", "\n> ")
+            content = f"📝🧍 **Notes set** on character `{char.name}`:\n> {quoted}"
+        else:
+            content = f"🗑️📝 **Notes cleared** on character `{char.name}`"
+        await inter.send(content=content, ephemeral=True)
+        await _send_audit_trail(inter, f"📝🧍 **Notes {action}** on character `{char.name}`")
+        ws_manager.notify_guild(inter.guild_id, immediate=True)
+
     @owner_character.sub_command(description="Remove a character from one of your accounts", name="remove")
     async def owner_character_remove(
         self,
@@ -2553,6 +2699,25 @@ class SSOCommands(commands.Cog):
             return
         await inter.send(content=message)
         ws_manager.notify_guild(inter.guild_id, immediate=True)
+
+    @owner_character.sub_command(description="Set login notes on one of your characters", name="notes_set")
+    async def owner_character_notes_set(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=owned_character_autocomplete),
+        text: str = commands.Param(
+            description="Plain-text notes, visible to everyone with access", max_length=sso_model.NOTES_MAX_LENGTH
+        ),
+    ):
+        await self._apply_character_notes(inter, character_name, text)
+
+    @owner_character.sub_command(description="Clear login notes on one of your characters", name="notes_clear")
+    async def owner_character_notes_clear(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        character_name: str = commands.Param(description="Character name", autocomplete=owned_character_autocomplete),
+    ):
+        await self._apply_character_notes(inter, character_name, None)
 
     @sso_owner.sub_command_group(description="Direct user-to-user shares for your accounts", name="share")
     async def owner_share(self, inter: disnake.ApplicationCommandInteraction):

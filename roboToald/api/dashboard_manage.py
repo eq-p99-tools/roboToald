@@ -264,6 +264,13 @@ def _parse_bool(value: str | None) -> bool | None:
     raise DashboardManageError("Boolean values must be true, false, or unset")
 
 
+def _parse_notes(value: str | None) -> str | None:
+    try:
+        return sso_model.normalize_notes(value)
+    except ValueError as exc:
+        raise DashboardManageError(str(exc)) from exc
+
+
 def _parse_class(value: str | None) -> sso_model.CharacterClass | None:
     if not value:
         return None
@@ -383,6 +390,7 @@ def _account_rows(discord_client, guild_id: int) -> list[dict[str, Any]]:
                 "shares": sorted(account.shares, key=lambda s: s.shared_with_discord_user_id),
                 "last_login_iso": _format_last_login(account.last_login),
                 "last_login_by": account.last_login_by or "",
+                "notes": account.notes or "",
             }
         )
     return sorted(rows, key=lambda r: r["real_user"])
@@ -595,7 +603,10 @@ async def create_account(request: Request):
         if not real_user or not real_pass:
             raise DashboardManageError("Account username and password are required")
         owner_id = _parse_int(form.get("owner_discord_user_id"), "owner_discord_user_id")
+        notes = _parse_notes(form.get("notes"))
         sso_model.create_account(guild_id, real_user, real_pass, form.get("group_name") or None, owner_id)
+        if notes:
+            sso_model.set_account_notes(guild_id, real_user, notes)
         _notify_and_audit(session, guild_id, real_user.lower(), f"dashboard:create account {real_user.lower()}")
         return _template(
             request,
@@ -631,6 +642,29 @@ async def update_account(request: Request, real_user: str):
             _guild_context(request, session, "accounts", "Account updated", selected_guild_id=guild_id),
         )
     except (DashboardManageError, sso_model.SSOAccountNotFoundError) as exc:
+        return _handle_error(request, session, "accounts", exc)
+
+
+@router.put("/accounts/{real_user}/notes", response_class=HTMLResponse)
+async def update_account_notes(request: Request, real_user: str):
+    session = _get_authenticated_session(request)
+    if not session:
+        return Response(status_code=401)
+    try:
+        form = await _require_mutation(request, session)
+        guild_id = _require_guild(session, form.get("guild_id"))
+        notes = _parse_notes(form.get("notes"))
+        account = sso_model.set_account_notes(guild_id, real_user, notes)
+        action = "set" if notes else "clear"
+        _notify_and_audit(session, guild_id, account.real_user, f"dashboard:{action} account notes {account.real_user}")
+        return _template(
+            request,
+            "accounts.html",
+            _guild_context(request, session, "accounts", "Account notes updated", selected_guild_id=guild_id),
+        )
+    except (DashboardManageError, sso_model.SSOAccountNotFoundError) as exc:
+        if isinstance(exc, sso_model.SSOAccountNotFoundError):
+            exc = DashboardManageError(f"Account not found: {real_user}", status_code=404)
         return _handle_error(request, session, "accounts", exc)
 
 
@@ -905,10 +939,13 @@ async def create_character(request: Request):
         klass = _parse_class(form.get("klass"))
         if not real_user or not name or klass is None:
             raise DashboardManageError("Account, character name, and class are required")
+        notes = _parse_notes(form.get("notes"))
         sso_model.add_account_character(guild_id, real_user, name, klass)
         kwargs = _character_update_kwargs(form)
         if kwargs:
             sso_model.update_account_character(guild_id, name, **kwargs)
+        if notes:
+            sso_model.set_character_notes(guild_id, name, notes)
         _notify_and_audit(session, guild_id, name, f"dashboard:create character {name}")
         return _template(
             request,
@@ -952,7 +989,11 @@ async def update_character(request: Request, name: str):
     try:
         form = await _require_mutation(request, session)
         guild_id = _require_guild(session, form.get("guild_id"))
-        if not sso_model.update_account_character(guild_id, name, **_character_update_kwargs(form)):
+        kwargs = _character_update_kwargs(form)
+        notes_found = False
+        if "notes" in form:
+            notes_found = sso_model.set_character_notes(guild_id, name, _parse_notes(form.get("notes")))
+        if not sso_model.update_account_character(guild_id, name, **kwargs) and not notes_found:
             raise DashboardManageError(f"Character not found: {name}", status_code=404)
         _notify_and_audit(session, guild_id, name, f"dashboard:update character {name}")
         return _template(
