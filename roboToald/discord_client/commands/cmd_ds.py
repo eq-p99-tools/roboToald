@@ -238,10 +238,7 @@ async def _execute_ds_tod(inter, is_quake: bool, *, via_channel: bool = False) -
 
     recent = recent_pop_minutes(now_time)
     if recent is not None:
-        message = (
-            f"Someone just ran the ToD command {recent} "
-            f"minutes ago. Please try again after 5 minutes."
-        )
+        message = f"Someone just ran the ToD command {recent} minutes ago. Please try again after 5 minutes."
         if via_channel:
             await inter.followup.send(message, ephemeral=True)
         else:
