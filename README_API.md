@@ -447,6 +447,27 @@ A parsed export is a full snapshot: every tracked `key_*` / `item_*` column is s
 
 RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
 
+#### Update Spellbook
+
+Replaces a character's stored spellbook from a raw EQ spellbook export (`/outputfile spellbook`, which writes `<Char>-Spellbook.txt`). The login proxy sends the whole file whenever it changes. Store only: nothing is pushed to clients and `last_login` / sessions are not touched.
+
+```json
+{
+  "type": "update_spellbook",
+  "character_name": "CharName",
+  "spellbook": "44\tShock of Swords\n4\tGate\n12\tBind Affinity\n"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `character_name` | `string` | yes | Character the export belongs to |
+| `spellbook` | `string` | yes | Raw export text: one `<level><TAB><spell name>` line per scribed spell, unsorted, no header (spaces are accepted in place of the tab) |
+
+An accepted upload deletes the character's `SSOCharacterSpell` rows, inserts one row per spell (`spell_name`, `level`; duplicate names collapse), and sets `SSOAccountCharacter.spellbook_updated_at`. Blank text, text over 131072 bytes, or text with any non-blank line that is not a level (1–255) followed by a name is ignored and the stored spellbook stays unchanged (see `roboToald/spellbook_parser.py`).
+
+RBAC is checked: the message is silently ignored if the user doesn't have access to the character's account.
+
 #### Login Auth
 
 Performs the same credential lookup as `POST /auth` but over the existing WebSocket connection, avoiding a new TCP/TLS handshake per login. The access key, rate limiting, revocation, client version, and client settings are already validated at WebSocket connection time. Each `login_auth` request also re-checks that `enable_sso` is still true for the guild. The server then performs account resolution, RBAC check, and audit logging.
