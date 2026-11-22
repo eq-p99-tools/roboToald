@@ -1244,7 +1244,15 @@ async def _ws_handle_login_auth(conn: ClientConnection, msg: dict):
     """Process a login_auth request: resolve account, RBAC check, return credentials."""
     request_id = msg.get("request_id")
     username = msg.get("username")
-    if not request_id or not username:
+    if not isinstance(request_id, str) or not request_id:
+        # A reply needs a string request_id (schema) and could not be matched without one.
+        logger.warning(
+            "login_auth without a usable request_id ignored | guild_id=%s user_id=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+        )
+        return
+    if not username:
         await conn.websocket.send_json(
             {
                 "type": "login_auth_response",
