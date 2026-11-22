@@ -8,7 +8,7 @@ RoboToald is a Discord bot for EverQuest guild management. It provides single si
 
 The SSO system lets guild members log in to shared EverQuest accounts through the [P99 Login Proxy](https://p99loginproxy.net) without knowing the real credentials. Access is controlled by Discord roles.
 
-**Backend protocol (for implementers / agents):** wire schema [`schemas/ws-protocol.schema.json`](schemas/ws-protocol.schema.json) (normative) · implementer guide [`docs/backend-protocol.md`](docs/backend-protocol.md) (additive) · narrative API [`README_API.md`](README_API.md)
+**Backend protocol (for implementers / agents):** lives in the P99 Login Proxy repo: wire schema [`schemas/ws-protocol.schema.json`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/schemas/ws-protocol.schema.json) (normative) · implementer guide [`docs/backend-protocol.md`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/docs/backend-protocol.md). roboToald's own server notes: [`README_API.md`](README_API.md)
 
 ### Core Concepts
 

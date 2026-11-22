@@ -1,11 +1,11 @@
-"""Validate the WebSocket protocol schema against fixtures and live message shapes.
+"""Validate this server against the WebSocket protocol schema owned by p99-login-proxy.
 
-The schema at ``schemas/ws-protocol.schema.json`` is the normative machine-readable
-wire contract for the WebSocket channel spoken by ``p99-login-proxy``. The proxy does
-not vendor or validate the schema at runtime; this test suite and
-``docs/backend-protocol.md`` (additive implementer guide) keep the contract honest:
+The normative wire contract (``schemas/ws-protocol.schema.json`` and
+``schemas/fixtures/``) lives only in p99-login-proxy. These tests load it from a
+proxy checkout: the directory in ``P99_LOGIN_PROXY_DIR``, else a ``p99-login-proxy``
+checkout next to this repo. They are skipped when neither exists.
 
-* every fixture under ``schemas/fixtures/`` must validate against the schema, and
+* every fixture must validate against the schema, and
 * messages built from the real server helpers (``build_account_tree`` /
   ``compute_diff``) must validate when wrapped in their ``full_state`` / ``delta``
   envelopes -- so a change to the emitted shape trips this test.
@@ -14,6 +14,7 @@ not vendor or validate the schema at runtime; this test suite and
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,8 +23,22 @@ import pytest
 
 from roboToald.api.websocket import build_account_tree, compute_diff
 
-SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "ws-protocol.schema.json"
-FIXTURES_DIR = SCHEMA_PATH.parent / "fixtures"
+
+def _proxy_schemas_dir() -> Path:
+    override = os.environ.get("P99_LOGIN_PROXY_DIR")
+    root = Path(override) if override else Path(__file__).resolve().parents[2] / "p99-login-proxy"
+    return root / "schemas"
+
+
+PROXY_SCHEMAS_DIR = _proxy_schemas_dir()
+SCHEMA_PATH = PROXY_SCHEMAS_DIR / "ws-protocol.schema.json"
+FIXTURES_DIR = PROXY_SCHEMAS_DIR / "fixtures"
+
+if not SCHEMA_PATH.is_file():
+    pytest.skip(
+        f"p99-login-proxy schema not found at {SCHEMA_PATH}; set P99_LOGIN_PROXY_DIR to a proxy checkout",
+        allow_module_level=True,
+    )
 
 
 @pytest.fixture(scope="module")

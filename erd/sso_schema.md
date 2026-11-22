@@ -383,7 +383,7 @@ Records every API authentication attempt for security monitoring.
 | `rate_limit` | Boolean | default `True` | Set to `False` when admin clears rate limit |
 | `details` | String(255) | nullable | Failure reason or success details |
 
-Rate limiting counts failed attempts for an IP where `success` is false and `rate_limit != False` (`count_failed_attempts`), within `rate_limit_window_minutes` (fallback 30). Threshold is `rate_limit_max_attempts` (config fallback 10). See [`docs/backend-protocol.md`](../docs/backend-protocol.md) and [`README_API.md`](../README_API.md).
+Rate limiting counts failed attempts for an IP where `success` is false and `rate_limit != False` (`count_failed_attempts`), within `rate_limit_window_minutes` (fallback 30). Threshold is `rate_limit_max_attempts` (config fallback 10). See [`README_API.md`](../README_API.md) and the protocol guide in p99-login-proxy ([`docs/backend-protocol.md`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/docs/backend-protocol.md)).
 
 ## RBAC Access Model
 

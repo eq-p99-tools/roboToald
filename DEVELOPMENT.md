@@ -222,12 +222,13 @@ Schema documentation with Mermaid ER diagrams:
 
 ## API
 
-See [README_API.md](README_API.md) for the full API reference (REST + WebSocket).
+Message shapes, error codes and the implementer guide live in the P99 Login Proxy repo: [`docs/backend-protocol.md`](https://github.com/eq-p99-tools/p99-login-proxy/blob/rust/docs/backend-protocol.md) and [`schemas/`](https://github.com/eq-p99-tools/p99-login-proxy/tree/rust/schemas). See [README_API.md](README_API.md) for how roboToald implements and operates the API.
 
 ## Contributing
 
 - When changing database models, create an Alembic migration: `alembic revision --autogenerate -m "description"`
 - When changing models, update the corresponding schema doc in `erd/`.
-- When changing API endpoints or the WebSocket protocol, update `README_API.md`.
+- When changing the WebSocket protocol, change `schemas/ws-protocol.schema.json`, `schemas/fixtures/` and `docs/backend-protocol.md` in p99-login-proxy (`rust` branch). This repo keeps no copy: `tests/test_ws_protocol_schema.py` loads the schema and fixtures from a proxy checkout given by `P99_LOGIN_PROXY_DIR`, or a sibling `p99-login-proxy` directory, and skips when neither exists. CI checks out p99-login-proxy `rust` for it.
+- When changing API endpoints, handlers or their configuration, update `README_API.md`.
 - When adding or changing Discord commands, update the command reference in `README.md`.
 - When changing configuration keys, update the config tables in this file.
