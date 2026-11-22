@@ -115,7 +115,7 @@ Bursts of `notify_guild` triggers (heartbeats, location and inventory updates) a
 | Message | Handler effect |
 |---|---|
 | `heartbeat` | `heartbeat_and_session`: updates `SSOAccount.last_login` / `last_login_by`, creates or extends `SSOCharacterSession`, expires the user's sessions on other accounts |
-| `update_location` | Same as `heartbeat`, then `update_account_character` with the present fields; `items` / `keys` merged by `merge_keys_and_items_message` and mapped by `merged_wires_to_character_kwargs`; `mark_key_from_park_zone` may set a key from the park zone |
+| `update_location` | Same as `heartbeat`, then `update_account_character` with the valid fields; `items` / `keys` merged by `merge_keys_and_items_message` and mapped by `merged_wires_to_character_kwargs`; `mark_key_from_park_zone` may set a key from the park zone. Invalid values are dropped and leave the stored value unchanged: locations must be non-blank strings of at most `LOCATION_MAX_LEN` (64) characters, `level` an integer 1–`LEVEL_MAX` (255), key and flag items booleans, and count items integers 0–`ITEM_COUNT_MAX` (100,000) |
 | `update_inventory` | `parse_inventory_text` (`roboToald/inventory_parser.py`; tracked names in `INVENTORY_TRACKED_ITEMS` / `INVENTORY_COUNTED_ITEMS`, cap `MAX_INVENTORY_TEXT_BYTES`) then `update_account_character` with the full snapshot. Does not touch `last_login` or sessions. |
 | `update_spellbook` | `parse_spellbook_text` (`roboToald/spellbook_parser.py`; caps `MAX_SPELLBOOK_TEXT_BYTES`, `MAX_SPELLBOOK_ENTRIES`, `MAX_SPELL_LEVEL`, `SPELL_NAME_MAX_LEN`) then `replace_character_spells`: deletes the character's `SSOCharacterSpell` rows, inserts one per spell (`spell_name`, `level`), sets `SSOAccountCharacter.spellbook_updated_at` |
 | `fte` / `mob_death` | Skew check, reporter gate, `_tod_dedup`, then a post to the guild's `tod_channel_id` (below) |
@@ -128,6 +128,8 @@ Any other message type is ignored without a reply, including `faction_hits`: rob
 #### Raid TOD relay (`fte`, `mob_death`)
 
 `_verify_eq_log_time_skew` parses `eq_log_time` and compares it with the API host clock (naive local time): more than 24 hours apart is rejected; otherwise only minute and second are compared around the hour and must be within 60 seconds. Failures are dropped with a warning in the API log.
+
+Names are cleaned by `_clean_log_name`: control and invisible characters are dropped and whitespace (including newlines) collapses to single spaces, so a name cannot add lines to the post. Names longer than `LOG_NAME_MAX_LEN` (64) or not strings drop the message. Every post is sent with `allowed_mentions` set to none, so `@everyone`, role or user mentions in a name never ping.
 
 The reporter gate (`user_has_any_character_access`) requires the connected user to have access to at least one SSO character in the guild; `character_name` itself is logged but not access-checked, so local-only characters can report.
 
@@ -155,6 +157,9 @@ For each qualifying Discord user, the bot looks up their EQDKP characters (cache
 
 The suggestion message is posted to the event channel with **Apply** and **Ignore** buttons. The +lines are formatted as a copy-pasteable code block so a raid lead can also paste a subset manually. Clicking **Apply** inserts the Attendee records (with full EQDKP validation and deduplication matching `+Player` manual adds). Clicking **Ignore** dismisses the suggestion.
 
+### Message size
+
+uvicorn refuses WebSocket messages larger than `WS_MAX_MESSAGE_BYTES` (1,114,112 bytes, about 1.06 MiB) before they are parsed. The largest legitimate message is an `update_inventory` with 512 KiB of export text, which JSON can grow to twice that because tabs and newlines are escaped as two bytes.
 ### Ping loop
 
 `_ws_ping_loop` sends `{"type": "ping"}` every `WS_PING_INTERVAL` (30) seconds after a random initial delay, so connections opened together (for example after a restart) do not ping on the same tick.

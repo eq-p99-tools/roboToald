@@ -593,17 +593,28 @@ def merge_keys_and_items_message(msg: dict) -> dict:
 
 
 _INT_ITEM_ATTRS = frozenset({"item_lizard", "item_pearl", "item_peridot", "item_mb3", "item_mb4", "item_mb5"})
+ITEM_COUNT_MAX = 100_000
 
 
 def merged_wires_to_character_kwargs(merged: dict) -> dict:
-    """Map merged wire dict to keyword names accepted by :func:`update_account_character`."""
+    """Map merged wire dict to keyword names accepted by :func:`update_account_character`.
+
+    ``None`` passes through (leave unchanged). Values of the wrong type, and
+    counts outside ``0..ITEM_COUNT_MAX``, are dropped.
+    """
     kw = {}
     for wire, attr in WIRE_KEY_TO_ATTR.items():
-        if wire in merged:
-            val = merged[wire]
-            if attr in _INT_ITEM_ATTRS and isinstance(val, bool):
+        if wire not in merged:
+            continue
+        val = merged[wire]
+        if attr in _INT_ITEM_ATTRS:
+            if isinstance(val, bool):
                 val = 1 if val else 0
-            kw[attr] = val
+            elif val is not None and not (isinstance(val, int) and 0 <= val <= ITEM_COUNT_MAX):
+                continue
+        elif val is not None and not isinstance(val, bool):
+            continue
+        kw[attr] = val
     return kw
 
 

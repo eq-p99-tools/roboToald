@@ -271,3 +271,70 @@ def test_mob_death_drops_when_required_field_missing(
     asyncio.run(server._ws_handle_mob_death(conn, msg))
     assert capture_tod == []
     assert capture_auto_attendance == []
+
+
+# ---- relayed text safety ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("  Lord   Nagafen ", "Lord Nagafen"),
+        ("Vox\n!tod Trakanon, 1/1 00:00:00", "Vox !tod Trakanon, 1/1 00:00:00"),
+        ("Zlandi\u200b\u0007", "Zlandi"),
+        ("x" * server.LOG_NAME_MAX_LEN, "x" * server.LOG_NAME_MAX_LEN),
+        ("x" * (server.LOG_NAME_MAX_LEN + 1), ""),
+        (123, ""),
+        (None, ""),
+    ],
+)
+def test_clean_log_name(raw, expected):
+    assert server._clean_log_name(raw) == expected
+
+
+@freeze_time("2026-03-06T11:13:03")
+def test_mob_death_posts_cleaned_single_line_text(reset_dedup, capture_tod, capture_auto_attendance):
+    conn = _make_conn(last_sent_state=_HAS_CHAR_STATE)
+    msg = {
+        "character_name": "Toald",
+        "mob": "Vox\n@everyone",
+        "eq_log_time": "Fri Mar 06 11:13:03 2026",
+    }
+    asyncio.run(server._ws_handle_mob_death(conn, msg))
+    assert len(capture_tod) == 1
+    _guild, text = capture_tod[0]
+    assert "\n" not in text
+    assert text.startswith("!tod Vox @everyone, ")
+    assert capture_auto_attendance == [(1, "Vox @everyone")]
+
+
+@freeze_time("2026-03-06T11:13:03")
+@pytest.mark.parametrize("field", ["mob", "player", "character_name"])
+def test_fte_with_oversized_or_non_string_name_is_dropped(reset_dedup, capture_tod, field):
+    conn = _make_conn(last_sent_state=_HAS_CHAR_STATE)
+    msg = {
+        "character_name": "Toald",
+        "mob": "Cekenar",
+        "player": "Toald",
+        "eq_log_time": "Fri Mar 06 11:13:03 2026",
+    }
+    for bad in ("x" * (server.LOG_NAME_MAX_LEN + 1), 42):
+        asyncio.run(server._ws_handle_fte(conn, {**msg, field: bad}))
+    assert capture_tod == []
+
+
+def test_tod_channel_send_disables_all_mentions(monkeypatch):
+    channel = MagicMock()
+    guild = MagicMock()
+    guild.get_channel.return_value = channel
+    discord_client = MagicMock()
+    discord_client.get_guild.return_value = guild
+    monkeypatch.setattr(server.ws_manager, "_discord_client", discord_client)
+    monkeypatch.setattr(server.config, "get_tod_channel_id", lambda _gid: 555)
+    monkeypatch.setattr(server.asyncio, "run_coroutine_threadsafe", lambda coro, loop: coro)
+
+    server._send_to_tod_channel(1, "!tod @everyone, 3/6 11:13:03")
+
+    _args, kwargs = channel.send.call_args
+    mentions = kwargs["allowed_mentions"]
+    assert (mentions.everyone, mentions.users, mentions.roles, mentions.replied_user) == (False, False, False, False)

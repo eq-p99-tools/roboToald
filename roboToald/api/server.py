@@ -11,11 +11,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Union
 import threading
+import unicodedata
 from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
+import disnake
 from disnake.ext import commands
 from fastapi import FastAPI, HTTPException, status, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
@@ -42,6 +44,11 @@ EQ_LOG_TIME_FMT = "%a %b %d %H:%M:%S %Y"
 # US Eastern for ``!tod`` display (observes DST; colloquially "EST" for guild-facing times).
 EST = ZoneInfo("America/New_York")
 _tod_recent: dict[tuple[int, str, str], float] = {}
+
+# The largest legitimate message is update_inventory: up to 512 KiB of export
+# text, which JSON can grow to twice that (tabs and newlines are escaped as two
+# bytes each), plus the envelope. Larger frames are refused before parsing.
+WS_MAX_MESSAGE_BYTES = 2 * MAX_INVENTORY_TEXT_BYTES + 64 * 1024
 
 
 def _tod_dedup(guild_id: int, event_type: str, mob: str) -> bool:
@@ -158,7 +165,29 @@ def _send_to_tod_channel(guild_id: int, text: str):
     channel = guild.get_channel(tod_ch_id) if guild else None
     if not channel:
         return
-    asyncio.run_coroutine_threadsafe(channel.send(text), discord_client.loop)
+    # The text carries client-reported names; never let it ping anyone.
+    asyncio.run_coroutine_threadsafe(
+        channel.send(text, allowed_mentions=disnake.AllowedMentions.none()), discord_client.loop
+    )
+
+
+LOG_NAME_MAX_LEN = 64
+
+
+def _clean_log_name(raw) -> str:
+    """A mob, player or character name from a relayed log line, made safe to post.
+
+    Drops control and invisible formatting characters and collapses whitespace,
+    so a name cannot add lines to the message. Returns ``""`` (reject) for
+    non-strings and names longer than ``LOG_NAME_MAX_LEN``.
+    """
+    if not isinstance(raw, str):
+        return ""
+    visible = "".join(
+        " " if ch.isspace() else ch for ch in raw if ch.isspace() or not unicodedata.category(ch).startswith("C")
+    )
+    name = " ".join(visible.split())
+    return name if len(name) <= LOG_NAME_MAX_LEN else ""
 
 
 def _schedule_auto_attendance(guild_id: int, mob_name: str) -> None:
@@ -271,6 +300,7 @@ def run_api_server(discord_client, certfile, keyfile, host, port):
             "log_config": log_config,
             "proxy_headers": True,
             "forwarded_allow_ips": config.FORWARDED_ALLOW_IPS,
+            "ws_max_size": WS_MAX_MESSAGE_BYTES,
         }
 
         # Add SSL parameters if certificates are provided
@@ -994,6 +1024,25 @@ async def _ws_handle_update_spellbook(conn: ClientConnection, msg: dict):
         )
 
 
+LOCATION_MAX_LEN = 64
+LEVEL_MAX = 255
+
+
+def _location_value(raw) -> str | None:
+    """A zone key from ``update_location``, or ``None`` (leave unchanged) when it
+    is not a non-blank string of at most ``LOCATION_MAX_LEN`` characters."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value if value and len(value) <= LOCATION_MAX_LEN else None
+
+
+def _level_value(raw) -> int | None:
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw if 1 <= raw <= LEVEL_MAX else None
+
+
 async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
     """Process an update_location message: update character, then push delta."""
     character_name = msg.get("character_name")
@@ -1012,18 +1061,19 @@ async def _ws_handle_update_location(conn: ClientConnection, msg: dict):
         sso_model.heartbeat_and_session(
             account.id, conn.guild_id, character_name, conn.discord_user_id, login_by=login_name
         )
+        park_location = _location_value(msg.get("park_location"))
         kw = {
             "guild_id": conn.guild_id,
             "name": character_name,
-            "bind_location": msg.get("bind_location"),
-            "park_location": msg.get("park_location"),
-            "level": msg.get("level"),
+            "bind_location": _location_value(msg.get("bind_location")),
+            "park_location": park_location,
+            "level": _level_value(msg.get("level")),
         }
         merged = sso_model.merge_keys_and_items_message(msg)
         if merged:
             kw.update(sso_model.merged_wires_to_character_kwargs(merged))
         character_changed = sso_model.update_account_character(**kw)
-        key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, msg.get("park_location"))
+        key_marked = sso_model.mark_key_from_park_zone(conn.guild_id, character_name, park_location)
         return character_changed or key_marked
 
     try:
@@ -1047,10 +1097,11 @@ async def _ws_handle_fte(conn: ClientConnection, msg: dict):
     audit but no longer required to match a known account, so local-only
     characters can spot FTEs.
     """
-    character_name = msg.get("character_name", "").strip()
-    mob = msg.get("mob", "").strip()
-    player = msg.get("player", "").strip()
-    eq_log_time = msg.get("eq_log_time", "").strip()
+    character_name = _clean_log_name(msg.get("character_name"))
+    mob = _clean_log_name(msg.get("mob"))
+    player = _clean_log_name(msg.get("player"))
+    eq_log_time = msg.get("eq_log_time")
+    eq_log_time = eq_log_time.strip() if isinstance(eq_log_time, str) else ""
     if not character_name or not mob or not player or not eq_log_time:
         return
     parsed_log = _verify_eq_log_time_skew(eq_log_time, "fte", conn.guild_id)
@@ -1087,9 +1138,10 @@ async def _ws_handle_mob_death(conn: ClientConnection, msg: dict):
     audit but no longer required to match a known account, so local-only
     characters can record raid-target kills.
     """
-    character_name = msg.get("character_name", "").strip()
-    mob = msg.get("mob", "").strip()
-    eq_log_time = msg.get("eq_log_time", "").strip()
+    character_name = _clean_log_name(msg.get("character_name"))
+    mob = _clean_log_name(msg.get("mob"))
+    eq_log_time = msg.get("eq_log_time")
+    eq_log_time = eq_log_time.strip() if isinstance(eq_log_time, str) else ""
     if not character_name or not mob or not eq_log_time:
         return
     parsed_log = _verify_eq_log_time_skew(eq_log_time, "mob_death", conn.guild_id)

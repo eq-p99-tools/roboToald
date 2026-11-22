@@ -417,6 +417,90 @@ def test_ws_update_location_updates_character(client, monkeypatch):
     assert uac_calls[0]["key_st"] is False
 
 
+def test_ws_update_location_drops_invalid_fields(client, monkeypatch):
+    from types import SimpleNamespace
+
+    _patch_ws_auth_ok(monkeypatch)
+    acc = SimpleNamespace(id=3, real_user="u")
+    monkeypatch.setattr("roboToald.api.server.sso_model.find_account_by_character", lambda g, n: acc)
+    monkeypatch.setattr("roboToald.api.server.user_has_access_to_accounts", lambda *a, **k: [acc])
+    monkeypatch.setattr("roboToald.api.server.sso_model.heartbeat_and_session", lambda *a, **k: None)
+    uac_calls: list[dict] = []
+    monkeypatch.setattr(
+        "roboToald.api.server.sso_model.update_account_character", lambda **kw: uac_calls.append(kw) or True
+    )
+    park_seen: list = []
+    monkeypatch.setattr(
+        "roboToald.api.server.sso_model.mark_key_from_park_zone", lambda g, n, park: park_seen.append(park) or False
+    )
+
+    async def notify(gid, immediate=False):
+        pass
+
+    monkeypatch.setattr("roboToald.api.server.ws_manager.notify_guild_async", notify)
+
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        assert ws.receive_json()["type"] == "full_state"
+        ws.send_json(
+            {
+                "type": "update_location",
+                "character_name": "Zed",
+                "bind_location": "x" * 65,
+                "park_location": {"zone": "veeshan"},
+                "level": True,
+                "items": {"seb": "yes", "vp": 1, "st": True, "pearl": "lots", "peridot": -1, "mb3": 10**9, "mb4": 2},
+            }
+        )
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json() == {"type": "pong"}
+
+    kw = uac_calls[0]
+    assert (kw["bind_location"], kw["park_location"], kw["level"]) == (None, None, None)
+    assert kw["key_st"] is True
+    assert kw["item_mb4"] == 2
+    for dropped in ("key_seb", "key_vp", "item_pearl", "item_peridot", "item_mb3"):
+        assert dropped not in kw
+    assert park_seen == [None]
+
+
+def test_ws_max_message_size_fits_the_largest_inventory_upload():
+    import json
+
+    from roboToald.api import server
+
+    worst_case = {
+        "type": "update_inventory",
+        "character_name": "X" * 64,
+        "inventory": "\t" * server.MAX_INVENTORY_TEXT_BYTES,
+    }
+    assert len(json.dumps(worst_case).encode("utf-8")) <= server.WS_MAX_MESSAGE_BYTES
+    assert server.WS_MAX_MESSAGE_BYTES < 1.1 * 1024 * 1024
+
+
+def test_run_api_server_passes_ws_max_size(monkeypatch):
+    import threading
+
+    from roboToald.api import server
+
+    captured: dict = {}
+    monkeypatch.setattr(server.uvicorn, "run", lambda **kw: captured.update(kw))
+    started = threading.Event()
+
+    class _InlineThread:
+        def __init__(self, target, daemon):
+            self._target = target
+
+        def start(self):
+            self._target()
+            started.set()
+
+    monkeypatch.setattr(server.threading, "Thread", _InlineThread)
+    server.run_api_server(MagicMock(), None, None, "127.0.0.1", 0)
+    assert started.is_set()
+    assert captured["ws_max_size"] == server.WS_MAX_MESSAGE_BYTES
+
+
 def test_ws_update_location_items_overrides_keys(client, monkeypatch):
     from types import SimpleNamespace
 
