@@ -258,8 +258,23 @@ def test_ws_login_auth_missing_fields(client, monkeypatch):
         ws.send_json({"type": "login_auth", "request_id": "r1"})
         resp = ws.receive_json()
         assert resp["type"] == "login_auth_response"
+        assert resp["request_id"] == "r1"
         assert resp["status"] == 400
         assert "Missing" in resp.get("error", "")
+
+
+@pytest.mark.parametrize("request_id", [None, "", 42], ids=["absent", "empty", "non-string"])
+def test_ws_login_auth_without_usable_request_id_gets_no_reply(client, monkeypatch, request_id):
+    _patch_ws_auth_ok(monkeypatch)
+    with client.websocket_connect("/ws/accounts") as ws:
+        ws.send_json({"type": "auth", "access_key": "good", "client_version": "2.0.0"})
+        assert ws.receive_json()["type"] == "full_state"
+        msg = {"type": "login_auth", "username": "tagname"}
+        if request_id is not None:
+            msg["request_id"] = request_id
+        ws.send_json(msg)
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json() == {"type": "pong"}
 
 
 def test_ws_login_auth_account_not_found(client, monkeypatch):
