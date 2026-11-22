@@ -16,6 +16,7 @@ erDiagram
     SSOAccount }o--o{ SSOAccountGroup : "account_group_mapping"
     SSOTag }o--o| SSOTagUIMacro : "references"
     SSOAccount ||--o{ SSOCharacterSession : "has"
+    SSOAccountCharacter ||--o{ SSOCharacterSpell : "has"
 
     SSOAccount {
         int id PK
@@ -102,7 +103,15 @@ erDiagram
         bool item_lizard
         bool item_thurg
         text notes
+        datetime spellbook_updated_at
         int account_id FK
+    }
+
+    SSOCharacterSpell {
+        int id PK
+        int character_id FK
+        string spell_name
+        int level
     }
 
     SSOCharacterSession {
@@ -304,12 +313,26 @@ Maps a character name and class to an account. Characters have optional bind/par
 | `item_mb4` | Integer | nullable | Mana Battery - Class Four stack count |
 | `item_mb5` | Integer | nullable | Mana Battery - Class Five stack count |
 | `notes` | Text | nullable | Character login notes (plain text, max 500 chars) |
+| `spellbook_updated_at` | DateTime | nullable | Server-side only: last accepted `update_spellbook` upload (not exposed on WebSocket/API) |
 | `key_seb_updated_at`, `key_vp_updated_at`, `key_st_updated_at`, `item_void_updated_at`, `item_neck_updated_at`, `item_lizard_updated_at`, `item_thurg_updated_at`, `item_reaper_updated_at`, `item_brass_idol_updated_at`, `item_pearl_updated_at`, `item_peridot_updated_at`, `item_mb3_updated_at`, `item_mb4_updated_at`, `item_mb5_updated_at` | DateTime | nullable | Server-side only: last time the matching value column was written (not exposed on WebSocket/API) |
 | `account_id` | Integer | FK -> `sso_account.id`, NOT NULL | |
 
 **Unique constraint:** `(name, guild_id)`
 
 **CharacterClass enum:** Bard, Cleric, Druid, Enchanter, Magician, Monk, Necromancer, Paladin, Ranger, Rogue, ShadowKnight, Shaman, Warrior, Wizard
+
+### SSOCharacterSpell
+
+One scribed spell from the character's last accepted `update_spellbook` upload (`/outputfile spellbook`). All rows for a character are replaced on each upload. Server-side only: not in the account tree or any API response.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | Integer | PK, auto-increment | |
+| `character_id` | Integer | FK -> `sso_account_character.id` (ON DELETE CASCADE), NOT NULL | |
+| `spell_name` | String(255) | NOT NULL, indexed | Spell name verbatim from the export |
+| `level` | Integer | NOT NULL | Level shown in the export |
+
+**Unique constraint:** `(character_id, spell_name)`
 
 ### SSOCharacterSession
 

@@ -28,6 +28,7 @@ from roboToald.db.models import sso as sso_model
 from roboToald.db import base
 from roboToald.api.websocket import manager as ws_manager, ClientConnection
 from roboToald.inventory_parser import MAX_INVENTORY_TEXT_BYTES, parse_inventory_text
+from roboToald.spellbook_parser import MAX_SPELLBOOK_TEXT_BYTES, parse_spellbook_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -843,6 +844,9 @@ async def _ws_message_loop(websocket: WebSocket, conn: ClientConnection):
             elif msg_type == "update_inventory":
                 await _ws_handle_update_inventory(conn, msg)
 
+            elif msg_type == "update_spellbook":
+                await _ws_handle_update_spellbook(conn, msg)
+
             elif msg_type == "login_auth":
                 await _ws_handle_login_auth(conn, msg)
 
@@ -934,6 +938,56 @@ async def _ws_handle_update_inventory(conn: ClientConnection, msg: dict):
     except Exception:
         logger.exception(
             "update_inventory failed | guild_id=%s user_id=%s char=%s",
+            conn.guild_id,
+            conn.discord_user_id,
+            character_name,
+        )
+
+
+def _spells_from_text(raw) -> list[tuple[int, str]] | None:
+    """``(level, spell_name)`` pairs from a raw spellbook export.
+
+    Returns ``None`` for blank, oversized, or unparseable text so the stored
+    spellbook stays as it was.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    if len(raw.encode("utf-8")) > MAX_SPELLBOOK_TEXT_BYTES:
+        logger.warning("update_spellbook text exceeds %s bytes; ignoring", MAX_SPELLBOOK_TEXT_BYTES)
+        return None
+    spells = parse_spellbook_text(raw)
+    if spells is None:
+        logger.warning("update_spellbook text is not a spellbook export; ignoring")
+    return spells
+
+
+async def _ws_handle_update_spellbook(conn: ClientConnection, msg: dict):
+    """Replace the stored spellbook of an SSO character the user can access.
+
+    Spells are not part of the account tree, so no delta is pushed.
+    """
+    character_name = msg.get("character_name")
+    if not isinstance(character_name, str) or not character_name:
+        return
+
+    def _sync():
+        spells = _spells_from_text(msg.get("spellbook"))
+        if spells is None:
+            return False
+        account = sso_model.find_account_by_character(conn.guild_id, character_name)
+        if not account:
+            return False
+        if not user_has_access_to_accounts(
+            ws_manager._discord_client, conn.discord_user_id, conn.guild_id, [account.id]
+        ):
+            return False
+        return sso_model.replace_character_spells(conn.guild_id, character_name, spells)
+
+    try:
+        await asyncio.to_thread(_sync)
+    except Exception:
+        logger.exception(
+            "update_spellbook failed | guild_id=%s user_id=%s char=%s",
             conn.guild_id,
             conn.discord_user_id,
             character_name,

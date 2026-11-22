@@ -1961,10 +1961,79 @@ class SSOAccountCharacter(base.Base):
 
     notes = sqlalchemy.Column(sqlalchemy.Text, nullable=True)
 
+    # Server-side only: last accepted update_spellbook upload.
+    spellbook_updated_at = sqlalchemy.Column(sqlalchemy.DateTime, nullable=True)
+
     account_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("sso_account.id"), nullable=False)
     account = sqlalchemy.orm.relationship("SSOAccount", back_populates="characters")
+    # SQLite runs without foreign key enforcement, so the ORM cascade does the delete.
+    spells = sqlalchemy.orm.relationship("SSOCharacterSpell", back_populates="character", cascade="all, delete-orphan")
 
     __table_args__ = (sqlalchemy.UniqueConstraint("name", "guild_id", name="uq_name_guild"),)
+
+
+class SSOCharacterSpell(base.Base):
+    """One scribed spell from a character's last ``update_spellbook`` upload.
+
+    The whole set for a character is replaced on each accepted upload.
+    """
+
+    __tablename__ = "sso_character_spell"
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
+    character_id = sqlalchemy.Column(
+        sqlalchemy.Integer,
+        sqlalchemy.ForeignKey("sso_account_character.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    spell_name = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
+    level = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+
+    character = sqlalchemy.orm.relationship("SSOAccountCharacter", back_populates="spells")
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint("character_id", "spell_name", name="uq_character_spell"),
+        sqlalchemy.Index("ix_character_spell_name", "spell_name"),
+    )
+
+
+def replace_character_spells(
+    guild_id: int,
+    name: str,
+    spells: list[tuple[int, str]],
+    now: datetime.datetime | None = None,
+) -> bool:
+    """Replace a character's stored spellbook with ``(level, spell_name)`` pairs.
+
+    Returns False when the character does not exist in the guild.
+    """
+    with base.get_session() as session:
+        character = session.query(SSOAccountCharacter).filter_by(name=name, guild_id=guild_id).first()
+        if not character:
+            return False
+        session.query(SSOCharacterSpell).filter(SSOCharacterSpell.character_id == character.id).delete(
+            synchronize_session=False
+        )
+        session.add_all(
+            SSOCharacterSpell(character_id=character.id, spell_name=spell_name, level=level)
+            for level, spell_name in spells
+        )
+        character.spellbook_updated_at = now or datetime.datetime.now()
+        session.commit()
+    return True
+
+
+def get_character_spells(guild_id: int, name: str) -> list[tuple[int, str]]:
+    """Stored ``(level, spell_name)`` pairs for a character, by level then name."""
+    with base.get_session() as session:
+        rows = (
+            session.query(SSOCharacterSpell.level, SSOCharacterSpell.spell_name)
+            .join(SSOAccountCharacter, SSOCharacterSpell.character_id == SSOAccountCharacter.id)
+            .filter(SSOAccountCharacter.guild_id == guild_id, SSOAccountCharacter.name == name)
+            .order_by(SSOCharacterSpell.level, SSOCharacterSpell.spell_name)
+            .all()
+        )
+    return [(level, spell_name) for level, spell_name in rows]
 
 
 def add_account_character(guild_id: int, real_user: str, name: str, klass: CharacterClass) -> SSOAccountCharacter:

@@ -49,6 +49,7 @@ Implement an HTTP + WebSocket API such that an unmodified P99 Login Proxy can: a
 6. Username resolution + access control such that only authorized names appear in `account_tree` and succeed `login_auth`.
 7. Optionally `POST /auth` (HTTP plaintext fallback; **not** used by current proxy).
 8. Optionally `fte` / `mob_death` (proxy sends; silent drop is OK for login compatibility).
+8a. Optionally `update_spellbook` (proxy sends; silent drop is OK for login compatibility).
 9. Verify with §12.
 
 ---
@@ -120,7 +121,6 @@ Client                         Server
 |   ... bidirectional ...      |
 |<-- ping ---------------------|
 |-- pong --------------------->|
-|-- login_auth / heartbeat / update_location / update_inventory / fte / mob_death -->|
 |<-- login_auth_response / delta / ping -------|
 ```
 
@@ -148,6 +148,7 @@ Every message is a JSON object with discriminator `type`. Unknown properties: **
 | `heartbeat` | C→S | `type`, `character_name` |
 | `update_location` | C→S | `type`, `character_name` (optional: `park_location`, `bind_location`, `level`, `items`, legacy `keys`) |
 | `update_inventory` | C→S | `type`, `character_name`, `inventory` |
+| `update_spellbook` | C→S | `type`, `character_name`, `spellbook` |
 | `fte` | C→S | `type`, `mob`, `player`, `character_name`, `eq_log_time` |
 | `mob_death` | C→S | `type`, `mob`, `eq_log_time`, `character_name` |
 | `ping` | either | `type` |
@@ -414,6 +415,19 @@ Proxy **splices** decoded bytes into the SOE Login packet; it does not re-encryp
 - Missing/inaccessible `character_name`: **MUST** ignore (no error, no close).
 
 ```json
+{
+  "type": "update_spellbook",
+  "character_name": "Zzzz",
+  "spellbook": "44\tShock of Swords\n4\tGate\n12\tBind Affinity\n"
+}
+```
+
+- `spellbook` is the raw `<Char>-Spellbook.txt` export (`/outputfile spellbook`): one `<level><TAB><spell name>` line per scribed spell, unsorted, no header, no spell IDs. Accept spaces in place of the tab. The proxy sends it only for SSO characters, whenever the file changes, and skips an identical resend.
+- **[reference]** replaces the character's rows in `sso_character_spell` with the parsed set (duplicate names collapse) and sets `sso_account_character.spellbook_updated_at`. Store only: spells are not in `account_tree`, so no `delta`, and it does not count as a heartbeat.
+- Blank text, text longer than 131072 bytes, or any non-blank line that is not `<level 1–255> <name>`: **[reference]** ignores the whole message and keeps the stored spellbook.
+- Missing/inaccessible `character_name`: **MUST** ignore (no error, no close).
+
+```json
 {"type": "fte", "mob": "Cekenar", "player": "Toald", "character_name": "Zzzz", "eq_log_time": "Fri Jan 31 22:04:02 2025"}
 {"type": "mob_death", "mob": "King Tormax", "eq_log_time": "Sat Feb 15 20:52:45 2025", "character_name": "Zzzz"}
 ```
@@ -567,7 +581,7 @@ and USER_API_TOKEN set
 5. **[proxy]** on bad-password LoginAccepted may retry original client credentials once (backend unaware).
 
 ### C. Play telemetry
-1. `heartbeat` / `update_location` while logged in; `update_inventory` when the player runs `/outputfile inventory`.
+1. `heartbeat` / `update_location` while logged in; `update_inventory` / `update_spellbook` when the player runs `/outputfile inventory` / `/outputfile spellbook`.
 2. Server updates state → `delta` to subscribers.
 
 ---
@@ -602,6 +616,7 @@ and USER_API_TOKEN set
 | Discord RBAC / revocation / audit | | ✓ (wire outcomes still required) |
 | `fte` / `mob_death` handling | ignore OK | TOD channel |
 | `update_inventory` handling | ignore OK | parse + persist + delta |
+| `update_spellbook` handling | ignore OK | parse + replace stored spells (no delta) |
 | Legacy character `keys` | ignore OK | emit flag |
 | Close codes 4001–4011 | | ✓ (proxy mainly needs `error`+drop) |
 
@@ -653,6 +668,7 @@ These are hard facts about ambiguity — resolve before inventing behavior:
 | Deltas / tree | `roboToald/api/websocket.py` |
 | Resolution / items map | `roboToald/db/models/sso.py` |
 | Inventory export parser | `roboToald/inventory_parser.py` |
+| Spellbook export parser | `roboToald/spellbook_parser.py` |
 | Proxy WS client | `p99-login-proxy/p99_sso_login_proxy/ws_client.py` |
 | Proxy SSO gate / splice | `p99-login-proxy/p99_sso_login_proxy/server.py` |
 | DES helpers | `p99-login-proxy/p99_sso_login_proxy/login_protocol.py` |
