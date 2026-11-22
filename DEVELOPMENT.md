@@ -30,6 +30,7 @@ All configuration lives in `batphone.ini`. Copy `batphone.ini.example` to `batph
 | `port` | `8080` | API bind port |
 | `forwarded_allow_ips` | `127.0.0.1` | Comma-separated IPs trusted for `X-Forwarded-For` |
 | `inactivity_seconds` | `62` | Seconds before an account is considered inactive (for tag round-robin and session tracking) |
+| `faction_event_retention_days` | `90` | Days to keep raw `faction_hits` events (per-character faction state is kept) |
 | `require_keys_for_dynamic_tags` | `false` | When `true`, `seb`/`trak`, `vp`, and `st` dynamic tags require the matching character key flag |
 | `asyncio_default_thread_pool_max_workers` | `64` | Max workers for each event loop’s default `ThreadPoolExecutor` (`asyncio.to_thread` / default `run_in_executor`). Python’s built-in default is `min(32, cpu+4)`. |
 
